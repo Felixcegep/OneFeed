@@ -14,6 +14,10 @@ final class SourcesViewModel {
         guard let context else { return }
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
     }
+    var folders: [FeedFolderGroup] { FeedFolderGrouping.groups(from: feeds) }
+    func feeds(in folderID: FeedFolderID) -> [Feed] {
+        folders.first(where: { $0.folderID == folderID })?.feeds ?? []
+    }
     func delete(at offsets: IndexSet) {
         guard let context else { return }
         for index in offsets { context.delete(feeds[index]) }
@@ -54,4 +58,11 @@ final class SourceDetailViewModel {
         set { feed.isEnabled = newValue; try? context.save() }
     }
     func remove() { context.delete(feed); try? context.save() }
+
+    var recentArticles: [Article] {
+        feed.articles
+            .sorted { $0.publishedAt > $1.publishedAt }
+            .prefix(20)
+            .map { $0 }
+    }
 }

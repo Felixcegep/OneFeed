@@ -19,10 +19,13 @@ struct SourcesView: View {
                 }
             } else {
                 List {
-                    ForEach(viewModel.feeds) { feed in
-                        NavigationLink(value: feed.id) { SourceRow(feed: feed) }
+                    ForEach(viewModel.folders) { folder in
+                        NavigationLink {
+                            FolderFeedsView(folderID: folder.folderID, viewModel: viewModel)
+                        } label: {
+                            FolderRow(folder: folder)
+                        }
                     }
-                    .onDelete(perform: viewModel.delete)
                 }
                 .listStyle(.plain)
             }
@@ -33,12 +36,62 @@ struct SourcesView: View {
         .toolbar {
             Button("Add Source", systemImage: "plus") { viewModel.isPresentingAddSource = true }
         }
-        .navigationDestination(for: UUID.self) { id in
-            if let feed = viewModel.feeds.first(where: { $0.id == id }) {
-                SourceDetailView(feed: feed, context: modelContext)
+        .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: viewModel.reload) { AddSourceView() }
+    }
+}
+
+private struct FolderRow: View {
+    let folder: FeedFolderGroup
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "folder")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(folder.name)
+                    .font(.headline)
+                Text(sourceCount)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
-        .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: viewModel.reload) { AddSourceView() }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens feeds in this folder")
+        .accessibilityIdentifier("folder-\(folder.name)")
+    }
+
+    private var sourceCount: String {
+        folder.feeds.count == 1 ? "1 source" : "\(folder.feeds.count) sources"
+    }
+}
+
+private struct FolderFeedsView: View {
+    let folderID: FeedFolderID
+    let viewModel: SourcesViewModel
+
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        List {
+            ForEach(viewModel.feeds(in: folderID)) { feed in
+                NavigationLink {
+                    SourceDetailView(feed: feed, context: modelContext)
+                } label: {
+                    SourceRow(feed: feed)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .navigationTitle(folderID.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if viewModel.feeds(in: folderID).isEmpty {
+                ContentUnavailableView("No feeds", systemImage: "dot.radiowaves.left.and.right")
+            }
+        }
     }
 }
 
@@ -57,7 +110,7 @@ private struct SourceRow: View {
                     Text("Paused")
                 } else if feed.remoteID != nil {
                     Text("·")
-                    Text("FreshRSS")
+                    Text("Synced")
                 }
             }
             .font(.subheadline)
@@ -82,11 +135,21 @@ private struct SourceDetailView: View {
             Section {
                 LabeledContent("Website", value: viewModel.feed.websiteURL?.host() ?? "—")
                 LabeledContent("Feed", value: viewModel.feed.feedURL.absoluteString)
+                if let folder = viewModel.feed.folderName, !folder.isEmpty {
+                    LabeledContent("Folder", value: folder)
+                }
             }
             Section {
                 Toggle("Included in Next", isOn: $viewModel.isEnabled)
             } footer: {
                 Text("When this is off, the source stays in your library but does not enter the current-article queue.")
+            }
+            if !viewModel.recentArticles.isEmpty {
+                Section("Recent") {
+                    ForEach(viewModel.recentArticles) { article in
+                        ArticleRow(article: article)
+                    }
+                }
             }
             Section {
                 Button("Remove Source", role: .destructive) { viewModel.isConfirmingRemoval = true }

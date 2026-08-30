@@ -30,9 +30,9 @@ final class FreshRSSSyncService {
 
         let freshRSS = SyncProvider.freshRSS.rawValue
         let existing = try context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == freshRSS })).first
-        let account = existing ?? SyncAccount(provider: .freshRSS, serverURL: configuration.baseURL, username: username)
+        let account = existing ?? SyncAccount(provider: .freshRSS, serverURL: configuration.baseURL, username: credentials.username)
         account.serverURL = configuration.baseURL
-        account.username = username
+        account.username = credentials.username
         account.isEnabled = true
         account.lastSyncError = nil
         if existing == nil { context.insert(account) }
@@ -63,11 +63,20 @@ final class FreshRSSSyncService {
             let subscriptions = try await client.subscriptions(authToken: token).subscriptions
             for subscription in subscriptions {
                 let feed = try upsert(subscription: subscription, in: context)
-                let ids = try await itemIDs(for: subscription.id, client: client, token: token)
-                for chunk in ids.chunked(into: 100) {
-                    let items = try await client.itemContents(itemIDs: chunk, authToken: token).items
-                    for item in items { try upsert(item: item, feed: feed, in: context) }
-                }
+                var continuation: String?
+                var pages = 0
+                repeat {
+                    let page = try await client.streamContents(
+                        streamID: subscription.id,
+                        authToken: token,
+                        unreadOnly: false,
+                        limit: 1_000,
+                        continuation: continuation
+                    )
+                    for item in page.items { try upsert(item: item, feed: feed, in: context) }
+                    continuation = page.continuation
+                    pages += 1
+                } while pages < 20 && continuation.map({ !$0.isEmpty }) == true
                 feed.lastFetchedAt = .now
             }
             account.lastSyncAt = .now
@@ -95,35 +104,23 @@ final class FreshRSSSyncService {
         try? context.save()
     }
 
-    private func itemIDs(for streamID: String, client: any FreshRSSAPI, token: String) async throws -> [String] {
-        var ids: [String] = []
-        var continuation: String?
-        var pages = 0
-        repeat {
-            let page = try await client.itemIDs(
-                streamID: streamID,
-                authToken: token,
-                unreadOnly: false,
-                limit: 1_000,
-                continuation: continuation
-            )
-            ids.append(contentsOf: page.itemRefs.map(\.id))
-            continuation = page.continuation
-            pages += 1
-        } while pages < 20 && continuation.map({ !$0.isEmpty }) == true
-        return ids
-    }
-
     private func upsert(subscription: FreshRSSSubscription, in context: ModelContext) throws -> Feed {
         let remoteID = subscription.id
         if let feed = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.remoteID == remoteID })).first {
             feed.title = subscription.title
             feed.websiteURL = subscription.htmlURL
+            if let feedURL = subscription.resolvedFeedURL { feed.feedURL = feedURL }
+            feed.folderName = subscription.folderName
             return feed
         }
-        let raw = subscription.id.hasPrefix("feed/") ? String(subscription.id.dropFirst(5)) : subscription.id
-        guard let feedURL = URL(string: raw) else { throw FreshRSSSyncError.invalidSubscriptionURL }
-        let feed = Feed(title: subscription.title, websiteURL: subscription.htmlURL, feedURL: feedURL, remoteID: subscription.id)
+        guard let feedURL = subscription.resolvedFeedURL else { throw FreshRSSSyncError.invalidSubscriptionURL }
+        let feed = Feed(
+            title: subscription.title,
+            websiteURL: subscription.htmlURL,
+            feedURL: feedURL,
+            remoteID: subscription.id,
+            folderName: subscription.folderName
+        )
         context.insert(feed)
         return feed
     }
@@ -209,12 +206,5 @@ extension FreshRSSError: LocalizedError {
         case .decodingFailed: "FreshRSS returned data OneFeed could not read."
         case .unsupportedMutation: "That FreshRSS action is not supported."
         }
-    }
-}
-
-private extension Array {
-    func chunked(into size: Int) -> [[Element]] {
-        guard size > 0 else { return [] }
-        return stride(from: 0, to: count, by: size).map { Array(self[$0..<Swift.min($0 + size, count)]) }
     }
 }

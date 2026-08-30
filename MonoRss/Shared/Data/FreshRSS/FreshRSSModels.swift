@@ -21,21 +21,52 @@ nonisolated public struct FreshRSSSubscriptionResponse: Codable, Sendable, Equat
 nonisolated public struct FreshRSSSubscription: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let title: String
+    public let feedURL: URL?
     public let htmlURL: URL?
     public let iconURL: URL?
+    public let categories: [FreshRSSFolder]
 
-    public init(id: String, title: String, htmlURL: URL? = nil, iconURL: URL? = nil) {
+    public init(id: String, title: String, feedURL: URL? = nil, htmlURL: URL? = nil, iconURL: URL? = nil, categories: [FreshRSSFolder] = []) {
         self.id = id
         self.title = title
+        self.feedURL = feedURL
         self.htmlURL = htmlURL
         self.iconURL = iconURL
+        self.categories = categories
     }
 
     enum CodingKeys: String, CodingKey {
         case id
         case title
+        case feedURL = "url"
         case htmlURL = "htmlUrl"
         case iconURL = "iconUrl"
+        case categories
+    }
+
+    public var folderName: String? {
+        categories.first(where: \.isUserFolder)?.displayName
+    }
+}
+
+nonisolated public struct FreshRSSFolder: Codable, Sendable, Equatable {
+    public let id: String
+    public let label: String?
+
+    public init(id: String, label: String? = nil) {
+        self.id = id
+        self.label = label
+    }
+
+    public var isUserFolder: Bool {
+        id.contains("/label/") && !id.contains("/state/com.google/")
+    }
+
+    public var displayName: String {
+        if let label, !label.isEmpty { return label }
+        guard let last = id.split(separator: "/").last else { return id }
+        let raw = String(last)
+        return raw.removingPercentEncoding ?? raw
     }
 }
 
@@ -66,11 +97,12 @@ nonisolated public struct FreshRSSStreamContentsResponse: Codable, Sendable, Equ
     public let description: String?
     public let selfURL: URL?
     public let updatedUsec: String?
+    public let continuation: String?
     public let items: [FreshRSSItem]
 
     public init(items: [FreshRSSItem], direction: String? = nil, id: String? = nil,
                 title: String? = nil, description: String? = nil, selfURL: URL? = nil,
-                updatedUsec: String? = nil) {
+                updatedUsec: String? = nil, continuation: String? = nil) {
         self.items = items
         self.direction = direction
         self.id = id
@@ -78,12 +110,14 @@ nonisolated public struct FreshRSSStreamContentsResponse: Codable, Sendable, Equ
         self.description = description
         self.selfURL = selfURL
         self.updatedUsec = updatedUsec
+        self.continuation = continuation
     }
 
     enum CodingKeys: String, CodingKey {
         case direction, id, title, description
         case selfURL = "self"
         case updatedUsec
+        case continuation
         case items
     }
 }
@@ -235,6 +269,15 @@ nonisolated public enum FreshRSSLabel {
     nonisolated public static let read = "user/-/state/com.google/read"
     nonisolated public static let starred = "user/-/state/com.google/starred"
     nonisolated public static let readingList = "user/-/state/com.google/reading-list"
+}
+
+nonisolated public extension FreshRSSSubscription {
+    var resolvedFeedURL: URL? {
+        if let feedURL, feedURL.scheme != nil { return feedURL }
+        let raw = id.hasPrefix("feed/") ? String(id.dropFirst(5)) : id
+        guard let url = URL(string: raw), url.scheme != nil else { return nil }
+        return url
+    }
 }
 
 nonisolated public extension FreshRSSItem {

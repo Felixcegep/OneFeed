@@ -19,8 +19,8 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
 	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>OneFeed connects to your RSS server on the local network or Tailscale.</string>
 </dict>
 </plist>

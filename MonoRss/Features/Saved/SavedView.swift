@@ -14,22 +14,33 @@ struct SavedView: View {
                     description: Text("Articles you save will wait here without folders or tags.")
                 )
             } else {
-                List(viewModel.articles) { article in
-                    Button {
-                        viewModel.selectedArticle = article
-                    } label: {
-                        ArticleRow(article: article)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the saved article")
-                    .swipeActions {
-                        Button("Return to queue", systemImage: "arrow.uturn.backward") {
-                            viewModel.restore(article)
+                ScrollView {
+                    LazyVStack(spacing: 14) {
+                        ForEach(viewModel.articles) { article in
+                            Button {
+                                viewModel.selectedArticle = article
+                            } label: {
+                                ArticleCard(article: article)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens the saved article")
+                            .swipeActions {
+                                Button("Return to queue", systemImage: "arrow.uturn.backward") {
+                                    viewModel.restore(article)
+                                }
+                                .tint(.secondary)
+                            }
+                            .contextMenu {
+                                Button("Return to queue", systemImage: "arrow.uturn.backward") {
+                                    viewModel.restore(article)
+                                }
+                            }
                         }
-                        .tint(.secondary)
                     }
+                    .padding(.horizontal, OneFeedTheme.pagePadding)
+                    .padding(.vertical, 12)
                 }
-                .listStyle(.plain)
+                .background(OneFeedTheme.grouped.ignoresSafeArea())
             }
         }
         .navigationTitle("Saved")

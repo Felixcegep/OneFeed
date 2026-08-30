@@ -56,19 +56,19 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		9A31A0C10000000000000010 /* Exceptions for "MonoRss" folder in "MonoRss" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 4425FA5C30439ECB0053CF66 /* MonoRss */;
-		};
 		9A31A0C1000000000000000F /* Exceptions for "MonoRssWidget" folder in "MonoRssWidget" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 9A31A0C10000000000000006 /* MonoRssWidget */;
+		};
+		9A31A0C10000000000000010 /* Exceptions for "MonoRss" folder in "MonoRss" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 4425FA5C30439ECB0053CF66 /* MonoRss */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 

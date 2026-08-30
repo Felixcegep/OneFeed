@@ -1,25 +1,9 @@
-//
-//  MonoRssUITests.swift
-//  MonoRssUITests
-//
-//  Created by Felix Lachapelle on 2026-08-29.
-//
-
 import XCTest
 
 final class MonoRssUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
@@ -27,16 +11,16 @@ final class MonoRssUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-inMemoryStore"]
         app.launch()
-        XCTAssertTrue(app.navigationBars["OneFeed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Recent"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].exists)
+        app.tabBars.buttons["Next"].tap()
+        XCTAssertTrue(app.navigationBars["Next"].waitForExistence(timeout: 2))
         app.buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts["Swift concurrency without the noise"].waitForExistence(timeout: 2))
-        // https://developer.apple.com/documentation/xcuiautomation
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
@@ -48,40 +32,46 @@ final class MonoRssUITests: XCTestCase {
         app.launchArguments = ["-uiTesting", "-inMemoryStore"]
         app.launch()
 
-        XCTAssertTrue(app.navigationBars["OneFeed"].waitForExistence(timeout: 5))
-        capture("01-Current", app: app)
+        XCTAssertTrue(app.navigationBars["Recent"].waitForExistence(timeout: 5))
+        capture("01-Recent", app: app)
+
+        app.tabBars.buttons["Folders"].tap()
+        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Security"].exists)
+        capture("02-Folders", app: app)
+
+        app.otherElements["folder-Security"].tap()
+        XCTAssertTrue(app.navigationBars["Security"].waitForExistence(timeout: 2))
+        capture("03-Folder-Articles", app: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.tabBars.buttons["Next"].tap()
+        XCTAssertTrue(app.navigationBars["Next"].waitForExistence(timeout: 3))
+        capture("04-Next", app: app)
 
         app.buttons["Read"].tap()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["TRAIL OF BITS"].waitForExistence(timeout: 5))
-        capture("02-Reader", app: app)
+        capture("05-Reader", app: app)
         app.buttons["Close"].tap()
 
-        openMenuDestination("Saved", app: app)
+        app.tabBars.buttons["Saved"].tap()
         XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 3))
-        capture("03-Saved", app: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        capture("06-Saved", app: app)
 
-        openMenuDestination("History", app: app)
-        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
-        capture("04-History", app: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.tabBars.buttons["Library"].tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 3))
+        capture("07-Library", app: app)
 
-        openMenuDestination("Sources", app: app)
+        app.buttons["Sources"].tap()
         XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 3))
-        capture("05-Sources", app: app)
+        capture("08-Sources", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        openMenuDestination("Settings", app: app)
+        app.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
-        capture("06-Settings", app: app)
-    }
-
-    @MainActor
-    private func openMenuDestination(_ name: String, app: XCUIApplication) {
-        app.buttons["current.navigationMenu"].tap()
-        XCTAssertTrue(app.buttons[name].waitForExistence(timeout: 2))
-        app.buttons[name].tap()
+        capture("09-Settings", app: app)
     }
 
     private func capture(_ name: String, app: XCUIApplication) {

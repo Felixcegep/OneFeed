@@ -24,6 +24,10 @@ private actor RecordingMutationAPI: FreshRSSAPI {
         FreshRSSStreamContentsResponse(items: [])
     }
 
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse {
+        FreshRSSStreamContentsResponse(items: [])
+    }
+
     func markRead(itemID: String, authToken: String) async throws {
         try record(itemID: itemID, kind: .markRead)
     }

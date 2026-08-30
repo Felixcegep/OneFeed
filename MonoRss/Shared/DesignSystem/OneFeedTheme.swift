@@ -10,7 +10,8 @@ enum OneFeedTheme {
     static let secondaryText = Color.secondary
     static let separator = Color(uiColor: .separator)
     static let radius: CGFloat = 16
-    static let pagePadding: CGFloat = 22
+    static let cardRadius: CGFloat = 20
+    static let pagePadding: CGFloat = 20
 }
 
 struct PrimaryActionStyle: ButtonStyle {
@@ -79,5 +80,94 @@ struct ArticleRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+struct ArticleCard: View {
+    let article: Article
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                FolderSwatch(name: article.feed?.folderName ?? article.feed?.title ?? "Source")
+                Text(article.feed?.title ?? "Source")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text("\(article.estimatedReadingMinutes) min")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.tertiary)
+            }
+            Text(article.title)
+                .font(compact ? .headline : .title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .lineLimit(compact ? 3 : 4)
+            if !compact, let excerpt = article.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !excerpt.isEmpty {
+                Text(excerpt)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+            Text(article.publishedAt, format: .relative(presentation: .named))
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(compact ? 14 : 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(OneFeedTheme.surface, in: .rect(cornerRadius: OneFeedTheme.cardRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens this article")
+    }
+}
+
+struct FolderSwatch: View {
+    let name: String
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(tint.gradient)
+            .frame(width: 10, height: 10)
+            .accessibilityHidden(true)
+    }
+
+    private var tint: Color {
+        let palette: [Color] = [
+            Color(red: 0.91, green: 0.45, blue: 0.27),
+            Color(red: 0.27, green: 0.51, blue: 0.86),
+            Color(red: 0.31, green: 0.68, blue: 0.47),
+            Color(red: 0.62, green: 0.42, blue: 0.78),
+            Color(red: 0.95, green: 0.64, blue: 0.22),
+            Color(red: 0.22, green: 0.64, blue: 0.70)
+        ]
+        let index = abs(name.hashValue) % palette.count
+        return palette[index]
+    }
+}
+
+struct EmptyLibraryState: View {
+    let title: String
+    let systemImage: String
+    let description: String
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+        } description: {
+            Text(description)
+        } actions: {
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+            }
+        }
     }
 }

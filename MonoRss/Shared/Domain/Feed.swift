@@ -12,6 +12,8 @@ final class Feed {
     var etag: String?
     var lastModified: String?
     var remoteID: String?
+    /// GReader/FreshRSS folder label, for example `Philosophy`. Nil means unfiled.
+    var folderName: String?
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article] = []
@@ -25,7 +27,8 @@ final class Feed {
         lastFetchedAt: Date? = nil,
         etag: String? = nil,
         lastModified: String? = nil,
-        remoteID: String? = nil
+        remoteID: String? = nil,
+        folderName: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -36,5 +39,6 @@ final class Feed {
         self.etag = etag
         self.lastModified = lastModified
         self.remoteID = remoteID
+        self.folderName = folderName
     }
 }

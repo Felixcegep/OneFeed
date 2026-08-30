@@ -4,12 +4,12 @@ import SwiftData
 struct CurrentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let openDestination: (AppDestination) -> Void
+    let onOpenSources: () -> Void
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
 
-    init(openDestination: @escaping (AppDestination) -> Void) {
-        self.openDestination = openDestination
+    init(onOpenSources: @escaping () -> Void) {
+        self.onOpenSources = onOpenSources
     }
 
     private var article: Article? { viewModel.currentArticle }
@@ -38,9 +38,8 @@ struct CurrentView: View {
                 articleActions(article)
             }
         }
-        .navigationTitle("OneFeed")
+        .navigationTitle("Next")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { navigationMenu }
         .task {
             viewModel.configure(with: modelContext)
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") { await viewModel.refresh() }
@@ -143,28 +142,7 @@ struct CurrentView: View {
         } actions: {
             Button(viewModel.isRefreshing ? "Refreshing…" : "Refresh") { Task { await viewModel.refresh() } }
                 .disabled(viewModel.isRefreshing)
-            Button("Add a source") { openDestination(.sources) }
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var navigationMenu: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            Menu {
-                Button("Current", systemImage: "circle.fill") {}
-                Divider()
-                Button("Saved", systemImage: "bookmark") { openDestination(.saved) }
-                Button("History", systemImage: "clock") { openDestination(.history) }
-                Button("Sources", systemImage: "dot.radiowaves.left.and.right") { openDestination(.sources) }
-                Divider()
-                Button("Settings", systemImage: "gearshape") { openDestination(.settings) }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Open menu")
-            .accessibilityIdentifier("current.navigationMenu")
+            Button("Add a source") { onOpenSources() }
         }
     }
 

@@ -5,24 +5,31 @@ import Testing
 private actor RecordingFreshRSSTransport: FreshRSSHTTPTransport {
     private(set) var requests: [URLRequest] = []
     var responseData: Data
+    var statusCode: Int = 200
 
-    init(responseData: Data) {
+    init(responseData: Data, statusCode: Int = 200) {
         self.responseData = responseData
+        self.statusCode = statusCode
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         requests.append(request)
+        let code = request.httpMethod == "GET" && request.url?.path.hasSuffix("/accounts/ClientLogin") == true && statusCode == 401
+            ? 200 : statusCode
+        let payload = code == 200 && request.url?.path.hasSuffix("/accounts/ClientLogin") == true && statusCode == 401
+            ? Data("Auth=server-token\nEmail=reader\n".utf8) : responseData
         let response = HTTPURLResponse(
-            url: request.url!, statusCode: 200, httpVersion: nil,
+            url: request.url!, statusCode: code, httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
         if request.url?.path.hasSuffix("/reader/api/0/token") == true {
             return (Data("action-token\n".utf8), response)
         }
-        return (responseData, response)
+        return (payload, response)
     }
 
     func lastRequest() -> URLRequest? { requests.last }
+    func requestCount() -> Int { requests.count }
 }
 
 struct FreshRSSTests {
@@ -38,6 +45,20 @@ struct FreshRSSTests {
         #expect(request?.url?.absoluteString == "https://rss.example.test/freshrss/api/greader.php/accounts/ClientLogin")
         #expect(request?.httpMethod == "POST")
         #expect(String(data: request?.httpBody ?? Data(), encoding: .utf8) == "Email=reader&Passwd=p%26ss%20word")
+    }
+
+    @Test func clientLoginFallsBackToGETWhenPOSTIsUnauthorized() async throws {
+        let transport = RecordingFreshRSSTransport(responseData: Data("Unauthorized!".utf8), statusCode: 401)
+        let configuration = try FreshRSSConfiguration(baseURL: URL(string: "http://100.65.245.62:8081")!, username: "felix")
+        let client = FreshRSSClient(configuration: configuration, transport: transport)
+        let result = try await client.login(credentials: try FreshRSSCredentials(username: "felix", password: "12345"))
+        #expect(result.authToken == "server-token")
+        #expect(await transport.requestCount() == 2)
+        let request = await transport.lastRequest()
+        #expect(request?.httpMethod == "GET")
+        let query = URLComponents(url: try #require(request?.url), resolvingAgainstBaseURL: false)?.queryItems
+        #expect(query?.first(where: { $0.name == "Email" })?.value == "felix")
+        #expect(query?.first(where: { $0.name == "Passwd" })?.value == "12345")
     }
 
     @Test func subscriptionAndItemDTOsMapReaderLabelsAndContent() async throws {
@@ -77,6 +98,17 @@ struct FreshRSSTests {
         let query = URLComponents(url: try #require(request?.url), resolvingAgainstBaseURL: false)?.queryItems
         #expect(query?.first(where: { $0.name == "c" })?.value == "page-2")
         #expect(query?.contains(where: { $0.name == "xt" }) == false)
+    }
+
+    @Test func streamContentsUsesGoogleReaderPathNotItemsContentsPOST() async throws {
+        let transport = RecordingFreshRSSTransport(responseData: Data(#"{"items":[]}"#.utf8))
+        let configuration = try FreshRSSConfiguration(baseURL: URL(string: "http://100.65.245.62:8081")!, username: "felix")
+        let client = FreshRSSClient(configuration: configuration, transport: transport)
+        _ = try await client.streamContents(streamID: "feed/1", authToken: "token", unreadOnly: false, limit: 20)
+        let request = await transport.lastRequest()
+        #expect(request?.httpMethod == "GET")
+        #expect(request?.url?.path == "/api/greader.php/reader/api/0/stream/contents/feed/1")
+        #expect(request?.value(forHTTPHeaderField: "Authorization") == "GoogleLogin auth=token")
     }
 
     @Test func mutationFetchesFreshRSSActionTokenAndSendsItInPOSTBody() async throws {

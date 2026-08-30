@@ -86,10 +86,10 @@ private struct FreshRSSConnectView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("http://rss.local or https://rss.example.com", text: $viewModel.server).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("http://host:8081 or full …/api/greader.php URL", text: $viewModel.server).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Username", text: $viewModel.username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("API password", text: $viewModel.apiPassword).textContentType(.password)
-                } header: { Text("FreshRSS account") } footer: { Text("HTTP and HTTPS are both supported. Create an API password in your FreshRSS profile. It is stored only in the iOS Keychain.") }
+                } header: { Text("FreshRSS account") } footer: { Text("HTTP and HTTPS are both supported. You can paste either the server root or the full GReader API URL — both work. Credentials are stored only in the iOS Keychain.") }
                 if let errorMessage = viewModel.presentedError { Section { Text(errorMessage).foregroundStyle(.red) } }
             }
             .navigationTitle("Connect FreshRSS")

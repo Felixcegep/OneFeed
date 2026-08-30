@@ -10,7 +10,9 @@ nonisolated public struct FreshRSSCredentials: Sendable, Equatable {
     public let password: String
 
     public init(username: String, password: String) throws {
-        guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !username.isEmpty else {
             throw FreshRSSError.invalidCredentials
         }
         guard !password.isEmpty else {
@@ -46,20 +48,66 @@ nonisolated public struct FreshRSSConfiguration: Sendable, Equatable {
 
     public func endpoint(_ path: String) -> URL {
         let relativePath = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        return baseURL.appendingPathComponent(relativePath)
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
+        var basePath = components.percentEncodedPath
+        while basePath.hasSuffix("/") { basePath.removeLast() }
+        var joined = basePath.isEmpty ? "/\(relativePath)" : "\(basePath)/\(relativePath)"
+        while joined.hasSuffix("/") && joined != "/" { joined.removeLast() }
+        components.percentEncodedPath = joined
+        return components.url!
     }
 
     public static func normalizedServerURL(from raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        if let url = URL(string: trimmed), isUsableServerURL(url) { return url }
-        return URL(string: "http://\(trimmed)").flatMap { isUsableServerURL($0) ? $0 : nil }
+        if let url = URL(string: trimmed), isUsableServerURL(url) {
+            return normalizedServerURL(url)
+        }
+        return URL(string: "http://\(trimmed)").flatMap { isUsableServerURL($0) ? normalizedServerURL($0) : nil }
     }
 
     private static func normalizedServerURL(_ url: URL) -> URL? {
-        if isUsableServerURL(url) { return url }
-        guard url.scheme == nil, let host = url.absoluteString.nilIfEmpty else { return nil }
-        return URL(string: "http://\(host)").flatMap { isUsableServerURL($0) ? $0 : nil }
+        let candidate: URL
+        if isUsableServerURL(url) {
+            candidate = url
+        } else if url.scheme == nil, let host = url.absoluteString.nilIfEmpty {
+            guard let parsed = URL(string: "http://\(host)"), isUsableServerURL(parsed) else { return nil }
+            candidate = parsed
+        } else {
+            return nil
+        }
+        return strippingGReaderAPIPathSuffix(from: candidate)
+    }
+
+    /// Accepts a server root, a pasted GReader endpoint, or a full ClientLogin
+    /// URL. The client always appends `api/greader.php/...` itself. Anything
+    /// from that marker onward must be stripped — tiny-rss answers unknown
+    /// GReader paths with HTTP 401, not 404.
+    private static func strippingGReaderAPIPathSuffix(from url: URL) -> URL {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        var path = components.percentEncodedPath
+        let lower = path.lowercased()
+        let markers = ["/p/api/greader.php", "/api/greader.php", "/greader.php"]
+        for marker in markers {
+            if let range = lower.range(of: marker) {
+                let offset = lower.distance(from: lower.startIndex, to: range.lowerBound)
+                let cut = path.index(path.startIndex, offsetBy: offset)
+                path = String(path[..<cut])
+                break
+            }
+        }
+        while path.hasSuffix("/") { path.removeLast() }
+
+        if path.isEmpty {
+            components.path = ""
+        } else if !path.hasPrefix("/") {
+            components.path = "/\(path)"
+        } else {
+            components.path = path
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url ?? url
     }
 
     private static func isUsableServerURL(_ url: URL) -> Bool {

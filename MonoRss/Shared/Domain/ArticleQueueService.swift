@@ -46,6 +46,20 @@ struct ArticleQueueService {
         return try ensureCurrent(in: context, lastDisplayedFeedID: previousFeedID)
     }
 
+    func complete(_ article: Article, as state: ArticleState, in context: ModelContext) throws {
+        if article.state == .current {
+            _ = try transition(article, to: state, in: context)
+            return
+        }
+        precondition([.read, .skipped, .saved].contains(state), "Browse completion must be a terminal action")
+        article.state = state
+        article.completedAt = .now
+        if state == .saved { article.isRemoteStarred = true }
+        if state == .read { article.isRemoteStarred = false }
+        try context.save()
+        _ = try ensureCurrent(in: context)
+    }
+
     func restoreSaved(_ article: Article, in context: ModelContext) throws {
         article.state = .queued
         article.completedAt = nil

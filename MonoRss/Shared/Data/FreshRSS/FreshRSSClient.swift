@@ -11,6 +11,7 @@ nonisolated public protocol FreshRSSAPI: Sendable {
     func subscriptions(authToken: String) async throws -> FreshRSSSubscriptionResponse
     func itemIDs(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamItemIDsResponse
     func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse
     func markRead(itemID: String, authToken: String) async throws
     func markUnread(itemID: String, authToken: String) async throws
     func setStarred(itemID: String, authToken: String, starred: Bool) async throws
@@ -30,12 +31,27 @@ public actor FreshRSSClient: FreshRSSAPI {
     }
 
     public func login(credentials: FreshRSSCredentials) async throws -> FreshRSSAuthResponse {
-        var request = URLRequest(url: configuration.endpoint("api/greader.php/accounts/ClientLogin"))
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.httpBody = formEncoded([("Email", credentials.username), ("Passwd", credentials.password)])
+        let loginURL = configuration.endpoint("api/greader.php/accounts/ClientLogin")
+        var post = URLRequest(url: loginURL)
+        post.httpMethod = "POST"
+        post.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        post.httpBody = formEncoded([("Email", credentials.username), ("Passwd", credentials.password)])
 
-        let (data, _) = try await send(request)
+        do {
+            return try parseAuthResponse(try await send(post).0)
+        } catch FreshRSSError.httpStatus(401, _), FreshRSSError.missingAuthToken {
+            var components = URLComponents(url: loginURL, resolvingAgainstBaseURL: false)!
+            components.queryItems = [
+                URLQueryItem(name: "Email", value: credentials.username),
+                URLQueryItem(name: "Passwd", value: credentials.password)
+            ]
+            var get = URLRequest(url: components.url!)
+            get.httpMethod = "GET"
+            return try parseAuthResponse(try await send(get).0)
+        }
+    }
+
+    private func parseAuthResponse(_ data: Data) throws -> FreshRSSAuthResponse {
         guard let body = String(data: data, encoding: .utf8) else { throw FreshRSSError.invalidResponse }
         let values = body.split(whereSeparator: { $0 == "\n" || $0 == "\r" }).reduce(into: [String: String]()) { result, line in
             let pieces = line.split(separator: "=", maxSplits: 1).map(String.init)
@@ -71,6 +87,24 @@ public actor FreshRSSClient: FreshRSSAPI {
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.httpBody = formEncoded(itemIDs.map { ("i", $0) })
+        return try await decode(FreshRSSStreamContentsResponse.self, request: request)
+    }
+
+    /// Google Reader stream contents. tiny-rss implements this GET and returns 401
+    /// for FreshRSS's `stream/items/contents` POST, so sync must use this path.
+    public func streamContents(streamID: String, authToken: String, unreadOnly: Bool = false,
+                               limit: Int = 1_000, continuation: String? = nil) async throws -> FreshRSSStreamContentsResponse {
+        var query: [(String, String)] = [
+            ("output", "json"),
+            ("n", String(max(1, min(limit, 1_000))))
+        ]
+        if unreadOnly { query.append(("xt", FreshRSSLabel.read)) }
+        if let continuation, !continuation.isEmpty { query.append(("c", continuation)) }
+        let request = authorizedGET(
+            path: "api/greader.php/reader/api/0/stream/contents/\(streamID)",
+            token: authToken,
+            query: query
+        )
         return try await decode(FreshRSSStreamContentsResponse.self, request: request)
     }
 
@@ -121,6 +155,7 @@ public actor FreshRSSClient: FreshRSSAPI {
         components.queryItems = query.map { URLQueryItem(name: $0.0, value: $0.1) }
         var request = URLRequest(url: components.url!)
         request.httpMethod = "GET"
+        // tiny-rss matches this header exactly; `Auth=` (capital A) is 401.
         request.setValue("GoogleLogin auth=\(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         return request

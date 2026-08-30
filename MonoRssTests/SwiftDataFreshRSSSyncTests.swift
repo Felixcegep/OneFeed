@@ -10,6 +10,7 @@ private actor SwiftDataSyncAPI: FreshRSSAPI {
     func subscriptions(authToken: String) async throws -> FreshRSSSubscriptionResponse { .init(subscriptions: []) }
     func itemIDs(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamItemIDsResponse { .init(itemRefs: []) }
     func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse { .init(items: []) }
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse { .init(items: []) }
     func markRead(itemID: String, authToken: String) async throws { mutations.append((itemID, .markRead)) }
     func markUnread(itemID: String, authToken: String) async throws { mutations.append((itemID, .markUnread)) }
     func setStarred(itemID: String, authToken: String, starred: Bool) async throws { mutations.append((itemID, starred ? .star : .unstar)) }
@@ -100,6 +101,11 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(schemes.contains("onefeed"))
         let ats = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any] ?? [:]
         #expect(ats["NSAllowsArbitraryLoads"] as? Bool == true)
+        // iOS ignores NSAllowsArbitraryLoads when any of these companion keys are present,
+        // which re-blocks HTTP FreshRSS hosts the way NetNewsWire does not.
+        #expect(ats["NSAllowsLocalNetworking"] == nil)
+        #expect(ats["NSAllowsArbitraryLoadsInWebContent"] == nil)
+        #expect(ats["NSAllowsArbitraryLoadsForMedia"] == nil)
     }
 
     @Test func syncFollowsItemIDContinuationPages() async throws {
@@ -135,17 +141,20 @@ private actor PagingSyncAPI: FreshRSSAPI {
 
     func login(credentials: FreshRSSCredentials) async throws -> FreshRSSAuthResponse { .init(authToken: "token") }
     func subscriptions(authToken: String) async throws -> FreshRSSSubscriptionResponse {
-        .init(subscriptions: [.init(id: "feed/http://example.test/rss", title: "Example", htmlURL: URL(string: "http://example.test"))])
+        .init(subscriptions: [.init(id: "feed/http://example.test/rss", title: "Example", feedURL: URL(string: "http://example.test/rss"), htmlURL: URL(string: "http://example.test"))])
     }
     func itemIDs(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamItemIDsResponse {
-        pages.append(continuation)
-        if continuation == nil {
-            return .init(itemRefs: [.init(id: "item-1")], continuation: "cursor-2")
-        }
-        return .init(itemRefs: [.init(id: "item-2")])
+        .init(itemRefs: [])
     }
     func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse {
-        .init(items: itemIDs.map { FreshRSSItem(id: $0, title: "Title \($0)") })
+        .init(items: [])
+    }
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse {
+        pages.append(continuation)
+        if continuation == nil {
+            return .init(items: [FreshRSSItem(id: "item-1", title: "Title item-1")], continuation: "cursor-2")
+        }
+        return .init(items: [FreshRSSItem(id: "item-2", title: "Title item-2")])
     }
     func markRead(itemID: String, authToken: String) async throws {}
     func markUnread(itemID: String, authToken: String) async throws {}

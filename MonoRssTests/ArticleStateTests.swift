@@ -64,4 +64,18 @@ struct ArticleStateTests {
         #expect(saved.completedAt == nil)
         #expect(other.state == .queued)
     }
+
+    @Test func completingAQueuedArticleDoesNotRequireItToBeCurrent() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let current = Article(guid: "current", title: "Current", state: .current, feed: feed)
+        let queued = Article(guid: "queued", title: "Queued", publishedAt: .now.addingTimeInterval(10), feed: feed)
+        context.insert(current)
+        context.insert(queued)
+
+        try ArticleQueueService().complete(queued, as: .read, in: context)
+        #expect(queued.state == .read)
+        #expect(current.state == .current)
+    }
 }
