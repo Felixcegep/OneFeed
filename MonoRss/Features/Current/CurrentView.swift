@@ -86,7 +86,7 @@ struct CurrentView: View {
             HStack(spacing: 8) {
                 Text(article.publishedAt, format: .dateTime.month(.abbreviated).day())
                 Text("·")
-                Text("\(article.estimatedReadingMinutes) min read")
+                Text(article.durationPhrase)
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)

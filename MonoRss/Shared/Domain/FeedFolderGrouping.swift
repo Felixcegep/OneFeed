@@ -27,11 +27,41 @@ struct FolderArticleGroup: Identifiable {
     var name: String { folderID.title }
 }
 
+struct FolderSummary: Identifiable {
+    var id: FeedFolderID { folderID }
+    let folderID: FeedFolderID
+    let unreadCount: Int
+    let feedCount: Int
+    var name: String { folderID.title }
+}
+
 enum FeedFolderGrouping {
     static func openArticles(from articles: [Article]) -> [Article] {
         articles
             .filter { $0.state == .queued || $0.state == .current }
             .sorted { $0.publishedAt > $1.publishedAt }
+    }
+
+    static func todayArticles(from articles: [Article], calendar: Calendar = .current) -> [Article] {
+        openArticles(from: articles).filter { calendar.isDateInToday($0.publishedAt) }
+    }
+
+    static func savedArticles(from articles: [Article]) -> [Article] {
+        articles
+            .filter { $0.state == .saved }
+            .sorted { ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt) }
+    }
+
+    static func folderSummaries(feeds: [Feed], articles: [Article]) -> [FolderSummary] {
+        let open = openArticles(from: articles)
+        return groups(from: feeds).map { group in
+            let feedIDs = Set(group.feeds.map(\.id))
+            let unreadCount = open.filter { article in
+                guard let id = article.feed?.id else { return group.folderID == .unfiled }
+                return feedIDs.contains(id)
+            }.count
+            return FolderSummary(folderID: group.folderID, unreadCount: unreadCount, feedCount: group.feeds.count)
+        }
     }
 
     static func folderArticleGroups(from articles: [Article]) -> [FolderArticleGroup] {

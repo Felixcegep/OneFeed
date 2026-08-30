@@ -1,122 +1,174 @@
 import SwiftData
 import SwiftUI
 
+enum FeedBrowseDestination: Hashable {
+    case today
+    case unread
+    case saved
+    case folder(FeedFolderID)
+
+    var title: String {
+        switch self {
+        case .today: String(localized: "Today")
+        case .unread: String(localized: "All Unread")
+        case .saved: String(localized: "Saved")
+        case .folder(let id): id.title
+        }
+    }
+}
+
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var articles: [Article]
+    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
-    @State private var selectedArticle: Article?
+    @State private var smartFeedsExpanded = true
+    @State private var foldersExpanded = true
 
-    private var groups: [FolderArticleGroup] {
-        FeedFolderGrouping.folderArticleGroups(from: articles)
+    private var unread: [Article] { FeedFolderGrouping.openArticles(from: articles) }
+    private var today: [Article] { FeedFolderGrouping.todayArticles(from: articles) }
+    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: articles) }
+    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: articles) }
+    private var folderSectionTitle: String {
+        accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
+            ? String(localized: "FreshRSS")
+            : String(localized: "Folders")
     }
 
     var body: some View {
-        Group {
-            if groups.isEmpty {
-                EmptyLibraryState(
-                    title: "No folders yet",
-                    systemImage: "folder",
-                    description: "Stories group here by FreshRSS folder, or Unfiled if a source has none."
-                )
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 28) {
-                        ForEach(groups) { group in
-                            folderSection(group)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 28) {
+                directorySection("Smart Feeds", expanded: $smartFeedsExpanded) {
+                    directoryLink(.today, systemImage: "sun.max", count: today.count)
+                    directoryLink(.unread, systemImage: "circle", count: unread.count)
+                    directoryLink(.saved, systemImage: "bookmark", count: saved.count)
+                }
+                directorySection(folderSectionTitle, expanded: $foldersExpanded) {
+                    if summaries.isEmpty {
+                        Text("Folders appear here after you add sources.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 16)
+                    } else {
+                        ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
+                            NavigationLink(value: FeedBrowseDestination.folder(summary.folderID)) {
+                                FeedDirectoryRow(
+                                    title: summary.name,
+                                    swatchName: summary.name,
+                                    count: summary.unreadCount
+                                )
+                            }
+                            .buttonStyle(DirectoryRowButtonStyle())
+                            .accessibilityIdentifier("folder-\(summary.name)")
+                            .accessibilityHint("Opens unread stories in this folder")
+                            if index < summaries.count - 1 { rowDivider }
                         }
                     }
-                    .padding(.vertical, 16)
                 }
             }
+            .padding(.horizontal, OneFeedTheme.pagePadding)
+            .padding(.vertical, 12)
         }
         .background(OneFeedTheme.grouped.ignoresSafeArea())
-        .navigationTitle("Folders")
+        .navigationTitle("Feeds")
+        .navigationSubtitle(refresh.statusText)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task { await refresh.refresh(in: modelContext) }
                 } label: {
-                    if refresh.isRefreshing { ProgressView() } else { Image(systemName: "arrow.clockwise") }
+                    if refresh.isRefreshing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
                 }
+                .disabled(refresh.isRefreshing)
                 .accessibilityLabel("Refresh")
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
-        .navigationDestination(for: FeedFolderID.self) { folderID in
-            FolderArticlesView(folderID: folderID)
+        .task { refresh.adoptLatestFetch(from: feeds) }
+        .navigationDestination(for: FeedBrowseDestination.self) { destination in
+            ArticleCollectionView(destination: destination)
         }
-        .fullScreenCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { state in
-                selectedArticle = nil
-                ArticleActions.apply(state, to: article, in: modelContext)
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { refresh.presentedError != nil },
+            set: { if !$0 { refresh.presentedError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(refresh.presentedError ?? "")
+        }
+    }
+
+    private func directorySection<Content: View>(
+        _ title: String,
+        expanded: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                    expanded.wrappedValue.toggle()
+                }
+            } label: {
+                OneFeedSectionLabel(title: title, expanded: expanded.wrappedValue)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(expanded.wrappedValue ? "Collapses this section" : "Expands this section")
+
+            if expanded.wrappedValue {
+                OneFeedGroupCard { content() }
             }
         }
     }
 
-    private func folderSection(_ group: FolderArticleGroup) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            NavigationLink(value: group.folderID) {
-                HStack(spacing: 10) {
-                    FolderSwatch(name: group.name)
-                    Text(group.name)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text("\(group.articles.count)")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(OneFeedTheme.secondarySurface, in: Capsule())
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, OneFeedTheme.pagePadding)
-            .accessibilityIdentifier("folder-\(group.name)")
-            .accessibilityHint("Opens all articles in this folder")
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 12) {
-                    ForEach(group.articles.prefix(12)) { article in
-                        Button { selectedArticle = article } label: {
-                            ArticleCard(article: article, compact: true)
-                                .frame(width: 260)
-                        }
-                        .buttonStyle(.plain)
-                        .articleActions(for: article, in: modelContext)
-                    }
-                }
-                .padding(.horizontal, OneFeedTheme.pagePadding)
-                .padding(.bottom, 4)
-            }
-            .scrollClipDisabled()
+    @ViewBuilder
+    private func directoryLink(_ destination: FeedBrowseDestination, systemImage: String, count: Int) -> some View {
+        NavigationLink(value: destination) {
+            FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
+        .buttonStyle(DirectoryRowButtonStyle())
+        if destination != .saved { rowDivider }
+    }
+
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .frame(height: 1)
+            .padding(.leading, 60)
     }
 }
 
-struct FolderArticlesView: View {
+struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
-    let folderID: FeedFolderID
+    let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
 
     private var items: [Article] {
-        FeedFolderGrouping.folderArticleGroups(from: articles)
-            .first(where: { $0.folderID == folderID })?
-            .articles ?? []
+        switch destination {
+        case .today: FeedFolderGrouping.todayArticles(from: articles)
+        case .unread: FeedFolderGrouping.openArticles(from: articles)
+        case .saved: FeedFolderGrouping.savedArticles(from: articles)
+        case .folder(let folderID):
+            FeedFolderGrouping.folderArticleGroups(from: articles)
+                .first(where: { $0.folderID == folderID })?
+                .articles ?? []
+        }
     }
 
     var body: some View {
         Group {
             if items.isEmpty {
                 EmptyLibraryState(
-                    title: "Caught up",
-                    systemImage: "checkmark.circle",
-                    description: "No unread stories in this folder."
+                    title: emptyTitle,
+                    systemImage: emptyImage,
+                    description: emptyDescription
                 )
             } else {
                 ScrollView {
@@ -135,13 +187,40 @@ struct FolderArticlesView: View {
             }
         }
         .background(OneFeedTheme.grouped.ignoresSafeArea())
-        .navigationTitle(folderID.title)
+        .navigationTitle(destination.title)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
                 ArticleActions.apply(state, to: article, in: modelContext)
             }
+        }
+    }
+
+    private var emptyTitle: String {
+        switch destination {
+        case .today: "Nothing today"
+        case .unread: "You're caught up"
+        case .saved: "Nothing saved"
+        case .folder: "Caught up"
+        }
+    }
+
+    private var emptyImage: String {
+        switch destination {
+        case .today: "sun.max"
+        case .unread: "checkmark.circle"
+        case .saved: "bookmark"
+        case .folder: "checkmark.circle"
+        }
+    }
+
+    private var emptyDescription: String {
+        switch destination {
+        case .today: "Stories published today will collect here."
+        case .unread: "New stories from your sources will land here."
+        case .saved: "Save an article and it will wait here."
+        case .folder: "No unread stories in this folder."
         }
     }
 }

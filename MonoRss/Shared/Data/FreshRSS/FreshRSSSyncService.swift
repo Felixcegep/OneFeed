@@ -7,6 +7,9 @@ protocol FreshRSSSyncing: AnyObject {
     func disconnect(account: SyncAccount, in context: ModelContext) async throws
     func sync(account: SyncAccount, in context: ModelContext) async throws
     func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext)
+    func addSubscription(from input: String, in context: ModelContext) async throws -> Feed
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws
+    func subscribeLocalFeeds(in context: ModelContext) async throws
 }
 
 @MainActor
@@ -104,6 +107,56 @@ final class FreshRSSSyncService {
         try? context.save()
     }
 
+    func addSubscription(from input: String, in context: ModelContext) async throws -> Feed {
+        guard let account = try enabledAccount(in: context) else { throw FreshRSSSyncError.missingCredentials }
+        guard let url = FeedService.normalizedURL(from: input) else { throw FeedServiceError.invalidAddress }
+        let (client, token) = try await authorizedClient(for: account)
+        _ = try await client.quickAdd(url: url.absoluteString, authToken: token)
+        try await sync(account: account, in: context)
+        let feeds = try context.fetch(FetchDescriptor<Feed>())
+        if let match = feeds.first(where: { $0.feedURL.absoluteString == url.absoluteString }) {
+            return match
+        }
+        throw FreshRSSSyncError.invalidSubscriptionURL
+    }
+
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws {
+        if let remoteID = feed.remoteID, let account = try enabledAccount(in: context) {
+            let (client, token) = try await authorizedClient(for: account)
+            try await client.unsubscribe(streamID: remoteID, authToken: token)
+        }
+        context.delete(feed)
+        try context.save()
+    }
+
+    func subscribeLocalFeeds(in context: ModelContext) async throws {
+        guard let account = try enabledAccount(in: context) else { return }
+        let (client, token) = try await authorizedClient(for: account)
+        let locals = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.remoteID == nil }))
+        for feed in locals {
+            _ = try await client.quickAdd(url: feed.feedURL.absoluteString, authToken: token)
+        }
+        if !locals.isEmpty {
+            try await sync(account: account, in: context)
+        }
+    }
+
+    private func enabledAccount(in context: ModelContext) throws -> SyncAccount? {
+        let freshRSS = SyncProvider.freshRSS.rawValue
+        return try context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == freshRSS })).first(where: \.isEnabled)
+    }
+
+    private func authorizedClient(for account: SyncAccount) async throws -> (any FreshRSSAPI, String) {
+        guard let serverURL = account.serverURL, let username = account.username,
+              let credentials = try await credentialStore.load(for: account.id) else {
+            throw FreshRSSSyncError.missingCredentials
+        }
+        let configuration = try FreshRSSConfiguration(baseURL: serverURL, username: username)
+        let client = clientFactory(configuration)
+        let token = try await client.login(credentials: credentials).authToken
+        return (client, token)
+    }
+
     private func upsert(subscription: FreshRSSSubscription, in context: ModelContext) throws -> Feed {
         let remoteID = subscription.id
         if let feed = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.remoteID == remoteID })).first {
@@ -111,6 +164,7 @@ final class FreshRSSSyncService {
             feed.websiteURL = subscription.htmlURL
             if let feedURL = subscription.resolvedFeedURL { feed.feedURL = feedURL }
             feed.folderName = subscription.folderName
+            if let kind = subscription.contentType { feed.contentKind = kind }
             return feed
         }
         guard let feedURL = subscription.resolvedFeedURL else { throw FreshRSSSyncError.invalidSubscriptionURL }
@@ -119,7 +173,8 @@ final class FreshRSSSyncService {
             websiteURL: subscription.htmlURL,
             feedURL: feedURL,
             remoteID: subscription.id,
-            folderName: subscription.folderName
+            folderName: subscription.folderName,
+            contentKind: subscription.contentType ?? "article"
         )
         context.insert(feed)
         return feed
@@ -138,9 +193,15 @@ final class FreshRSSSyncService {
         article.publishedAt = snapshot.publishedAt ?? article.publishedAt
         article.summary = snapshot.summary
         article.contentHTML = snapshot.contentHTML
-        article.estimatedReadingMinutes = Self.readingMinutes(for: snapshot.contentHTML ?? snapshot.summary)
+        if let minutes = snapshot.consumeMinutes, minutes > 0 {
+            article.estimatedReadingMinutes = minutes
+        } else {
+            article.estimatedReadingMinutes = Self.readingMinutes(for: snapshot.contentHTML ?? snapshot.summary)
+        }
         article.remoteID = snapshot.remoteID
         article.isRemoteStarred = snapshot.isStarred
+        article.contentKind = snapshot.contentKind
+        article.durationSeconds = snapshot.durationSeconds ?? 0
         article.feed = feed
         if article.state != .skipped && article.state != .current {
             article.state = snapshot.isStarred ? .saved : snapshot.isRead ? .read : .queued
@@ -161,7 +222,9 @@ final class FreshRSSSyncService {
                 case .markRead: try await client.markRead(itemID: mutation.remoteArticleID, authToken: token)
                 case .markUnread: try await client.markUnread(itemID: mutation.remoteArticleID, authToken: token)
                 case .star: try await client.setStarred(itemID: mutation.remoteArticleID, authToken: token, starred: true)
-                case .unstar: try await client.setStarred(itemID: mutation.remoteArticleID, authToken: token, starred: false)
+                case .unstar:
+                    try await client.setStarred(itemID: mutation.remoteArticleID, authToken: token, starred: false)
+                    try await client.setReadLater(itemID: mutation.remoteArticleID, authToken: token, readLater: false)
                 case nil: break
                 }
             } catch {

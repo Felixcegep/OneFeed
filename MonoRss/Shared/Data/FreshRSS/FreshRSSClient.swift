@@ -15,6 +15,9 @@ nonisolated public protocol FreshRSSAPI: Sendable {
     func markRead(itemID: String, authToken: String) async throws
     func markUnread(itemID: String, authToken: String) async throws
     func setStarred(itemID: String, authToken: String, starred: Bool) async throws
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse
+    func unsubscribe(streamID: String, authToken: String) async throws
 }
 
 public actor FreshRSSClient: FreshRSSAPI {
@@ -82,16 +85,16 @@ public actor FreshRSSClient: FreshRSSAPI {
 
     public func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse {
         guard !itemIDs.isEmpty else { return FreshRSSStreamContentsResponse(items: []) }
-        var request = authorizedGET(path: "api/greader.php/reader/api/0/stream/items/contents", token: authToken,
-                                    query: [("output", "json")])
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.httpBody = formEncoded(itemIDs.map { ("i", $0) })
+        let mutationToken = try await actionToken(authToken: authToken)
+        var request = authorizedPOST(path: "api/greader.php/reader/api/0/stream/items/contents", token: authToken)
+        var fields: [(String, String)] = [("output", "json"), ("T", mutationToken)]
+        fields.append(contentsOf: itemIDs.map { ("i", $0) })
+        request.httpBody = formEncoded(fields)
         return try await decode(FreshRSSStreamContentsResponse.self, request: request)
     }
 
-    /// Google Reader stream contents. tiny-rss implements this GET and returns 401
-    /// for FreshRSS's `stream/items/contents` POST, so sync must use this path.
+    /// Google Reader stream contents. tiny-rss and FreshRSS both implement this GET
+    /// and honor `n` / `c` for paging.
     public func streamContents(streamID: String, authToken: String, unreadOnly: Bool = false,
                                limit: Int = 1_000, continuation: String? = nil) async throws -> FreshRSSStreamContentsResponse {
         var query: [(String, String)] = [
@@ -122,6 +125,32 @@ public actor FreshRSSClient: FreshRSSAPI {
         } else {
             try await editTag(itemID: itemID, token: authToken, remove: FreshRSSLabel.starred)
         }
+    }
+
+    public func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {
+        if readLater {
+            try await editTag(itemID: itemID, token: authToken, add: FreshRSSLabel.readLater)
+        } else {
+            try await editTag(itemID: itemID, token: authToken, remove: FreshRSSLabel.readLater)
+        }
+    }
+
+    public func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        let mutationToken = try await actionToken(authToken: authToken)
+        var request = authorizedPOST(path: "api/greader.php/reader/api/0/subscription/quickadd", token: authToken)
+        request.httpBody = formEncoded([("T", mutationToken), ("quickadd", url)])
+        return try await decode(FreshRSSQuickAddResponse.self, request: request)
+    }
+
+    public func unsubscribe(streamID: String, authToken: String) async throws {
+        let mutationToken = try await actionToken(authToken: authToken)
+        var request = authorizedPOST(path: "api/greader.php/reader/api/0/subscription/edit", token: authToken)
+        request.httpBody = formEncoded([
+            ("T", mutationToken),
+            ("ac", "unsubscribe"),
+            ("s", streamID)
+        ])
+        _ = try await send(request)
     }
 
     /// FreshRSS requires a short action token (`T`) for mutating endpoints.

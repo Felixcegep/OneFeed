@@ -56,7 +56,12 @@ final class SettingsViewModel {
             let count = try OPMLService().importDocument(Data(contentsOf: url), in: context)
             statusMessage = "Imported \(count) source\(count == 1 ? "" : "s"). Updating…"
             reload()
-            Task { await refreshImportedSources(importedCount: count) }
+            Task {
+                if freshRSS != nil {
+                    try? await freshRSSService.subscribeLocalFeeds(in: context)
+                }
+                await refreshImportedSources(importedCount: count)
+            }
         } catch { statusMessage = error.localizedDescription }
     }
 

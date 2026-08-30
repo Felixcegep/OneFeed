@@ -35,8 +35,8 @@ final class MonoRssUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Recent"].waitForExistence(timeout: 5))
         capture("01-Recent", app: app)
 
-        app.tabBars.buttons["Folders"].tap()
-        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 3))
+        app.tabBars.buttons["Feeds"].tap()
+        XCTAssertTrue(app.navigationBars["Feeds"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Security"].exists)
         capture("02-Folders", app: app)

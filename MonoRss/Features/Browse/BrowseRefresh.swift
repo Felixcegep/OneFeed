@@ -8,7 +8,14 @@ final class BrowseRefresh {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
     private(set) var isRefreshing = false
+    private(set) var lastRefreshedAt: Date?
     var presentedError: String?
+
+    var statusText: String {
+        if isRefreshing { return "Updating…" }
+        guard let lastRefreshedAt else { return "Pull to update" }
+        return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
+    }
 
     init() {
         self.feedService = FeedService()
@@ -34,5 +41,11 @@ final class BrowseRefresh {
             do { try await freshRSSService.sync(account: account, in: context) } catch { refreshError = refreshError ?? error }
         }
         if let refreshError { presentedError = refreshError.localizedDescription }
+        lastRefreshedAt = .now
+    }
+
+    func adoptLatestFetch(from feeds: [Feed]) {
+        guard lastRefreshedAt == nil else { return }
+        lastRefreshedAt = feeds.compactMap(\.lastFetchedAt).max()
     }
 }

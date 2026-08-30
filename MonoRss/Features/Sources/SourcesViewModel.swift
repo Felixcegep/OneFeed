@@ -29,18 +29,34 @@ final class SourcesViewModel {
 @Observable
 final class AddSourceViewModel {
     private let feedService: any FeedRepository
+    private let freshRSSService: any FreshRSSSyncing
     var address = ""
     private(set) var isAdding = false
     var presentedError: String?
 
-    init() { feedService = FeedService() }
-    init(feedService: any FeedRepository) { self.feedService = feedService }
+    init() {
+        feedService = FeedService()
+        freshRSSService = FreshRSSSyncService()
+    }
+    init(feedService: any FeedRepository, freshRSSService: any FreshRSSSyncing) {
+        self.feedService = feedService
+        self.freshRSSService = freshRSSService
+    }
 
     func add(in context: ModelContext) async -> Bool {
         guard !isAdding else { return false }
         isAdding = true
         presentedError = nil
-        do { _ = try await feedService.addSource(from: address, in: context); return true }
+        do {
+            let freshRSS = SyncProvider.freshRSS.rawValue
+            let account = try context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == freshRSS })).first
+            if account?.isEnabled == true {
+                _ = try await freshRSSService.addSubscription(from: address, in: context)
+            } else {
+                _ = try await feedService.addSource(from: address, in: context)
+            }
+            return true
+        }
         catch { presentedError = error.localizedDescription; isAdding = false; return false }
     }
 }
@@ -50,14 +66,28 @@ final class AddSourceViewModel {
 final class SourceDetailViewModel {
     let feed: Feed
     private let context: ModelContext
+    private let freshRSSService: any FreshRSSSyncing
     var isConfirmingRemoval = false
+    var presentedError: String?
 
-    init(feed: Feed, context: ModelContext) { self.feed = feed; self.context = context }
+    init(feed: Feed, context: ModelContext) {
+        self.feed = feed
+        self.context = context
+        self.freshRSSService = FreshRSSSyncService()
+    }
     var isEnabled: Bool {
         get { feed.isEnabled }
         set { feed.isEnabled = newValue; try? context.save() }
     }
-    func remove() { context.delete(feed); try? context.save() }
+    func remove() async {
+        do {
+            try await freshRSSService.removeSubscription(feed, in: context)
+        } catch {
+            presentedError = error.localizedDescription
+            context.delete(feed)
+            try? context.save()
+        }
+    }
 
     var recentArticles: [Article] {
         feed.articles

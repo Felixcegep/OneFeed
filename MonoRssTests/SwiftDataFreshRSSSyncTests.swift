@@ -14,6 +14,11 @@ private actor SwiftDataSyncAPI: FreshRSSAPI {
     func markRead(itemID: String, authToken: String) async throws { mutations.append((itemID, .markRead)) }
     func markUnread(itemID: String, authToken: String) async throws { mutations.append((itemID, .markUnread)) }
     func setStarred(itemID: String, authToken: String, starred: Bool) async throws { mutations.append((itemID, starred ? .star : .unstar)) }
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {}
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        .init(numResults: 1, query: url, streamID: "feed/1", streamName: "Example")
+    }
+    func unsubscribe(streamID: String, authToken: String) async throws {}
     func recordedMutations() -> [(String, FreshRSSMutationKind)] { mutations }
 }
 
@@ -123,6 +128,23 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(articles.map(\.remoteID) == ["item-1", "item-2"])
     }
 
+    @Test func syncUsesServerConsumeMinutesForYouTube() async throws {
+        let context = try context()
+        let credentials = InMemoryFreshRSSCredentialStore()
+        let api = YouTubeSyncAPI()
+        let account = SyncAccount(provider: .freshRSS, serverURL: URL(string: "http://rss.local")!, username: "felix")
+        context.insert(account)
+        await credentials.save(try FreshRSSCredentials(username: "felix", password: "12345"), for: account.id)
+
+        try await FreshRSSSyncService(credentialStore: credentials, clientFactory: { _ in api }).sync(account: account, in: context)
+
+        let article = try #require(context.fetch(FetchDescriptor<Article>()).first)
+        #expect(article.contentKind == "youtube")
+        #expect(article.estimatedReadingMinutes == 18)
+        #expect(article.durationSeconds == 1080)
+        #expect(article.state == .saved)
+    }
+
     @Test func backgroundRefreshSyncsLocalFeedsAndFreshRSS() async throws {
         let context = try context()
         let feeds = RecordingFeedRepository()
@@ -134,6 +156,41 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(feeds.refreshed)
         #expect(sync.synced)
     }
+}
+
+private actor YouTubeSyncAPI: FreshRSSAPI {
+    func login(credentials: FreshRSSCredentials) async throws -> FreshRSSAuthResponse { .init(authToken: "token") }
+    func subscriptions(authToken: String) async throws -> FreshRSSSubscriptionResponse {
+        .init(subscriptions: [.init(
+            id: "feed/3",
+            title: "Talks",
+            feedURL: URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=UCtest"),
+            htmlURL: URL(string: "https://www.youtube.com"),
+            contentType: "youtube"
+        )])
+    }
+    func itemIDs(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamItemIDsResponse {
+        .init(itemRefs: [])
+    }
+    func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse { .init(items: []) }
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse {
+        .init(items: [FreshRSSItem(
+            id: "item-yt",
+            title: "Caches",
+            categories: [FreshRSSLabel.readLater],
+            contentType: "youtube",
+            consumeMinutes: 18,
+            durationSeconds: 1080
+        )])
+    }
+    func markRead(itemID: String, authToken: String) async throws {}
+    func markUnread(itemID: String, authToken: String) async throws {}
+    func setStarred(itemID: String, authToken: String, starred: Bool) async throws {}
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {}
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        .init(numResults: 1, query: url, streamID: "feed/3")
+    }
+    func unsubscribe(streamID: String, authToken: String) async throws {}
 }
 
 private actor PagingSyncAPI: FreshRSSAPI {
@@ -159,6 +216,11 @@ private actor PagingSyncAPI: FreshRSSAPI {
     func markRead(itemID: String, authToken: String) async throws {}
     func markUnread(itemID: String, authToken: String) async throws {}
     func setStarred(itemID: String, authToken: String, starred: Bool) async throws {}
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {}
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        .init(numResults: 1, query: url, streamID: "feed/1")
+    }
+    func unsubscribe(streamID: String, authToken: String) async throws {}
     func recordedPages() -> [String?] { pages }
 }
 
@@ -181,4 +243,9 @@ private final class RecordingFreshRSSService: FreshRSSSyncing {
     func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
     func sync(account: SyncAccount, in context: ModelContext) async throws { synced = true }
     func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
+    func addSubscription(from input: String, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!)
+    }
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws { context.delete(feed) }
+    func subscribeLocalFeeds(in context: ModelContext) async throws {}
 }

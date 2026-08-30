@@ -14,6 +14,8 @@ final class Feed {
     var remoteID: String?
     /// GReader/FreshRSS folder label, for example `Philosophy`. Nil means unfiled.
     var folderName: String?
+    /// tiny-rss `contentType`: article, youtube, music, podcast.
+    var contentKind: String = "article"
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article] = []
@@ -28,7 +30,8 @@ final class Feed {
         etag: String? = nil,
         lastModified: String? = nil,
         remoteID: String? = nil,
-        folderName: String? = nil
+        folderName: String? = nil,
+        contentKind: String = "article"
     ) {
         self.id = id
         self.title = title
@@ -40,5 +43,6 @@ final class Feed {
         self.lastModified = lastModified
         self.remoteID = remoteID
         self.folderName = folderName
+        self.contentKind = contentKind
     }
 }

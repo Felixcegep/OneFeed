@@ -91,7 +91,9 @@ nonisolated public struct FreshRSSMutationService: Sendable {
                 case .markRead: try await api.markRead(itemID: mutation.itemID, authToken: authToken)
                 case .markUnread: try await api.markUnread(itemID: mutation.itemID, authToken: authToken)
                 case .star: try await api.setStarred(itemID: mutation.itemID, authToken: authToken, starred: true)
-                case .unstar: try await api.setStarred(itemID: mutation.itemID, authToken: authToken, starred: false)
+                case .unstar:
+                    try await api.setStarred(itemID: mutation.itemID, authToken: authToken, starred: false)
+                    try await api.setReadLater(itemID: mutation.itemID, authToken: authToken, readLater: false)
                 }
                 try await store.remove(mutation)
                 applied += 1

@@ -40,6 +40,12 @@ private actor RecordingMutationAPI: FreshRSSAPI {
         try record(itemID: itemID, kind: starred ? .star : .unstar)
     }
 
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {}
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        FreshRSSQuickAddResponse(numResults: 1, query: url, streamID: "feed/1", streamName: url)
+    }
+    func unsubscribe(streamID: String, authToken: String) async throws {}
+
     private func record(itemID: String, kind: FreshRSSMutationKind) throws {
         calls.append((itemID, kind))
         if shouldFail { throw Failure.unavailable }

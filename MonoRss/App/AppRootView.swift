@@ -11,7 +11,7 @@ struct AppRootView: View {
                     RecentView()
                 }
             }
-            Tab("Folders", systemImage: "folder", value: .folders) {
+            Tab("Feeds", systemImage: "folder", value: .folders) {
                 NavigationStack {
                     FoldersView()
                 }

@@ -160,7 +160,7 @@ private struct SourceDetailView: View {
         .confirmationDialog("Remove this source and its locally stored articles?", isPresented: $viewModel.isConfirmingRemoval, titleVisibility: .visible) {
             Button("Remove Source", role: .destructive) {
                 dismiss()
-                Task { @MainActor in viewModel.remove() }
+                Task { @MainActor in await viewModel.remove() }
             }
         }
     }

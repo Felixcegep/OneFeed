@@ -105,4 +105,16 @@ struct FeedAndFreshRSSDomainTests {
         #expect(groups[0].articles.map(\.title) == ["New", "Old"])
         #expect(groups[1].articles.map(\.title) == ["Essay"])
     }
+
+    @Test func folderSummariesIncludeEmptyFoldersAndUnreadCounts() {
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let empty = Feed(title: "Quiet", feedURL: URL(string: "https://e.test/rss")!, folderName: "Quiet")
+        let unread = Article(guid: "1", title: "New", publishedAt: .now, state: .queued, feed: development)
+        let read = Article(guid: "2", title: "Old", publishedAt: .now, state: .read, feed: empty)
+
+        let summaries = FeedFolderGrouping.folderSummaries(feeds: [development, empty], articles: [unread, read])
+        #expect(summaries.map(\.name) == ["Development", "Quiet"])
+        #expect(summaries[0].unreadCount == 1)
+        #expect(summaries[1].unreadCount == 0)
+    }
 }

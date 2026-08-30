@@ -35,7 +35,7 @@ final class ReaderViewModel {
         .source { font: 600 \(sourceSize)px/1.2 -apple-system; letter-spacing: 1.1px; text-transform: uppercase; opacity: .56; }
         h1 { font: 650 \(titleSize)px/1.12 -apple-system; letter-spacing: -.8px; margin: 16px 0 12px; } .meta { font: \(metaSize)px/1.35 -apple-system; opacity: .6; margin-bottom: 32px; }
         img, video, iframe { max-width: 100%; height: auto; } a { color: inherit; text-decoration-thickness: 1px; } pre { overflow-x: auto; } blockquote { margin-left: 0; padding-left: 18px; border-left: 2px solid color-mix(in srgb, CanvasText 25%, transparent); }
-        </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.estimatedReadingMinutes) min read</div>\(body)</body></html>
+        </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
         """
     }
 

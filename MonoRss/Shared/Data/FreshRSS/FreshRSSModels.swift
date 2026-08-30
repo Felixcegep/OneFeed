@@ -25,14 +25,16 @@ nonisolated public struct FreshRSSSubscription: Codable, Sendable, Equatable, Id
     public let htmlURL: URL?
     public let iconURL: URL?
     public let categories: [FreshRSSFolder]
+    public let contentType: String?
 
-    public init(id: String, title: String, feedURL: URL? = nil, htmlURL: URL? = nil, iconURL: URL? = nil, categories: [FreshRSSFolder] = []) {
+    public init(id: String, title: String, feedURL: URL? = nil, htmlURL: URL? = nil, iconURL: URL? = nil, categories: [FreshRSSFolder] = [], contentType: String? = nil) {
         self.id = id
         self.title = title
         self.feedURL = feedURL
         self.htmlURL = htmlURL
         self.iconURL = iconURL
         self.categories = categories
+        self.contentType = contentType
     }
 
     enum CodingKeys: String, CodingKey {
@@ -42,6 +44,7 @@ nonisolated public struct FreshRSSSubscription: Codable, Sendable, Equatable, Id
         case htmlURL = "htmlUrl"
         case iconURL = "iconUrl"
         case categories
+        case contentType
     }
 
     public var folderName: String? {
@@ -122,6 +125,30 @@ nonisolated public struct FreshRSSStreamContentsResponse: Codable, Sendable, Equ
     }
 }
 
+nonisolated public struct FreshRSSQuickAddResponse: Codable, Sendable, Equatable {
+    public let numResults: Int
+    public let query: String?
+    public let streamID: String?
+    public let streamName: String?
+    public let error: String?
+
+    public init(numResults: Int, query: String? = nil, streamID: String? = nil, streamName: String? = nil, error: String? = nil) {
+        self.numResults = numResults
+        self.query = query
+        self.streamID = streamID
+        self.streamName = streamName
+        self.error = error
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case numResults
+        case query
+        case streamID = "streamId"
+        case streamName
+        case error
+    }
+}
+
 nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let crawlTimeMsec: String?
@@ -134,12 +161,18 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
     public let summary: FreshRSSContent?
     public let content: FreshRSSContent?
     public let categories: [String]
+    public let contentType: String?
+    public let consumeMinutes: Int?
+    public let durationSeconds: Int?
+    public let published: Int?
 
     public init(id: String, title: String, crawlTimeMsec: String? = nil,
                 timestampUsec: String? = nil, author: FreshRSSAuthor? = nil,
                 origin: FreshRSSOrigin? = nil, canonical: [FreshRSSLink] = [],
                 alternate: [FreshRSSLink] = [], summary: FreshRSSContent? = nil,
-                content: FreshRSSContent? = nil, categories: [String] = []) {
+                content: FreshRSSContent? = nil, categories: [String] = [],
+                contentType: String? = nil, consumeMinutes: Int? = nil,
+                durationSeconds: Int? = nil, published: Int? = nil) {
         self.id = id
         self.title = title
         self.crawlTimeMsec = crawlTimeMsec
@@ -151,6 +184,10 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
         self.summary = summary
         self.content = content
         self.categories = categories
+        self.contentType = contentType
+        self.consumeMinutes = consumeMinutes
+        self.durationSeconds = durationSeconds
+        self.published = published
     }
 
     public var isRead: Bool {
@@ -159,6 +196,10 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
 
     public var isStarred: Bool {
         categories.contains(FreshRSSLabel.starred)
+    }
+
+    public var isReadLater: Bool {
+        categories.contains(where: { $0.localizedCaseInsensitiveContains("/label/read later") })
     }
 
     public var preferredURL: URL? {
@@ -170,6 +211,9 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
     }
 
     public var publishedAt: Date? {
+        if let published {
+            return Date(timeIntervalSince1970: TimeInterval(published))
+        }
         if let timestampUsec, let microseconds = Double(timestampUsec) {
             return Date(timeIntervalSince1970: microseconds / 1_000_000)
         }
@@ -182,6 +226,7 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
     enum CodingKeys: String, CodingKey {
         case id, crawlTimeMsec, timestampUsec, title, author, origin
         case canonical, alternate, summary, content, categories
+        case contentType, consumeMinutes, durationSeconds, published
     }
 
     public init(from decoder: Decoder) throws {
@@ -203,6 +248,10 @@ nonisolated public struct FreshRSSItem: Codable, Sendable, Equatable, Identifiab
         summary = try container.decodeIfPresent(FreshRSSContent.self, forKey: .summary)
         content = try container.decodeIfPresent(FreshRSSContent.self, forKey: .content)
         categories = try container.decodeIfPresent([String].self, forKey: .categories) ?? []
+        contentType = try container.decodeIfPresent(String.self, forKey: .contentType)
+        consumeMinutes = try container.decodeIfPresent(Int.self, forKey: .consumeMinutes)
+        durationSeconds = try container.decodeIfPresent(Int.self, forKey: .durationSeconds)
+        published = try container.decodeIfPresent(Int.self, forKey: .published)
     }
 }
 
@@ -269,6 +318,7 @@ nonisolated public enum FreshRSSLabel {
     nonisolated public static let read = "user/-/state/com.google/read"
     nonisolated public static let starred = "user/-/state/com.google/starred"
     nonisolated public static let readingList = "user/-/state/com.google/reading-list"
+    nonisolated public static let readLater = "user/-/label/Read Later"
 }
 
 nonisolated public extension FreshRSSSubscription {
@@ -294,8 +344,11 @@ nonisolated public extension FreshRSSItem {
             summary: summary?.html,
             contentHTML: content?.html,
             isRead: isRead,
-            isStarred: isStarred,
-            feedRemoteID: origin?.streamID
+            isStarred: isStarred || isReadLater,
+            feedRemoteID: origin?.streamID,
+            contentKind: contentType ?? "article",
+            consumeMinutes: consumeMinutes,
+            durationSeconds: durationSeconds
         )
     }
 }
@@ -312,4 +365,39 @@ nonisolated public struct FreshRSSArticleSnapshot: Sendable, Equatable {
     public let isRead: Bool
     public let isStarred: Bool
     public let feedRemoteID: String?
+    public let contentKind: String
+    public let consumeMinutes: Int?
+    public let durationSeconds: Int?
+
+    public init(
+        remoteID: String,
+        guid: String,
+        title: String,
+        url: URL?,
+        author: String?,
+        publishedAt: Date?,
+        summary: String?,
+        contentHTML: String?,
+        isRead: Bool,
+        isStarred: Bool,
+        feedRemoteID: String?,
+        contentKind: String = "article",
+        consumeMinutes: Int? = nil,
+        durationSeconds: Int? = nil
+    ) {
+        self.remoteID = remoteID
+        self.guid = guid
+        self.title = title
+        self.url = url
+        self.author = author
+        self.publishedAt = publishedAt
+        self.summary = summary
+        self.contentHTML = contentHTML
+        self.isRead = isRead
+        self.isStarred = isStarred
+        self.feedRemoteID = feedRemoteID
+        self.contentKind = contentKind
+        self.consumeMinutes = consumeMinutes
+        self.durationSeconds = durationSeconds
+    }
 }

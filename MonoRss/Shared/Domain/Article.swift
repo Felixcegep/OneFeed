@@ -25,11 +25,22 @@ final class Article {
     var completedAt: Date?
     var remoteID: String?
     var isRemoteStarred: Bool
+    var contentKind: String = "article"
+    var durationSeconds: Int = 0
     var feed: Feed?
 
     var state: ArticleState {
         get { ArticleState(rawValue: stateRawValue) ?? .queued }
         set { stateRawValue = newValue.rawValue }
+    }
+
+    var durationPhrase: String {
+        switch contentKind {
+        case "youtube", "podcast", "music":
+            return "\(estimatedReadingMinutes) min"
+        default:
+            return "\(estimatedReadingMinutes) min read"
+        }
     }
 
     var readableHTML: String? {
@@ -51,6 +62,8 @@ final class Article {
         state: ArticleState = .queued,
         remoteID: String? = nil,
         isRemoteStarred: Bool = false,
+        contentKind: String = "article",
+        durationSeconds: Int = 0,
         feed: Feed? = nil
     ) {
         self.id = id
@@ -65,6 +78,8 @@ final class Article {
         self.stateRawValue = state.rawValue
         self.remoteID = remoteID
         self.isRemoteStarred = isRemoteStarred
+        self.contentKind = contentKind
+        self.durationSeconds = max(0, durationSeconds)
         self.feed = feed
     }
 }

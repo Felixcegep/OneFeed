@@ -61,7 +61,7 @@ struct ArticleRow: View {
                 Text("·")
                 Text(article.publishedAt, format: .dateTime.month(.abbreviated).day())
                 Text("·")
-                Text("\(article.estimatedReadingMinutes) min")
+                Text(article.durationPhrase)
                 if let status {
                     Spacer(minLength: 8)
                     Text(status)
@@ -96,7 +96,7 @@ struct ArticleCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Text("\(article.estimatedReadingMinutes) min")
+                Text(article.durationPhrase)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.tertiary)
             }
@@ -125,6 +125,101 @@ struct ArticleCard: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens this article")
+    }
+}
+
+struct OneFeedSectionLabel: View {
+    let title: String
+    var expanded: Bool = true
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(expanded ? 0 : -90))
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+struct OneFeedGroupCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(spacing: 0) { content }
+            .background(OneFeedTheme.surface, in: .rect(cornerRadius: OneFeedTheme.cardRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+            }
+    }
+}
+
+struct FeedDirectoryRow: View {
+    let title: String
+    var systemImage: String? = nil
+    var swatchName: String? = nil
+    var count: Int = 0
+
+    var body: some View {
+        HStack(spacing: 14) {
+            leading
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 8)
+            if count > 0 {
+                Text("\(count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(OneFeedTheme.secondarySurface, in: Capsule())
+                    .accessibilityLabel("\(count) unread")
+            }
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if let swatchName {
+            FolderSwatch(name: swatchName)
+                .frame(width: 28, alignment: .center)
+        } else if let systemImage {
+            Image(systemName: systemImage)
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+struct DirectoryRowButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
     }
 }
 

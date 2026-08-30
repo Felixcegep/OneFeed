@@ -73,6 +73,17 @@ struct FreshRSSTests {
         #expect(item.snapshot.url == URL(string: "https://example.test/story"))
     }
 
+    @Test func tinyRSSItemDecodesConsumeMinutesContentTypeAndReadLater() throws {
+        let payload = #"{"id":"tag:google.com,2005:reader/item/000000000000000a","title":"Talk","published":1700000000,"author":"Host","contentType":"youtube","consumeMinutes":18,"durationSeconds":1080,"summary":{"content":"<p>Talk</p>"},"categories":["user/-/state/com.google/reading-list","user/-/label/Read Later"],"origin":{"streamId":"feed/3"},"canonical":[{"href":"https://youtube.com/watch?v=abcdefghijk"}]}"#.data(using: .utf8)!
+        let item = try JSONDecoder().decode(FreshRSSItem.self, from: payload)
+        #expect(item.isReadLater)
+        #expect(item.snapshot.isStarred)
+        #expect(item.snapshot.contentKind == "youtube")
+        #expect(item.snapshot.consumeMinutes == 18)
+        #expect(item.snapshot.durationSeconds == 1080)
+        #expect(item.publishedAt == Date(timeIntervalSince1970: 1_700_000_000))
+    }
+
     @Test func unreadIDsRequestUsesReaderReadExclusionAndAuthorizationHeader() async throws {
         let transport = RecordingFreshRSSTransport(responseData: Data(#"{"itemRefs":[]}"#.utf8))
         let configuration = try FreshRSSConfiguration(baseURL: URL(string: "https://rss.example.test")!, username: "reader")
@@ -109,6 +120,45 @@ struct FreshRSSTests {
         #expect(request?.httpMethod == "GET")
         #expect(request?.url?.path == "/api/greader.php/reader/api/0/stream/contents/feed/1")
         #expect(request?.value(forHTTPHeaderField: "Authorization") == "GoogleLogin auth=token")
+    }
+
+    @Test func streamContentsSendsContinuationAndLimit() async throws {
+        let transport = RecordingFreshRSSTransport(responseData: Data(#"{"items":[]}"#.utf8))
+        let configuration = try FreshRSSConfiguration(baseURL: URL(string: "http://rss.local")!, username: "felix")
+        let client = FreshRSSClient(configuration: configuration, transport: transport)
+        _ = try await client.streamContents(streamID: "feed/1", authToken: "token", unreadOnly: false, limit: 50, continuation: "12")
+        let query = URLComponents(url: try #require(await transport.lastRequest()?.url), resolvingAgainstBaseURL: false)?.queryItems
+        #expect(query?.first(where: { $0.name == "n" })?.value == "50")
+        #expect(query?.first(where: { $0.name == "c" })?.value == "12")
+    }
+
+    @Test func itemContentsSendsActionToken() async throws {
+        let transport = RecordingFreshRSSTransport(responseData: Data(#"{"items":[]}"#.utf8))
+        let configuration = try FreshRSSConfiguration(baseURL: URL(string: "https://rss.example.test")!, username: "reader")
+        let client = FreshRSSClient(configuration: configuration, transport: transport)
+        _ = try await client.itemContents(itemIDs: ["tag:example:item-1"], authToken: "token")
+        let request = await transport.lastRequest()
+        #expect(request?.httpMethod == "POST")
+        #expect(request?.url?.path == "/api/greader.php/reader/api/0/stream/items/contents")
+        let body = String(data: request?.httpBody ?? Data(), encoding: .utf8) ?? ""
+        #expect(body.contains("T=action-token"))
+        #expect(body.contains("i=tag%3Aexample%3Aitem-1"))
+    }
+
+    @Test func quickAddAndUnsubscribeSendActionToken() async throws {
+        let transport = RecordingFreshRSSTransport(responseData: Data(#"{"numResults":1,"query":"https://example.test/rss","streamId":"feed/4","streamName":"Example"}"#.utf8))
+        let configuration = try FreshRSSConfiguration(baseURL: URL(string: "http://rss.local")!, username: "felix")
+        let client = FreshRSSClient(configuration: configuration, transport: transport)
+        let added = try await client.quickAdd(url: "https://example.test/rss", authToken: "token")
+        #expect(added.streamID == "feed/4")
+        var body = String(data: await transport.lastRequest()?.httpBody ?? Data(), encoding: .utf8) ?? ""
+        #expect(body.contains("T=action-token"))
+        #expect(body.contains("quickadd=https%3A%2F%2Fexample.test%2Frss"))
+
+        try await client.unsubscribe(streamID: "feed/4", authToken: "token")
+        body = String(data: await transport.lastRequest()?.httpBody ?? Data(), encoding: .utf8) ?? ""
+        #expect(body.contains("ac=unsubscribe"))
+        #expect(body.contains("s=feed%2F4"))
     }
 
     @Test func mutationFetchesFreshRSSActionTokenAndSendsItInPOSTBody() async throws {
