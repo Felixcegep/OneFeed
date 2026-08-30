@@ -706,7 +706,7 @@
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MonoRssWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MonoRss;
+				INFOPLIST_KEY_CFBundleDisplayName = OneFeed;
 				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -737,7 +737,7 @@
 				DEVELOPMENT_TEAM = M9FC992T46;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MonoRssWidget/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = MonoRss;
+				INFOPLIST_KEY_CFBundleDisplayName = OneFeed;
 				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = (
