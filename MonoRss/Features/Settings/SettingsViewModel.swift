@@ -11,6 +11,7 @@ final class SettingsViewModel {
     private(set) var accounts: [SyncAccount] = []
     private(set) var feeds: [Feed] = []
     private(set) var isSyncing = false
+    let progress = RefreshProgress()
     var isConnectingFreshRSS = false
     var isConfirmingDisconnect = false
     var isImportingOPML = false
@@ -39,15 +40,39 @@ final class SettingsViewModel {
     func sync() async {
         guard let context, let account = freshRSS else { return }
         isSyncing = true
-        defer { isSyncing = false }
-        do { try await freshRSSService.sync(account: account, in: context); statusMessage = "FreshRSS is up to date."; reload() }
-        catch { statusMessage = error.localizedDescription }
+        defer {
+            progress.finish()
+            isSyncing = false
+        }
+        do { try await freshRSSService.sync(account: account, in: context, progress: progress); statusMessage = "FreshRSS is up to date."; reload() }
+        catch { statusMessage = RefreshFailure.message(for: error) ?? error.localizedDescription }
     }
     func disconnect() async {
         guard let context, let account = freshRSS else { return }
         do { try await freshRSSService.disconnect(account: account, in: context); statusMessage = "FreshRSS disconnected."; reload() }
         catch { statusMessage = error.localizedDescription }
     }
+    func seedTinyRSSCatalog() {
+        guard let context else { return }
+        do {
+            let result = try FeedSeedService().apply(in: context)
+            UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+            if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
+                statusMessage = "Starter sources are already loaded."
+                reload()
+                return
+            }
+            statusMessage = "Loaded \(result.inserted) starter source\(result.inserted == 1 ? "" : "s"). Updating…"
+            reload()
+            Task {
+                if freshRSS != nil {
+                    try? await freshRSSService.subscribeLocalFeeds(in: context)
+                }
+                await refreshImportedSources(importedCount: result.inserted)
+            }
+        } catch { statusMessage = error.localizedDescription }
+    }
+
     func importOPML(from url: URL) {
         guard let context else { return }
         do {
@@ -68,11 +93,13 @@ final class SettingsViewModel {
     private func refreshImportedSources(importedCount: Int) async {
         guard let context else { return }
         do {
-            try await feedService.refreshAll(in: context)
+            try await feedService.refreshAll(in: context, progress: progress)
+            progress.finish()
             statusMessage = "Imported \(importedCount) source\(importedCount == 1 ? "" : "s")."
             reload()
         } catch {
-            statusMessage = error.localizedDescription
+            progress.finish()
+            statusMessage = RefreshFailure.message(for: error) ?? error.localizedDescription
         }
     }
 }

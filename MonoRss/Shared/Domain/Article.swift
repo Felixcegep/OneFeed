@@ -27,6 +27,10 @@ final class Article {
     var isRemoteStarred: Bool
     var contentKind: String = "article"
     var durationSeconds: Int = 0
+    var imageURL: URL?
+    var videoID: String?
+    var enclosureURL: URL?
+    var enclosureMIME: String?
     var feed: Feed?
 
     var state: ArticleState {
@@ -64,6 +68,10 @@ final class Article {
         isRemoteStarred: Bool = false,
         contentKind: String = "article",
         durationSeconds: Int = 0,
+        imageURL: URL? = nil,
+        videoID: String? = nil,
+        enclosureURL: URL? = nil,
+        enclosureMIME: String? = nil,
         feed: Feed? = nil
     ) {
         self.id = id
@@ -80,6 +88,10 @@ final class Article {
         self.isRemoteStarred = isRemoteStarred
         self.contentKind = contentKind
         self.durationSeconds = max(0, durationSeconds)
+        self.imageURL = imageURL
+        self.videoID = videoID
+        self.enclosureURL = enclosureURL
+        self.enclosureMIME = enclosureMIME
         self.feed = feed
     }
 }

@@ -4,13 +4,11 @@ import SwiftData
 struct CurrentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let onOpenSources: () -> Void
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
-
-    init(onOpenSources: @escaping () -> Void) {
-        self.onOpenSources = onOpenSources
-    }
+    @State private var showingSources = false
+    @State private var savePulse = 0
+    @State private var showingSaveMark = false
 
     private var article: Article? { viewModel.currentArticle }
 
@@ -25,36 +23,63 @@ struct CurrentView: View {
             Group {
                 if let article {
                     articleContent(article)
-                        .transition(.opacity)
+                        .id(article.id)
+                        .transition(OneFeedMotion.cardTransition(reduceMotion: reduceMotion))
                 } else {
                     caughtUp
+                        .transition(.opacity)
                 }
             }
             .padding(.horizontal, OneFeedTheme.pagePadding)
             .padding(.bottom, 8)
+            .animation(reduceMotion ? nil : OneFeedMotion.card, value: article?.id)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let article {
                 articleActions(article)
             }
         }
-        .navigationTitle("Next")
+        .navigationTitle("Today")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshProgressBanner(viewModel.progress)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if viewModel.isRefreshing {
+                    Text(viewModel.progress.countText)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(viewModel.progress.accessibilityText())
+                } else if let progress = viewModel.progressLabel {
+                    Text(progress)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(viewModel.progressAccessibilityLabel ?? progress)
+                }
+            }
+        }
         .task {
             viewModel.configure(with: modelContext)
-            if !ProcessInfo.processInfo.arguments.contains("-uiTesting") { await viewModel.refresh() }
+            if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+                viewModel.startRefreshIfNeeded()
+            }
         }
         .onOpenURL { url in
             guard url.scheme == "onefeed", url.host() == "reader", let article else { return }
             readerArticle = article
         }
         .refreshable { await refresh() }
+        .sheet(isPresented: $showingSources) {
+            NavigationStack {
+                SourcesView()
+            }
+        }
         .fullScreenCover(item: $readerArticle) { article in
             ReaderView(article: article, onFinish: { state in
                 readerArticle = nil
                 transition(article, to: state)
             })
         }
+        .sensoryFeedback(.success, trigger: savePulse)
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
@@ -68,14 +93,18 @@ struct CurrentView: View {
                 .tracking(1.2)
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)
-                .accessibilityAddTraits(.isHeader)
+            if let kindLabel = mediumKindLabel(for: article) {
+                Text(kindLabel)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+            }
             Text(article.title)
                 .font(.largeTitle.weight(.semibold))
                 .tracking(-0.6)
                 .foregroundStyle(.primary)
                 .minimumScaleFactor(0.78)
                 .padding(.top, 14)
-                .accessibilityAddTraits(.isHeader)
             if let excerpt {
                 Text(excerpt)
                     .font(.title3)
@@ -94,6 +123,16 @@ struct CurrentView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private func mediumKindLabel(for article: Article) -> String? {
+        switch article.contentKind {
+        case "youtube": "Video"
+        case "podcast": "Podcast"
+        default: nil
+        }
     }
 
     private func articleActions(_ article: Article) -> some View {
@@ -102,7 +141,7 @@ struct CurrentView: View {
                 .buttonStyle(PrimaryActionStyle())
                 .accessibilityHint("Opens the article reader")
             HStack(spacing: 10) {
-                secondaryAction("Save", image: "bookmark", state: .saved, article: article)
+                saveAction(article)
                 secondaryAction("Skip", image: "forward", state: .skipped, article: article)
                 secondaryAction("Done", image: "checkmark", state: .read, article: article)
             }
@@ -111,6 +150,34 @@ struct CurrentView: View {
         .padding(.top, 10)
         .padding(.bottom, 8)
         .background(OneFeedTheme.page)
+        .overlay(alignment: .top) {
+            if showingSaveMark {
+                OneFeedMarkBurst(size: 22)
+                    .offset(y: -6)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showingSaveMark)
+    }
+
+    private func saveAction(_ article: Article) -> some View {
+        Button {
+            savePulse += 1
+            showingSaveMark = true
+            transition(article, to: .saved)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(420))
+                showingSaveMark = false
+            }
+        } label: {
+            Label("Save", systemImage: "bookmark")
+                .labelStyle(.titleAndIcon)
+                .symbolEffect(.bounce, value: savePulse)
+        }
+        .buttonStyle(DecisionActionStyle())
+        .accessibilityLabel("Save")
+        .accessibilityHint(hint(for: .saved))
     }
 
     private func secondaryAction(_ label: String, image: String, state: ArticleState, article: Article) -> some View {
@@ -136,18 +203,34 @@ struct CurrentView: View {
 
     private var caughtUp: some View {
         ContentUnavailableView {
-            Label("You're caught up.", systemImage: "checkmark.circle")
+            if viewModel.isRefreshing {
+                Label {
+                    Text(viewModel.progress.remainingText.isEmpty ? "Updating…" : viewModel.progress.remainingText)
+                } icon: {
+                    OneFeedMarkPulse(isActive: true, size: 36)
+                }
+            } else {
+                Label("You're caught up.", systemImage: "checkmark.circle")
+            }
         } description: {
-            Text("We'll keep an eye on your sources.")
+            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow gets a new stack.")
         } actions: {
-            Button(viewModel.isRefreshing ? "Refreshing…" : "Refresh") { Task { await viewModel.refresh() } }
+            Button(viewModel.isRefreshing ? viewModel.progress.countText : "Refresh") { Task { await viewModel.refresh() } }
                 .disabled(viewModel.isRefreshing)
-            Button("Add a source") { onOpenSources() }
+                .frame(minHeight: 44)
+            Button("Add a source") { showingSources = true }
+                .frame(minHeight: 44)
         }
     }
 
+    private var caughtUpProgressCopy: String {
+        let detail = viewModel.progress.detailText()
+        if detail.isEmpty { return "Fetching your sources. This can take a minute the first time." }
+        return detail
+    }
+
     private func transition(_ article: Article, to state: ArticleState) {
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.22)) {
+        withAnimation(reduceMotion ? nil : OneFeedMotion.card) {
             viewModel.transition(to: state)
         }
     }

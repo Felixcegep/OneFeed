@@ -140,9 +140,20 @@ private struct SourceDetailView: View {
                 }
             }
             Section {
-                Toggle("Included in Next", isOn: $viewModel.isEnabled)
+                Toggle("Included in Feed", isOn: $viewModel.isEnabled)
+                Toggle("Included in Today", isOn: $viewModel.includeInToday)
+                Toggle("Include videos", isOn: $viewModel.includeVideos)
+                Toggle("Include Shorts", isOn: $viewModel.includeShorts)
             } footer: {
-                Text("When this is off, the source stays in your library but does not enter the current-article queue.")
+                Text("Today is a small daily stack. Videos shorter than 3 minutes are skipped unless you allow Shorts.")
+            }
+            Section {
+                TextField("AI, Sponsored…", text: $viewModel.blockedWords, axis: .vertical)
+                    .lineLimit(2...4)
+            } header: {
+                Text("Blocked words")
+            } footer: {
+                Text("Comma or new-line separated. Matching items never enter Today or Feed.")
             }
             if !viewModel.recentArticles.isEmpty {
                 Section("Recent") {
@@ -166,10 +177,12 @@ private struct SourceDetailView: View {
     }
 }
 
-private struct AddSourceView: View {
+struct AddSourceView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = AddSourceViewModel()
+    @State private var showSuccess = false
 
     var body: some View {
         NavigationStack {
@@ -187,17 +200,35 @@ private struct AddSourceView: View {
                     Section { Text(errorMessage).foregroundStyle(.red) }
                 }
             }
+            .overlay {
+                if showSuccess {
+                    OneFeedMarkBurst(size: 48)
+                        .transition(.opacity)
+                } else if viewModel.isAdding {
+                    OneFeedMarkPulse(isActive: true, size: 36)
+                }
+            }
             .navigationTitle("Add Source")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(viewModel.isAdding ? "Adding…" : "Add") { add() }
-                        .disabled(viewModel.address.isEmpty || viewModel.isAdding)
+                        .disabled(viewModel.address.isEmpty || viewModel.isAdding || showSuccess)
                 }
             }
+            .sensoryFeedback(.success, trigger: showSuccess)
         }
     }
 
-    private func add() { Task { if await viewModel.add(in: modelContext) { dismiss() } } }
+    private func add() {
+        Task {
+            guard await viewModel.add(in: modelContext) else { return }
+            showSuccess = true
+            if !reduceMotion {
+                try? await Task.sleep(for: .milliseconds(420))
+            }
+            dismiss()
+        }
+    }
 }

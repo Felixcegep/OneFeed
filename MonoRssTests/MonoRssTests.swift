@@ -6,8 +6,7 @@ import Testing
 @MainActor
 struct MonoRssTests {
     private func container() throws -> ModelContainer {
-        try ModelContainer(for: Feed.self, Article.self, SyncAccount.self, PendingSyncMutation.self,
-                           configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        try InMemoryStore.makeContainer()
     }
 
     @Test func selectorMaintainsExactlyOneCurrentAndRotatesSource() throws {
@@ -52,4 +51,55 @@ struct MonoRssTests {
         let html = #"<html><head><link rel="alternate" type="application/rss+xml" href="/feed.xml"></head></html>"#
         #expect(FeedService.discoverFeedURL(in: html, relativeTo: URL(string: "https://example.test/blog")!) == URL(string: "https://example.test/feed.xml"))
     }
+
+    @Test func feedServiceSkipsShortYouTubeAndBlockedWords() async throws {
+        let context = ModelContext(try container())
+        let xml = """
+        <rss version="2.0"><channel><title>YT</title>
+        <item><guid>s1</guid><title>Short clip</title><link>https://www.youtube.com/shorts/abc12345678</link></item>
+        <item><guid>a1</guid><title>Nice essay</title><link>https://example.test/one</link><description>hello world</description></item>
+        <item><guid>a2</guid><title>spam headline</title><link>https://example.test/two</link><description>body</description></item>
+        </channel></rss>
+        """
+        let feedURL = URL(string: "https://yt.test/rss")!
+        let feed = Feed(
+            title: "YT",
+            feedURL: feedURL,
+            includeShorts: false,
+            blockedWords: "spam"
+        )
+        context.insert(feed)
+
+        StubFeedURLProtocol.response = (
+            Data(xml.utf8),
+            HTTPURLResponse(url: feedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        )
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubFeedURLProtocol.self]
+        let session = URLSession(configuration: config)
+
+        let service = FeedService(session: session, parser: FeedParser(), youtubeMetadata: YouTubeMetadataService())
+        try await service.refresh(feed, in: context)
+
+        let titles = Set(try context.fetch(FetchDescriptor<Article>()).map(\.title))
+        #expect(titles.contains("Nice essay"))
+        #expect(!titles.contains("Short clip"))
+        #expect(!titles.contains("spam headline"))
+    }
+}
+
+private final class StubFeedURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var response: (Data, URLResponse)?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let client, let response = Self.response else { return }
+        client.urlProtocol(self, didReceive: response.1, cacheStoragePolicy: .notAllowed)
+        client.urlProtocol(self, didLoad: response.0)
+        client.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

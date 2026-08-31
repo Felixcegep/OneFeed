@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		9A31A0C10000000000000001 /* MonoRssWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A31A0C10000000000000003 /* MonoRssWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A1FEEDREAD00000000000003 /* SwiftReadability in Frameworks */ = {isa = PBXBuildFile; productRef = A1FEEDREAD00000000000002 /* SwiftReadability */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +107,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1FEEDREAD00000000000003 /* SwiftReadability in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,6 +179,7 @@
 			);
 			name = MonoRss;
 			packageProductDependencies = (
+				A1FEEDREAD00000000000002 /* SwiftReadability */,
 			);
 			productName = MonoRss;
 			productReference = 4425FA5D30439ECB0053CF66 /* MonoRss.app */;
@@ -286,6 +289,9 @@
 			);
 			mainGroup = 4425FA5430439ECB0053CF66;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A1FEEDREAD00000000000001 /* XCRemoteSwiftPackageReference "swift-readability" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4425FA5E30439ECB0053CF66 /* Products */;
 			projectDirPath = "";
@@ -511,12 +517,10 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MonoRss/Info.plist;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "felix.MonoRss.feed-refresh";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				INFOPLIST_KEY_UIBackgroundModes = fetch;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
@@ -559,12 +563,10 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MonoRss/Info.plist;
-				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "felix.MonoRss.feed-refresh";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				INFOPLIST_KEY_UIBackgroundModes = fetch;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
@@ -806,6 +808,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A1FEEDREAD00000000000001 /* XCRemoteSwiftPackageReference "swift-readability" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/wolfyy970/swift-readability.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.3.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1FEEDREAD00000000000002 /* SwiftReadability */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1FEEDREAD00000000000001 /* XCRemoteSwiftPackageReference "swift-readability" */;
+			productName = SwiftReadability;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4425FA5530439ECB0053CF66 /* Project object */;
 }

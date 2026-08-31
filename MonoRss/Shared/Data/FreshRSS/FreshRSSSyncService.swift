@@ -5,11 +5,17 @@ import SwiftData
 protocol FreshRSSSyncing: AnyObject {
     func connect(serverURL: URL, username: String, password: String, in context: ModelContext) async throws -> SyncAccount
     func disconnect(account: SyncAccount, in context: ModelContext) async throws
-    func sync(account: SyncAccount, in context: ModelContext) async throws
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws
     func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext)
     func addSubscription(from input: String, in context: ModelContext) async throws -> Feed
     func removeSubscription(_ feed: Feed, in context: ModelContext) async throws
     func subscribeLocalFeeds(in context: ModelContext) async throws
+}
+
+extension FreshRSSSyncing {
+    func sync(account: SyncAccount, in context: ModelContext) async throws {
+        try await sync(account: account, in: context, progress: nil)
+    }
 }
 
 @MainActor
@@ -41,7 +47,8 @@ final class FreshRSSSyncService {
         if existing == nil { context.insert(account) }
         try await credentialStore.save(credentials, for: account.id)
         try context.save()
-        try await sync(account: account, in: context)
+        try await sync(account: account, in: context, progress: nil)
+        try await subscribeLocalFeeds(in: context)
         return account
     }
 
@@ -53,7 +60,7 @@ final class FreshRSSSyncService {
         try context.save()
     }
 
-    func sync(account: SyncAccount, in context: ModelContext) async throws {
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress? = nil) async throws {
         guard account.provider == .freshRSS, let serverURL = account.serverURL, let username = account.username,
               let credentials = try await credentialStore.load(for: account.id) else {
             throw FreshRSSSyncError.missingCredentials
@@ -64,10 +71,13 @@ final class FreshRSSSyncService {
             let token = try await client.login(credentials: credentials).authToken
             try await flushMutations(client: client, token: token, in: context)
             let subscriptions = try await client.subscriptions(authToken: token).subscriptions
+            progress?.begin(phase: .sync, total: subscriptions.count)
             for subscription in subscriptions {
+                progress?.startItem(title: subscription.title)
                 let feed = try upsert(subscription: subscription, in: context)
                 var continuation: String?
                 var pages = 0
+                var added = 0
                 repeat {
                     let page = try await client.streamContents(
                         streamID: subscription.id,
@@ -76,11 +86,14 @@ final class FreshRSSSyncService {
                         limit: 1_000,
                         continuation: continuation
                     )
-                    for item in page.items { try upsert(item: item, feed: feed, in: context) }
+                    for item in page.items {
+                        if try upsert(item: item, feed: feed, in: context) { added += 1 }
+                    }
                     continuation = page.continuation
                     pages += 1
                 } while pages < 20 && continuation.map({ !$0.isEmpty }) == true
                 feed.lastFetchedAt = .now
+                progress?.finishItem(newArticles: added)
             }
             account.lastSyncAt = .now
             account.lastSyncError = nil
@@ -137,7 +150,7 @@ final class FreshRSSSyncService {
             _ = try await client.quickAdd(url: feed.feedURL.absoluteString, authToken: token)
         }
         if !locals.isEmpty {
-            try await sync(account: account, in: context)
+            try await sync(account: account, in: context, progress: nil)
         }
     }
 
@@ -180,12 +193,13 @@ final class FreshRSSSyncService {
         return feed
     }
 
-    private func upsert(item: FreshRSSItem, feed: Feed, in context: ModelContext) throws {
+    private func upsert(item: FreshRSSItem, feed: Feed, in context: ModelContext) throws -> Bool {
         let snapshot = item.snapshot
         let remoteID = snapshot.remoteID
         let existing = try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.remoteID == remoteID })).first
         let article = existing ?? Article(guid: snapshot.guid, title: snapshot.title, feed: feed)
-        if existing == nil { context.insert(article) }
+        let isNew = existing == nil
+        if isNew { context.insert(article) }
         article.guid = snapshot.guid
         article.title = snapshot.title
         article.url = snapshot.url
@@ -206,6 +220,7 @@ final class FreshRSSSyncService {
         if article.state != .skipped && article.state != .current {
             article.state = snapshot.isStarred ? .saved : snapshot.isRead ? .read : .queued
         }
+        return isNew
     }
 
     private func flushMutations(client: any FreshRSSAPI, token: String, in context: ModelContext) async throws {

@@ -54,7 +54,9 @@ struct FoldersView: View {
                             .padding(.vertical, 16)
                     } else {
                         ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
-                            NavigationLink(value: FeedBrowseDestination.folder(summary.folderID)) {
+                            NavigationLink {
+                                ArticleCollectionView(destination: .folder(summary.folderID))
+                            } label: {
                                 FeedDirectoryRow(
                                     title: summary.name,
                                     swatchName: summary.name,
@@ -73,15 +75,16 @@ struct FoldersView: View {
             .padding(.vertical, 12)
         }
         .background(OneFeedTheme.grouped.ignoresSafeArea())
-        .navigationTitle("Feeds")
+        .navigationTitle("Folders")
         .navigationSubtitle(refresh.statusText)
+        .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     Task { await refresh.refresh(in: modelContext) }
                 } label: {
                     if refresh.isRefreshing {
-                        ProgressView()
+                        OneFeedMarkPulse(isActive: true, size: 18)
                     } else {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -92,9 +95,6 @@ struct FoldersView: View {
         }
         .refreshable { await refresh.refresh(in: modelContext) }
         .task { refresh.adoptLatestFetch(from: feeds) }
-        .navigationDestination(for: FeedBrowseDestination.self) { destination in
-            ArticleCollectionView(destination: destination)
-        }
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { refresh.presentedError != nil },
             set: { if !$0 { refresh.presentedError = nil } }
@@ -112,7 +112,7 @@ struct FoldersView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : OneFeedMotion.overlay) {
                     expanded.wrappedValue.toggle()
                 }
             } label: {
@@ -129,7 +129,9 @@ struct FoldersView: View {
 
     @ViewBuilder
     private func directoryLink(_ destination: FeedBrowseDestination, systemImage: String, count: Int) -> some View {
-        NavigationLink(value: destination) {
+        NavigationLink {
+            ArticleCollectionView(destination: destination)
+        } label: {
             FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
         .buttonStyle(DirectoryRowButtonStyle())

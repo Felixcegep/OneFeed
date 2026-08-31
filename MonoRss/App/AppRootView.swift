@@ -2,35 +2,23 @@ import SwiftUI
 
 struct AppRootView: View {
     @AppStorage(AppPreferenceKey.completedOnboarding) private var completedOnboarding = false
-    @State private var selectedTab: AppTab = .recent
+    @State private var selectedTab: AppTab = .today
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab("Recent", systemImage: "clock", value: .recent) {
+            Tab("Today", systemImage: "sun.max", value: .today) {
                 NavigationStack {
-                    RecentView()
+                    CurrentView()
                 }
             }
-            Tab("Feeds", systemImage: "folder", value: .folders) {
+            Tab("Feed", systemImage: "list.bullet", value: .feed) {
                 NavigationStack {
-                    FoldersView()
-                }
-            }
-            Tab("Next", systemImage: "text.alignleft", value: .next) {
-                NavigationStack {
-                    CurrentView {
-                        selectedTab = .library
-                    }
+                    FeedStreamView()
                 }
             }
             Tab("Saved", systemImage: "bookmark", value: .saved) {
                 NavigationStack {
                     SavedView()
-                }
-            }
-            Tab("Library", systemImage: "square.grid.2x2", value: .library) {
-                NavigationStack {
-                    LibraryView()
                 }
             }
         }
@@ -42,5 +30,5 @@ struct AppRootView: View {
 }
 
 private enum AppTab: Hashable {
-    case recent, folders, next, saved, library
+    case today, feed, saved
 }

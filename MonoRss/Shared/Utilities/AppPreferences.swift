@@ -31,8 +31,31 @@ enum ReaderTextSize: String, CaseIterable, Identifiable {
     }
 }
 
+enum ArticleRetentionChoice: Int, CaseIterable, Identifiable {
+    case threeDays = 3
+    case sevenDays = 7
+    case fourteenDays = 14
+    case thirtyDays = 30
+    case forever = 0
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .threeDays: "3 days"
+        case .sevenDays: "7 days"
+        case .fourteenDays: "14 days"
+        case .thirtyDays: "30 days"
+        case .forever: "Forever"
+        }
+    }
+}
+
 enum AppPreferenceKey {
     static let completedOnboarding = "completedOnboarding"
     static let readerFont = "readerFont"
     static let readerTextSize = "readerTextSize"
+    static let didSeedTinyRSSCatalog = "didSeedTinyRSSCatalog"
+    static let articleRetentionDays = "articleRetentionDays"
+    static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
 }

@@ -11,10 +11,17 @@ final class MonoRssUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-inMemoryStore"]
         app.launch()
-        XCTAssertTrue(app.navigationBars["Recent"].waitForExistence(timeout: 3))
+
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.tabBars.buttons["Library"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Next"].exists)
+
+        app.tabBars.buttons["Feed"].tap()
+        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].exists)
-        app.tabBars.buttons["Next"].tap()
-        XCTAssertTrue(app.navigationBars["Next"].waitForExistence(timeout: 2))
+
+        app.tabBars.buttons["Today"].tap()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 2))
         app.buttons["Done"].tap()
         XCTAssertTrue(app.staticTexts["Swift concurrency without the noise"].waitForExistence(timeout: 2))
     }
@@ -32,46 +39,61 @@ final class MonoRssUITests: XCTestCase {
         app.launchArguments = ["-uiTesting", "-inMemoryStore"]
         app.launch()
 
-        XCTAssertTrue(app.navigationBars["Recent"].waitForExistence(timeout: 5))
-        capture("01-Recent", app: app)
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
+        capture("01-Today", app: app)
 
-        app.tabBars.buttons["Feeds"].tap()
-        XCTAssertTrue(app.navigationBars["Feeds"].waitForExistence(timeout: 3))
+        app.tabBars.buttons["Feed"].tap()
+        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Development"].waitForExistence(timeout: 2) || app.staticTexts["Development"].exists)
+        XCTAssertTrue(app.buttons["Security"].exists || app.staticTexts["Security"].exists)
+        capture("02-Feed", app: app)
+
+        app.navigationBars["Feed"].buttons["More"].tap()
+        XCTAssertTrue(app.buttons["Folders"].waitForExistence(timeout: 2))
+        app.buttons["Folders"].tap()
+        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.staticTexts["Security"].exists)
-        capture("02-Folders", app: app)
+        capture("03-Folders", app: app)
 
-        app.otherElements["folder-Security"].tap()
+        let securityFolder = app.descendants(matching: .any)["folder-Security"]
+        XCTAssertTrue(securityFolder.waitForExistence(timeout: 2))
+        securityFolder.tap()
         XCTAssertTrue(app.navigationBars["Security"].waitForExistence(timeout: 2))
-        capture("03-Folder-Articles", app: app)
+        capture("04-Folder-Articles", app: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        app.tabBars.buttons["Next"].tap()
-        XCTAssertTrue(app.navigationBars["Next"].waitForExistence(timeout: 3))
-        capture("04-Next", app: app)
+        app.tabBars.buttons["Today"].tap()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
+        capture("05-Today", app: app)
 
         app.buttons["Read"].tap()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["TRAIL OF BITS"].waitForExistence(timeout: 5))
-        capture("05-Reader", app: app)
+        capture("06-Reader", app: app)
         app.buttons["Close"].tap()
 
         app.tabBars.buttons["Saved"].tap()
         XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 3))
-        capture("06-Saved", app: app)
+        capture("07-Saved", app: app)
 
-        app.tabBars.buttons["Library"].tap()
-        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 3))
-        capture("07-Library", app: app)
-
+        app.tabBars.buttons["Feed"].tap()
+        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
+        app.navigationBars["Feed"].buttons["More"].tap()
+        XCTAssertTrue(app.buttons["Sources"].waitForExistence(timeout: 2))
         app.buttons["Sources"].tap()
         XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 3))
         capture("08-Sources", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
+        app.navigationBars["Feed"].buttons["More"].tap()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 2))
         app.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         capture("09-Settings", app: app)
+
+        XCTAssertFalse(app.tabBars.buttons["Library"].exists)
     }
 
     private func capture(_ name: String, app: XCUIApplication) {

@@ -25,13 +25,13 @@ struct SavedView: View {
                             .buttonStyle(.plain)
                             .accessibilityHint("Opens the saved article")
                             .swipeActions {
-                                Button("Return to queue", systemImage: "arrow.uturn.backward") {
+                                Button("Return to Feed", systemImage: "arrow.uturn.backward") {
                                     viewModel.restore(article)
                                 }
                                 .tint(.secondary)
                             }
                             .contextMenu {
-                                Button("Return to queue", systemImage: "arrow.uturn.backward") {
+                                Button("Return to Feed", systemImage: "arrow.uturn.backward") {
                                     viewModel.restore(article)
                                 }
                             }

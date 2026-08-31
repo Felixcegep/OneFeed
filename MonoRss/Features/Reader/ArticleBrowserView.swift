@@ -23,9 +23,8 @@ struct ArticleBrowserView: View {
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) {
                     if page.isLoading {
-                        ProgressView()
-                            .progressViewStyle(.linear)
-                            .tint(.primary)
+                        OneFeedMarkPulse(isActive: true, size: 18)
+                            .padding(.top, 8)
                     }
                 }
                 .navigationTitle(page.title ?? url.host() ?? "Article")

@@ -24,5 +24,13 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OneFeed connects to your RSS server on the local network or Tailscale.</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>felix.MonoRss.feed-refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

@@ -25,11 +25,7 @@ private actor SwiftDataSyncAPI: FreshRSSAPI {
 @MainActor
 struct SwiftDataFreshRSSSyncTests {
     private func context() throws -> ModelContext {
-        let container = try ModelContainer(
-            for: Feed.self, Article.self, SyncAccount.self, PendingSyncMutation.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        return ModelContext(container)
+        try InMemoryStore.makeContext()
     }
 
     @Test func appSyncFlushesSwiftDataMutationAndUnstarsRestoredArticle() async throws {
@@ -111,6 +107,10 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(ats["NSAllowsLocalNetworking"] == nil)
         #expect(ats["NSAllowsArbitraryLoadsInWebContent"] == nil)
         #expect(ats["NSAllowsArbitraryLoadsForMedia"] == nil)
+        let identifiers = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? []
+        #expect(identifiers.contains("felix.MonoRss.feed-refresh"))
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        #expect(modes.contains("fetch"))
     }
 
     @Test func syncFollowsItemIDContinuationPages() async throws {
@@ -231,7 +231,7 @@ private final class RecordingFeedRepository: FeedRepository {
         Feed(title: input, feedURL: URL(string: "http://example.test/rss")!)
     }
     func refresh(_ feed: Feed, in context: ModelContext) async throws {}
-    func refreshAll(in context: ModelContext) async throws { refreshed = true }
+    func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws { refreshed = true }
 }
 
 @MainActor
@@ -241,7 +241,7 @@ private final class RecordingFreshRSSService: FreshRSSSyncing {
         SyncAccount(provider: .freshRSS, serverURL: serverURL, username: username)
     }
     func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
-    func sync(account: SyncAccount, in context: ModelContext) async throws { synced = true }
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws { synced = true }
     func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
     func addSubscription(from input: String, in context: ModelContext) async throws -> Feed {
         Feed(title: input, feedURL: URL(string: "http://example.test/rss")!)

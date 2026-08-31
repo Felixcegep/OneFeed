@@ -25,7 +25,7 @@ struct PrimaryActionStyle: ButtonStyle {
             .background(Color.primary.opacity(configuration.isPressed ? 0.76 : 1))
             .clipShape(.rect(cornerRadius: OneFeedTheme.radius))
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -41,7 +41,7 @@ struct DecisionActionStyle: ButtonStyle {
             .clipShape(.rect(cornerRadius: 14))
             .opacity(configuration.isPressed ? 0.72 : 1)
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -219,7 +219,7 @@ struct DirectoryRowButtonStyle: ButtonStyle {
         configuration.label
             .opacity(configuration.isPressed ? 0.72 : 1)
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.14), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
 

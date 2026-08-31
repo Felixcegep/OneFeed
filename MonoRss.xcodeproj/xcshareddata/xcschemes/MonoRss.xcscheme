@@ -41,6 +41,16 @@
                ReferencedContainer = "container:MonoRss.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4425FA7530439ECC0053CF66"
+               BuildableName = "MonoRssUITests.xctest"
+               BlueprintName = "MonoRssUITests"
+               ReferencedContainer = "container:MonoRss.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

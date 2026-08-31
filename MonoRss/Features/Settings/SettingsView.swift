@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(AppPreferenceKey.readerFont) private var readerFont = ReaderFontChoice.sans.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var readerTextSize = ReaderTextSize.standard.rawValue
+    @AppStorage(AppPreferenceKey.articleRetentionDays) private var retentionDays = ArticleRetentionService.defaultRetentionDays
     @State private var viewModel = SettingsViewModel()
 
     var body: some View {
@@ -19,12 +20,33 @@ struct SettingsView: View {
                 Text("These choices apply to the in-app reader.")
             }
             Section {
+                Picker("Keep articles", selection: $retentionDays) {
+                    ForEach(ArticleRetentionChoice.allCases) { choice in
+                        Text(choice.label).tag(choice.rawValue)
+                    }
+                }
+            } header: {
+                Text("Library")
+            } footer: {
+                Text("Unread articles older than this are removed. Saved articles stay.")
+            }
+            Section {
                 if let account = viewModel.freshRSS {
                     LabeledContent("Account", value: account.username ?? "Connected")
                     LabeledContent("Last Sync", value: account.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet")
                     if let error = account.lastSyncError { Text(error).font(.footnote).foregroundStyle(.red) }
-                    Button(viewModel.isSyncing ? "Syncing…" : "Sync Now", systemImage: "arrow.triangle.2.circlepath") {
+                    Button {
                         Task { await viewModel.sync() }
+                    } label: {
+                        if viewModel.isSyncing {
+                            Label {
+                                Text("Syncing…")
+                            } icon: {
+                                OneFeedMarkPulse(isActive: true, size: 18)
+                            }
+                        } else {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        }
                     }.disabled(viewModel.isSyncing)
                     Button("Reconnect", systemImage: "person.crop.circle.badge.checkmark") { viewModel.isConnectingFreshRSS = true }
                     Button("Disconnect FreshRSS", systemImage: "xmark.circle", role: .destructive) { viewModel.isConfirmingDisconnect = true }
@@ -39,20 +61,22 @@ struct SettingsView: View {
                      : "Done and Save sync to FreshRSS. Skip stays on this device.")
             }
             Section {
+                Button("Load tiny-rss sources", systemImage: "tray.and.arrow.down") { viewModel.seedTinyRSSCatalog() }
                 Button("Import OPML", systemImage: "square.and.arrow.down") { viewModel.isImportingOPML = true }
                 Button("Export OPML", systemImage: "square.and.arrow.up") { viewModel.isExportingOPML = true }.disabled(viewModel.feeds.isEmpty)
             } header: {
                 Text("Data")
             } footer: {
-                Text("Imported sources are fetched immediately so they can enter the queue.")
+                Text("Starter sources match the tiny-rss seed list and are fetched locally so they can enter Today and Feed without the server.")
             }
             Section("About") {
                 LabeledContent("OneFeed", value: "1.0")
-                Text("One article at a time.").foregroundStyle(.secondary)
+                Text("A small daily stack from sources you chose.").foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshProgressBanner(viewModel.progress)
         .task { viewModel.configure(with: modelContext) }
         .sheet(isPresented: $viewModel.isConnectingFreshRSS, onDismiss: viewModel.reload) {
             FreshRSSConnectView(existingAccount: viewModel.freshRSS)
@@ -97,9 +121,13 @@ private struct FreshRSSConnectView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(viewModel.isConnecting ? "Connecting…" : "Connect") {
-                        Task { if await viewModel.connect(in: modelContext) { dismiss() } }
-                    }.disabled(viewModel.server.isEmpty || viewModel.username.isEmpty || viewModel.apiPassword.isEmpty || viewModel.isConnecting)
+                    if viewModel.isConnecting {
+                        OneFeedMarkPulse(isActive: true, size: 18)
+                    } else {
+                        Button("Connect") {
+                            Task { if await viewModel.connect(in: modelContext) { dismiss() } }
+                        }.disabled(viewModel.server.isEmpty || viewModel.username.isEmpty || viewModel.apiPassword.isEmpty)
+                    }
                 }
             }
         }

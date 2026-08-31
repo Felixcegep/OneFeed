@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -8,8 +9,19 @@ import UIKit
 @Observable
 final class ReaderViewModel {
     let article: Article
+    private(set) var isExtracting = false
 
     init(article: Article) { self.article = article }
+
+    func enrichReadableHTML() async {
+        guard article.contentKind == "article" else { return }
+        isExtracting = true
+        defer { isExtracting = false }
+        if let html = await ArticleExtractionService().extractedHTML(for: article), html != article.contentHTML {
+            article.contentHTML = html
+            try? article.modelContext?.save()
+        }
+    }
 
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
         let body = article.readableHTML ?? "<p>This source only provided metadata. Open the original article to continue reading.</p>"

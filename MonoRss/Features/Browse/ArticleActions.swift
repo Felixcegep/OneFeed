@@ -36,7 +36,7 @@ struct ArticleSwipeActions: ViewModifier {
                 Button("Save", systemImage: "bookmark") {
                     ArticleActions.apply(.saved, to: article, in: context)
                 }
-                .tint(.orange)
+                .tint(OneFeedTheme.accent)
             }
             .contextMenu {
                 Button("Save", systemImage: "bookmark") {

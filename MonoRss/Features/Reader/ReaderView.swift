@@ -22,6 +22,7 @@ struct ReaderView: View {
     @State private var viewModel: ReaderViewModel
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
+    @State private var savePulse = 0
     let onFinish: (ArticleState) -> Void
 
     init(article: Article, onFinish: @escaping (ArticleState) -> Void) {
@@ -44,6 +45,17 @@ struct ReaderView: View {
                 }
             }
             .background(OneFeedTheme.page)
+            .overlay(alignment: .top) {
+                if viewModel.isExtracting {
+                    OneFeedMarkPulse(isActive: true, size: 20)
+                        .padding(.top, 8)
+                        .transition(.opacity)
+                }
+            }
+            .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
+            .task {
+                await viewModel.enrichReadableHTML()
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 readerActions
             }
@@ -74,6 +86,7 @@ struct ReaderView: View {
                 }
             }
             .toolbarTitleDisplayMode(.inline)
+            .sensoryFeedback(.success, trigger: savePulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -89,7 +102,13 @@ struct ReaderView: View {
 
     private var readerActions: some View {
         HStack(spacing: 10) {
-            Button { onFinish(.saved) } label: { Label("Save", systemImage: "bookmark") }
+            Button {
+                savePulse += 1
+                onFinish(.saved)
+            } label: {
+                Label("Save", systemImage: "bookmark")
+                    .symbolEffect(.bounce, value: savePulse)
+            }
                 .buttonStyle(DecisionActionStyle())
                 .accessibilityHint("Saves this article for later")
             Button { onFinish(.read) } label: { Label("Done", systemImage: "checkmark") }
@@ -122,8 +141,8 @@ private struct WebsiteReaderPane: View {
             .webViewBackForwardNavigationGestures(.enabled)
             .overlay(alignment: .top) {
                 if page.isLoading {
-                    ProgressView()
-                        .progressViewStyle(.linear)
+                    OneFeedMarkPulse(isActive: true, size: 18)
+                        .padding(.top, 8)
                 }
             }
             .task(id: url) { _ = page.load(URLRequest(url: url)) }

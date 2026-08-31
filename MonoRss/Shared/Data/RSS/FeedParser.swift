@@ -14,6 +14,39 @@ nonisolated struct ParsedArticle: Sendable {
     let publishedAt: Date
     let summary: String?
     let contentHTML: String?
+    let enclosureURL: URL?
+    let enclosureMIME: String?
+    let durationSeconds: Int?
+    let imageURL: URL?
+    let updatedAt: Date?
+
+    init(
+        guid: String,
+        title: String,
+        url: URL?,
+        author: String?,
+        publishedAt: Date,
+        summary: String?,
+        contentHTML: String?,
+        enclosureURL: URL? = nil,
+        enclosureMIME: String? = nil,
+        durationSeconds: Int? = nil,
+        imageURL: URL? = nil,
+        updatedAt: Date? = nil
+    ) {
+        self.guid = guid
+        self.title = title
+        self.url = url
+        self.author = author
+        self.publishedAt = publishedAt
+        self.summary = summary
+        self.contentHTML = contentHTML
+        self.enclosureURL = enclosureURL
+        self.enclosureMIME = enclosureMIME
+        self.durationSeconds = durationSeconds
+        self.imageURL = imageURL
+        self.updatedAt = updatedAt
+    }
 
     var estimatedReadingMinutes: Int {
         let source = contentHTML ?? summary ?? ""
@@ -66,6 +99,11 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
     private var values: [String: String] = [:]
     private var entryURL: URL?
     private var feedLinkCandidate: URL?
+    private var enclosureURL: URL?
+    private var enclosureMIME: String?
+    private var durationSeconds: Int?
+    private var imageURL: URL?
+    private var updatedAt: Date?
 
     func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
         let name = (qName ?? elementName).lowercased()
@@ -75,11 +113,39 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
             inEntry = true
             values = [:]
             entryURL = nil
+            enclosureURL = nil
+            enclosureMIME = nil
+            durationSeconds = nil
+            imageURL = nil
+            updatedAt = nil
+        }
+        if name == "enclosure", inEntry,
+           let urlString = attributeDict["url"], let url = URL(string: urlString) {
+            enclosureURL = url
+            enclosureMIME = attributeDict["type"]
         }
         if name == "link", let href = attributeDict["href"], let url = URL(string: href) {
             let rel = attributeDict["rel"] ?? "alternate"
-            if inEntry, rel == "alternate" { entryURL = url }
-            if !inEntry, rel == "alternate" { feedLinkCandidate = url }
+            if inEntry {
+                if rel == "alternate" { entryURL = url }
+                if rel == "enclosure" {
+                    enclosureURL = url
+                    enclosureMIME = attributeDict["type"]
+                }
+            } else if rel == "alternate" {
+                feedLinkCandidate = url
+            }
+        }
+        if inEntry {
+            if name == "media:thumbnail", let urlString = attributeDict["url"] ?? attributeDict["href"] {
+                imageURL = imageURL ?? URL(string: urlString)
+            }
+            if name == "itunes:image", let urlString = attributeDict["href"] {
+                imageURL = imageURL ?? URL(string: urlString)
+            }
+            if name == "media:content", let duration = attributeDict["duration"] {
+                durationSeconds = durationSeconds ?? Self.parseDurationText(duration)
+            }
         }
     }
 
@@ -98,6 +164,12 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
         if inEntry {
             if !value.isEmpty { values[name] = (values[name] ?? "") + value }
             if name == "link", entryURL == nil, let url = URL(string: value) { entryURL = url }
+            if name == "itunes:duration" {
+                durationSeconds = durationSeconds ?? Self.parseDurationText(value)
+            }
+            if name == "updated" || name == "dc:date" {
+                updatedAt = updatedAt ?? Self.parseDate(value)
+            }
             if name == "item" || name == "entry" {
                 appendEntry()
                 inEntry = false
@@ -119,6 +191,9 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
         let date = dateText.flatMap(Self.parseDate) ?? .now
         let content = values["content:encoded"] ?? values["encoded"] ?? values["content"]
         let summary = values["description"] ?? values["summary"]
+        let resolvedImage = imageURL
+            ?? values["image"].flatMap { URL(string: $0.trimmed) }
+            ?? Self.firstImageURL(in: content ?? summary ?? "")
         let article = ParsedArticle(
             guid: guid,
             title: title,
@@ -126,9 +201,32 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
             author: values["dc:creator"] ?? values["creator"] ?? values["author"] ?? values["name"],
             publishedAt: date,
             summary: summary,
-            contentHTML: content
+            contentHTML: content,
+            enclosureURL: enclosureURL,
+            enclosureMIME: enclosureMIME,
+            durationSeconds: durationSeconds,
+            imageURL: resolvedImage,
+            updatedAt: updatedAt ?? dateText.flatMap(Self.parseDate)
         )
         articles.append(article)
+    }
+
+    private static func parseDurationText(_ value: String) -> Int? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let seconds = Int(trimmed) { return seconds }
+        let parts = trimmed.split(separator: ":").compactMap { Int($0) }
+        switch parts.count {
+        case 2: return parts[0] * 60 + parts[1]
+        case 3: return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        default: return nil
+        }
+    }
+
+    private static func firstImageURL(in html: String) -> URL? {
+        let pattern = #/<img[^>]+src=["']([^"']+)["']/#
+        guard let match = html.firstMatch(of: pattern) else { return nil }
+        return URL(string: String(match.1))
     }
 
     private static func parseDate(_ value: String) -> Date? {

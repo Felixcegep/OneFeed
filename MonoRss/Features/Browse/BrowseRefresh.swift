@@ -9,10 +9,11 @@ final class BrowseRefresh {
     private let freshRSSService: any FreshRSSSyncing
     private(set) var isRefreshing = false
     private(set) var lastRefreshedAt: Date?
+    let progress = RefreshProgress()
     var presentedError: String?
 
     var statusText: String {
-        if isRefreshing { return "Updating…" }
+        if isRefreshing { return progress.countText + (progress.remainingText.isEmpty ? "" : " · \(progress.remainingText)") }
         guard let lastRefreshedAt else { return "Pull to update" }
         return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
     }
@@ -33,14 +34,25 @@ final class BrowseRefresh {
     func refresh(in context: ModelContext) async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            progress.finish()
+            isRefreshing = false
+        }
         var refreshError: Error?
-        do { try await feedService.refreshAll(in: context) } catch { refreshError = error }
+        do { try await feedService.refreshAll(in: context, progress: progress) } catch { refreshError = error }
         let provider = SyncProvider.freshRSS.rawValue
         if let account = try? context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == provider && $0.isEnabled })).first {
-            do { try await freshRSSService.sync(account: account, in: context) } catch { refreshError = refreshError ?? error }
+            do { try await freshRSSService.sync(account: account, in: context, progress: progress) } catch { refreshError = refreshError ?? error }
         }
-        if let refreshError { presentedError = refreshError.localizedDescription }
+        progress.begin(phase: .finishing, total: 1)
+        do { _ = try DailyDeckService().generateIfNeeded(in: context) } catch { refreshError = refreshError ?? error }
+        _ = try? ArticleRetentionService().purge(in: context)
+        progress.finishItem(newArticles: 0)
+        if let refreshError {
+            presentedError = RefreshFailure.message(for: refreshError)
+        } else {
+            BackgroundRefreshCoordinator.lastSuccessfulRefresh = .now
+        }
         lastRefreshedAt = .now
     }
 

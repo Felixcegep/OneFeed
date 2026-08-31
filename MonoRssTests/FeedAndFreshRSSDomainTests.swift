@@ -117,4 +117,155 @@ struct FeedAndFreshRSSDomainTests {
         #expect(summaries[0].unreadCount == 1)
         #expect(summaries[1].unreadCount == 0)
     }
+
+    @Test func parserReadsEnclosureAndYouTubeItem() throws {
+        let xml = """
+        <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Media</title>
+        <item>
+          <guid>pod-1</guid><title>Episode</title>
+          <enclosure url="https://cdn.example.test/ep.mp3" type="audio/mpeg" length="12345"/>
+          <itunes:duration>12:30</itunes:duration>
+          <media:thumbnail url="https://cdn.example.test/cover.jpg"/>
+          <description>Podcast notes</description>
+        </item>
+        <item>
+          <guid>yt-1</guid><title>Talk</title>
+          <link>https://www.youtube.com/watch?v=dQw4w9WgXcQ</link>
+        </item>
+        </channel></rss>
+        """
+
+        let parsed = try FeedParser().parse(Data(xml.utf8))
+        let podcast = try #require(parsed.articles.first { $0.guid == "pod-1" })
+        let youtube = try #require(parsed.articles.first { $0.guid == "yt-1" })
+
+        #expect(podcast.enclosureURL == URL(string: "https://cdn.example.test/ep.mp3"))
+        #expect(podcast.enclosureMIME == "audio/mpeg")
+        #expect(podcast.durationSeconds == 750)
+        #expect(podcast.imageURL == URL(string: "https://cdn.example.test/cover.jpg"))
+        #expect(youtube.url == URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+    }
+
+    @Test func contentClassifierDetectsYouTubePodcastAndArticle() {
+        let youtube = ContentClassifier.classify(
+            url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            title: "Talk",
+            summary: nil,
+            contentHTML: nil,
+            enclosureMIME: nil,
+            durationSeconds: 600
+        )
+        #expect(youtube.kind == .youtube)
+        #expect(youtube.videoID == "dQw4w9WgXcQ")
+        #expect(youtube.estimatedMinutes == 10)
+
+        let podcast = ContentClassifier.classify(
+            url: URL(string: "https://example.test/ep"),
+            title: "Episode",
+            summary: "notes",
+            contentHTML: nil,
+            enclosureMIME: "audio/mpeg",
+            durationSeconds: 3600
+        )
+        #expect(podcast.kind == .podcast)
+        #expect(podcast.estimatedMinutes == 60)
+
+        let article = ContentClassifier.classify(
+            url: URL(string: "https://example.test/post"),
+            title: "Essay",
+            summary: nil,
+            contentHTML: "<p>" + String(repeating: "word ", count: 440) + "</p>",
+            enclosureMIME: nil,
+            durationSeconds: nil
+        )
+        #expect(article.kind == .article)
+        #expect(article.estimatedMinutes == 2)
+    }
+
+    @Test func skipShortYouTubeDetectsShortsPathAndHashTag() {
+        #expect(
+            ContentClassifier.skipShortYouTube(
+                url: URL(string: "https://www.youtube.com/shorts/abc12345678"),
+                title: "Clip",
+                durationSeconds: nil
+            )
+        )
+        #expect(
+            ContentClassifier.skipShortYouTube(
+                url: URL(string: "https://www.youtube.com/watch?v=abc12345678"),
+                title: "Fun #shorts",
+                durationSeconds: nil
+            )
+        )
+        #expect(
+            ContentClassifier.skipShortYouTube(
+                url: URL(string: "https://www.youtube.com/watch?v=abc12345678"),
+                title: "Long talk",
+                durationSeconds: 120
+            )
+        )
+        #expect(
+            !ContentClassifier.skipShortYouTube(
+                url: URL(string: "https://www.youtube.com/watch?v=abc12345678"),
+                title: "Long talk",
+                durationSeconds: 600
+            )
+        )
+    }
+
+    @Test func filterEngineAppliesKeepDropStarAndBlockedWords() {
+        let entry = FilterEntry(title: "Swift concurrency", author: "Ada", url: "https://a.test", content: "actors and tasks")
+        let feed = FilterFeedContext(title: "Dev", url: "https://dev.test/rss")
+
+        let keepOnly = FilterEngine.apply(
+            rules: [FilterRule(action: .keep, field: .title, pattern: "Swift")],
+            entry: entry,
+            feed: feed
+        )
+        #expect(!keepOnly.drop)
+
+        let keepMiss = FilterEngine.apply(
+            rules: [FilterRule(action: .keep, field: .title, pattern: "Rust")],
+            entry: entry,
+            feed: feed
+        )
+        #expect(keepMiss.drop)
+
+        let drop = FilterEngine.apply(
+            rules: [FilterRule(action: .drop, field: .content, pattern: "tasks")],
+            entry: entry,
+            feed: feed
+        )
+        #expect(drop.drop)
+        #expect(!drop.star)
+
+        let starred = FilterEngine.apply(
+            rules: [FilterRule(action: .star, field: .author, pattern: "Ada")],
+            entry: entry,
+            feed: feed
+        )
+        #expect(starred.star)
+
+        let blocked = FilterEngine.apply(
+            rules: FilterEngine.blockedWordRules(from: "concurrency\nspam"),
+            entry: entry,
+            feed: feed
+        )
+        #expect(blocked.drop)
+    }
+
+    @Test func youtubeMetadataParsesWatchHTML() {
+        let html = """
+        <html><script>var ytInitialPlayerResponse = {"videoDetails":{"lengthSeconds":"1080"}};</script>
+        <meta itemprop="duration" content="PT18M" /></html>
+        """
+        #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: html) == 1080)
+    }
+
+    @Test func youtubeProcessorParsesIDsAndThumbnail() {
+        let watch = URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+        #expect(YouTubeProcessor.parseVideoID(from: watch) == "dQw4w9WgXcQ")
+        #expect(YouTubeProcessor.thumbnailURL(for: "dQw4w9WgXcQ")?.absoluteString.contains("hqdefault.jpg") == true)
+        #expect(YouTubeProcessor.isShort(url: URL(string: "https://www.youtube.com/shorts/abc12345678"), title: ""))
+    }
 }

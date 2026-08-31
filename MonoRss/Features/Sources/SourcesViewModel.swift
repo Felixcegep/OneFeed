@@ -79,6 +79,22 @@ final class SourceDetailViewModel {
         get { feed.isEnabled }
         set { feed.isEnabled = newValue; try? context.save() }
     }
+    var includeInToday: Bool {
+        get { feed.includeInToday }
+        set { feed.includeInToday = newValue; try? context.save() }
+    }
+    var includeVideos: Bool {
+        get { feed.includeVideos }
+        set { feed.includeVideos = newValue; try? context.save() }
+    }
+    var includeShorts: Bool {
+        get { feed.includeShorts }
+        set { feed.includeShorts = newValue; try? context.save() }
+    }
+    var blockedWords: String {
+        get { feed.blockedWords }
+        set { feed.blockedWords = newValue; try? context.save() }
+    }
     func remove() async {
         do {
             try await freshRSSService.removeSubscription(feed, in: context)

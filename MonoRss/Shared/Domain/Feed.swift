@@ -16,6 +16,11 @@ final class Feed {
     var folderName: String?
     /// tiny-rss `contentType`: article, youtube, music, podcast.
     var contentKind: String = "article"
+    var includeInToday: Bool = true
+    var includeVideos: Bool = true
+    var includeShorts: Bool = false
+    var minVideoSeconds: Int = 180
+    var blockedWords: String = ""
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article] = []
@@ -31,7 +36,12 @@ final class Feed {
         lastModified: String? = nil,
         remoteID: String? = nil,
         folderName: String? = nil,
-        contentKind: String = "article"
+        contentKind: String = "article",
+        includeInToday: Bool = true,
+        includeVideos: Bool = true,
+        includeShorts: Bool = false,
+        minVideoSeconds: Int = 180,
+        blockedWords: String = ""
     ) {
         self.id = id
         self.title = title
@@ -44,5 +54,10 @@ final class Feed {
         self.remoteID = remoteID
         self.folderName = folderName
         self.contentKind = contentKind
+        self.includeInToday = includeInToday
+        self.includeVideos = includeVideos
+        self.includeShorts = includeShorts
+        self.minVideoSeconds = minVideoSeconds
+        self.blockedWords = blockedWords
     }
 }

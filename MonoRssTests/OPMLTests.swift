@@ -6,11 +6,7 @@ import Testing
 @MainActor
 struct OPMLTests {
     private func context() throws -> ModelContext {
-        let container = try ModelContainer(
-            for: Feed.self, Article.self, SyncAccount.self, PendingSyncMutation.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        return ModelContext(container)
+        try InMemoryStore.makeContext()
     }
 
     @Test func importFlattensNestedOutlinesAndSkipsDuplicateURLs() throws {

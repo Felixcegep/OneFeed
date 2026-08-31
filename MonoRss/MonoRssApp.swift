@@ -17,21 +17,39 @@ struct MonoRssApp: App {
             Article.self,
             SyncAccount.self,
             PendingSyncMutation.self,
+            DailyDeck.self,
+            DailyDeckItem.self,
         ])
         let useMemoryStore = ProcessInfo.processInfo.arguments.contains("-inMemoryStore")
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: useMemoryStore)
 
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+                let context = ModelContext(container)
+                if !UserDefaults.standard.bool(forKey: AppPreferenceKey.didSeedTinyRSSCatalog) {
+                    _ = try? FeedSeedService().apply(in: context)
+                    UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+                }
+            }
             if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
                 UserDefaults.standard.set(true, forKey: AppPreferenceKey.completedOnboarding)
                 let context = ModelContext(container)
                 let feedA = Feed(title: "Trail of Bits", websiteURL: URL(string: "https://example.com"), feedURL: URL(string: "https://example.com/feed")!, folderName: "Security")
                 let feedB = Feed(title: "Swift.org", websiteURL: URL(string: "https://swift.org"), feedURL: URL(string: "https://swift.org/atom.xml")!, folderName: "Development")
                 context.insert(feedA); context.insert(feedB)
-                context.insert(Article(guid: "ui-1", title: "VMs Won’t Contain Cyber-Capable Agents", url: URL(string: "https://example.com/one"), publishedAt: .now.addingTimeInterval(-7200), summary: "Virtual machines were built to isolate workloads, not agents that can rewrite the machine from the inside.", contentHTML: "<p>Full offline article content for interface testing.</p>", estimatedReadingMinutes: 11, state: .current, feed: feedA))
-                context.insert(Article(guid: "ui-2", title: "Swift concurrency without the noise", publishedAt: .now.addingTimeInterval(-3600), summary: "A second article.", estimatedReadingMinutes: 6, feed: feedB))
-                context.insert(Article(guid: "ui-3", title: "What isolation still gets right", url: URL(string: "https://example.com/two"), publishedAt: .now.addingTimeInterval(-5400), summary: "A follow-up on hardware roots of trust.", estimatedReadingMinutes: 7, feed: feedA))
+                let deckArticle1 = Article(guid: "ui-1", title: "VMs Won’t Contain Cyber-Capable Agents", url: URL(string: "https://example.com/one"), publishedAt: .now.addingTimeInterval(-7200), summary: "Virtual machines were built to isolate workloads, not agents that can rewrite the machine from the inside.", contentHTML: "<p>Full offline article content for interface testing.</p>", estimatedReadingMinutes: 11, state: .current, feed: feedA)
+                let deckArticle2 = Article(guid: "ui-2", title: "Swift concurrency without the noise", publishedAt: .now.addingTimeInterval(-3600), summary: "A second article.", estimatedReadingMinutes: 6, feed: feedB)
+                let deckArticle3 = Article(guid: "ui-3", title: "What isolation still gets right", url: URL(string: "https://example.com/two"), publishedAt: .now.addingTimeInterval(-5400), summary: "A follow-up on hardware roots of trust.", estimatedReadingMinutes: 7, feed: feedA)
+                context.insert(deckArticle1)
+                context.insert(deckArticle2)
+                context.insert(deckArticle3)
+                let todayDeck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+                context.insert(todayDeck)
+                for (index, article) in [deckArticle1, deckArticle2, deckArticle3].enumerated() {
+                    let status: ArticleState = index == 0 ? .current : .queued
+                    context.insert(DailyDeckItem(position: index + 1, status: status, article: article, deck: todayDeck))
+                }
                 let saved = Article(guid: "ui-saved", title: "Why SQLite is so reliable", publishedAt: .now.addingTimeInterval(-86400), summary: "A saved article for later.", estimatedReadingMinutes: 8, state: .saved, feed: feedA)
                 saved.completedAt = .now.addingTimeInterval(-1800)
                 context.insert(saved)
@@ -59,6 +77,11 @@ struct MonoRssApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { BackgroundRefreshCoordinator.schedule() }
+            if phase == .active, !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+                Task { @MainActor in
+                    await BackgroundRefreshCoordinator.refreshIfStale(in: ModelContext(sharedModelContainer))
+                }
+            }
         }
     }
 }
