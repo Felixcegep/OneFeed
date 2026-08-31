@@ -48,7 +48,7 @@ enum FeedFolderGrouping {
 
     static func savedArticles(from articles: [Article]) -> [Article] {
         articles
-            .filter { $0.state == .saved }
+            .filter { $0.state == .saved || $0.isRemoteStarred }
             .sorted { ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt) }
     }
 

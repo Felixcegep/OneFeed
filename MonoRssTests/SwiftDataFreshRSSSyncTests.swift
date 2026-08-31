@@ -82,7 +82,7 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(try context.fetch(FetchDescriptor<Feed>()).first?.remoteID == nil)
     }
 
-    @Test func finishingSavedArticleEnqueuesUnstarAndMarkRead() throws {
+    @Test func finishingSavedArticleKeepsFavoriteAndMarksRead() throws {
         let context = try context()
         let article = Article(guid: "saved", title: "Saved", state: .saved, remoteID: "remote-saved", isRemoteStarred: true)
         context.insert(article)
@@ -91,9 +91,11 @@ struct SwiftDataFreshRSSSyncTests {
         viewModel.finishReading(article, as: .read)
 
         #expect(article.state == .read)
-        #expect(article.isRemoteStarred == false)
+        #expect(article.isRemoteStarred == true)
         let mutations = try context.fetch(FetchDescriptor<PendingSyncMutation>(sortBy: [SortDescriptor(\.createdAt)]))
-        #expect(mutations.map(\.kind) == [.unstar, .markRead])
+        #expect(mutations.map(\.kind) == [.markRead])
+        viewModel.reload()
+        #expect(viewModel.articles.contains(where: { $0.guid == "saved" }))
     }
 
     @Test func appRegistersOneFeedURLSchemeAndAllowsCleartextHTTP() {

@@ -74,4 +74,17 @@ struct ArticleStateTests {
         #expect(queued.state == .read)
         #expect(current.state == .current)
     }
+
+    @Test func readingASavedArticleKeepsItStarred() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let saved = Article(guid: "saved", title: "Saved", state: .saved, isRemoteStarred: true, feed: feed)
+        context.insert(saved)
+
+        try ArticleQueueService().complete(saved, as: .read, in: context)
+        #expect(saved.state == .read)
+        #expect(saved.isRemoteStarred)
+        #expect(FeedFolderGrouping.savedArticles(from: [saved]).map(\.guid) == ["saved"])
+    }
 }

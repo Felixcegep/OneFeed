@@ -73,6 +73,9 @@ final class RefreshProgress {
 
     func finish() {
         phase = .idle
+        completed = 0
+        total = 0
+        articlesFound = 0
         currentTitle = nil
         estimatedFinish = nil
         lastAdvanceAt = nil

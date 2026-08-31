@@ -41,7 +41,6 @@ struct ArticleQueueService {
         article.state = state
         article.completedAt = .now
         if state == .saved { article.isRemoteStarred = true }
-        if state == .read { article.isRemoteStarred = false }
         try context.save()
         return try ensureCurrent(in: context, lastDisplayedFeedID: previousFeedID)
     }
@@ -55,7 +54,6 @@ struct ArticleQueueService {
         article.state = state
         article.completedAt = .now
         if state == .saved { article.isRemoteStarred = true }
-        if state == .read { article.isRemoteStarred = false }
         try context.save()
         _ = try ensureCurrent(in: context)
     }

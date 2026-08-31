@@ -146,6 +146,9 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
             if name == "media:content", let duration = attributeDict["duration"] {
                 durationSeconds = durationSeconds ?? Self.parseDurationText(duration)
             }
+            if name == "yt:duration" || name == "duration", let seconds = attributeDict["seconds"] {
+                durationSeconds = durationSeconds ?? Self.parseDurationText(seconds)
+            }
         }
     }
 

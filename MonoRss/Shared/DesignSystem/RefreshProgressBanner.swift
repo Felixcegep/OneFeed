@@ -62,7 +62,7 @@ struct RefreshProgressBanner: View {
 
 extension View {
     func refreshProgressBanner(_ progress: RefreshProgress) -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
+        overlay(alignment: .top) {
             RefreshProgressBanner(progress: progress)
                 .animation(OneFeedMotion.overlay, value: progress.isActive)
         }

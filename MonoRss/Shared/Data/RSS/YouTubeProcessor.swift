@@ -45,9 +45,14 @@ nonisolated enum YouTubeProcessor: Sendable {
         return title.lowercased().contains("#shorts")
     }
 
+    static func watchURL(for videoID: String) -> URL? {
+        guard videoID.count == 11 else { return nil }
+        return URL(string: "https://www.youtube.com/watch?v=\(videoID)")
+    }
+
     static func embedURL(for videoID: String) -> URL? {
         guard videoID.count == 11 else { return nil }
-        return URL(string: "https://www.youtube.com/embed/\(videoID)")
+        return URL(string: "https://www.youtube.com/embed/\(videoID)?playsinline=1")
     }
 
     static func thumbnailURL(for videoID: String) -> URL? {

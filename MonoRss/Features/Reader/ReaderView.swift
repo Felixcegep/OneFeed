@@ -27,14 +27,14 @@ struct ReaderView: View {
 
     init(article: Article, onFinish: @escaping (ArticleState) -> Void) {
         _viewModel = State(initialValue: ReaderViewModel(article: article))
-        _mode = State(initialValue: article.readableHTML == nil && article.url != nil ? .website : .reader)
+        _mode = State(initialValue: Self.initialMode(for: article))
         self.onFinish = onFinish
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if mode == .website, let url = viewModel.article.url {
+                if mode == .website, let url = playbackURL {
                     inAppWebsite(url)
                 } else {
                     ReaderWebContent(html: viewModel.documentHTML(
@@ -95,6 +95,21 @@ struct ReaderView: View {
         }
     }
 
+    private var article: Article { viewModel.article }
+
+    private static func initialMode(for article: Article) -> ReaderDisplayMode {
+        if article.contentKind == "youtube", article.videoID != nil || article.url != nil { return .website }
+        if article.readableHTML == nil, article.url != nil { return .website }
+        return .reader
+    }
+
+    private var playbackURL: URL? {
+        if article.contentKind == "youtube", let videoID = article.videoID {
+            return YouTubeProcessor.watchURL(for: videoID) ?? article.url
+        }
+        return article.url
+    }
+
     @ViewBuilder
     private func inAppWebsite(_ url: URL) -> some View {
         WebsiteReaderPane(url: url)
@@ -110,7 +125,7 @@ struct ReaderView: View {
                     .symbolEffect(.bounce, value: savePulse)
             }
                 .buttonStyle(DecisionActionStyle())
-                .accessibilityHint("Saves this article for later")
+                .accessibilityHint("Keeps this in Saved")
             Button { onFinish(.read) } label: { Label("Done", systemImage: "checkmark") }
                 .buttonStyle(DecisionActionStyle())
                 .accessibilityHint("Marks this article done")

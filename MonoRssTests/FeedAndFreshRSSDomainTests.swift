@@ -146,6 +146,26 @@ struct FeedAndFreshRSSDomainTests {
         #expect(youtube.url == URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
     }
 
+    @Test func parserReadsYouTubeAtomDuration() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/">
+          <title>Channel</title>
+          <entry>
+            <id>yt:video:dQw4w9WgXcQ</id>
+            <title>Talk</title>
+            <link rel="alternate" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"/>
+            <media:group>
+              <yt:duration seconds="1080"/>
+            </media:group>
+          </entry>
+        </feed>
+        """
+        let parsed = try FeedParser().parse(Data(xml.utf8))
+        let article = try #require(parsed.articles.first)
+        #expect(article.durationSeconds == 1080)
+        #expect(YouTubeProcessor.watchURL(for: "dQw4w9WgXcQ") == URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+    }
+
     @Test func contentClassifierDetectsYouTubePodcastAndArticle() {
         let youtube = ContentClassifier.classify(
             url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),

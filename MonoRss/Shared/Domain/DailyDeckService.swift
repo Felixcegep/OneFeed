@@ -48,7 +48,6 @@ struct DailyDeckService {
             article.state = state
             article.completedAt = .now
             if state == .saved { article.isRemoteStarred = true }
-            if state == .read { article.isRemoteStarred = false }
         }
 
         let nextItem = item.deck?.items
