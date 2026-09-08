@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 
 enum OneFeedTheme {
-    static let accent = Color(red: 0.85, green: 0.42, blue: 0.20)
+    /// Warm orange in the NetNewsWire family; used as the app tint, not as a brand copy.
+    static let accent = Color(red: 0.89, green: 0.38, blue: 0.16)
     static let page = Color(uiColor: .systemBackground)
     static let grouped = Color(uiColor: .systemGroupedBackground)
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
@@ -9,9 +11,10 @@ enum OneFeedTheme {
     static let primaryText = Color.primary
     static let secondaryText = Color.secondary
     static let separator = Color(uiColor: .separator)
-    static let radius: CGFloat = 16
-    static let cardRadius: CGFloat = 20
-    static let pagePadding: CGFloat = 20
+    static let radius: CGFloat = 14
+    static let cardRadius: CGFloat = 16
+    static let pagePadding: CGFloat = 16
+    static let thumbnailSize: CGFloat = 72
 }
 
 struct PrimaryActionStyle: ButtonStyle {
@@ -20,10 +23,9 @@ struct PrimaryActionStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(Color(uiColor: .systemBackground))
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(Color.primary.opacity(configuration.isPressed ? 0.76 : 1))
-            .clipShape(.rect(cornerRadius: OneFeedTheme.radius))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(OneFeedTheme.accent.opacity(configuration.isPressed ? 0.78 : 1), in: .rect(cornerRadius: OneFeedTheme.radius))
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
@@ -50,81 +52,128 @@ struct ArticleRow: View {
     var status: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(article.title)
-                .font(.headline)
-                .foregroundStyle(.primary)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-            HStack(spacing: 5) {
-                Text(article.feed?.title ?? "Unknown Source")
-                Text("·")
-                Text(article.publishedAt, format: .dateTime.month(.abbreviated).day())
-                Text("·")
-                Text(article.durationPhrase)
-                if let status {
-                    Spacer(minLength: 8)
-                    Text(status)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(OneFeedTheme.secondarySurface, in: Capsule())
-                        .accessibilityLabel(status)
-                }
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(article.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(meta)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            if article.imageURL != nil {
+                ArticleThumbnail(url: article.imageURL, cornerRadius: 8)
+                    .frame(width: OneFeedTheme.thumbnailSize, height: OneFeedTheme.thumbnailSize)
+                    .clipped()
+            }
         }
-        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens this article")
+    }
+
+    private var meta: String {
+        var parts: [String] = [article.feed?.title ?? "Unknown Source"]
+        if let kind = article.kindLabel { parts.append(kind) }
+        if let duration = article.timedDurationPhrase { parts.append(duration) }
+        parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
+        if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
+        if let status { parts.append(status) }
+        return parts.joined(separator: " · ")
     }
 }
 
-struct ArticleCard: View {
+/// Apple News–style lead story for Today.
+struct FeaturedStory: View {
     let article: Article
-    var compact: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                FolderSwatch(name: article.feed?.folderName ?? article.feed?.title ?? "Source")
-                Text(article.feed?.title ?? "Source")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(article.durationPhrase)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 12) {
+            if article.imageURL != nil {
+                ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.cardRadius)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 210)
+                    .clipped()
             }
+            Text(article.feed?.title ?? "Source")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OneFeedTheme.accent)
+                .lineLimit(1)
             Text(article.title)
-                .font(compact ? .headline : .title3.weight(.semibold))
+                .font(.title2.weight(.bold))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
-                .lineLimit(compact ? 3 : 4)
-            if !compact, let excerpt = article.summary?.trimmingCharacters(in: .whitespacesAndNewlines), !excerpt.isEmpty {
+                .fixedSize(horizontal: false, vertical: true)
+            if let excerpt = article.displayExcerpt {
                 Text(excerpt)
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(article.publishedAt, format: .relative(presentation: .named))
-                .font(.caption)
+            Text(byline)
+                .font(.subheadline)
                 .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
-        .padding(compact ? 14 : 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(OneFeedTheme.surface, in: .rect(cornerRadius: OneFeedTheme.cardRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
-        }
+        .clipped()
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens this article")
+    }
+
+    private var byline: String {
+        var parts = [article.publishedAt.formatted(.relative(presentation: .named))]
+        if let duration = article.timedDurationPhrase { parts.append(duration) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+struct ArticleThumbnail: View {
+    let url: URL?
+    var cornerRadius: CGFloat = 8
+
+    var body: some View {
+        Color.clear
+            .overlay {
+                if let url {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill()
+                        default:
+                            placeholder
+                        }
+                    }
+                } else {
+                    placeholder
+                }
+            }
+            .clipped()
+            .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .accessibilityHidden(true)
+    }
+
+    private var placeholder: some View {
+        Rectangle()
+            .fill(OneFeedTheme.secondarySurface)
+            .overlay {
+                Image(systemName: "photo")
+                    .font(.title3)
+                    .foregroundStyle(.tertiary)
+            }
     }
 }
 
@@ -177,22 +226,8 @@ struct FeedDirectoryRow: View {
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
             Spacer(minLength: 8)
-            if count > 0 {
-                Text("\(count)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(OneFeedTheme.secondarySurface, in: Capsule())
-                    .accessibilityLabel("\(count) unread")
-            }
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .accessibilityHidden(true)
+            UnreadCount(count)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -223,6 +258,23 @@ struct DirectoryRowButtonStyle: ButtonStyle {
     }
 }
 
+struct UnreadCount: View {
+    let count: Int
+
+    init(_ count: Int) {
+        self.count = count
+    }
+
+    var body: some View {
+        if count > 0 {
+            Text("\(count)")
+                .font(.body.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("\(count) unread")
+        }
+    }
+}
+
 struct FolderSwatch: View {
     let name: String
 
@@ -247,6 +299,51 @@ struct FolderSwatch: View {
     }
 }
 
+struct ArticleRatingGlyphs: View {
+    let rating: Int
+    var size: CGFloat = 12
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(1...5, id: \.self) { star in
+                Image(systemName: star <= rating ? "star.fill" : "star")
+                    .font(.system(size: size, weight: .medium))
+                    .foregroundStyle(star <= rating ? Color.primary : Color.secondary.opacity(0.35))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct ArticleRatingControl: View {
+    let article: Article
+
+    var body: some View {
+        if article.isStored {
+            HStack(spacing: 2) {
+                ForEach(1...5, id: \.self) { star in
+                    Button {
+                        guard article.isStored else { return }
+                        article.setRating(article.rating == star ? 0 : star)
+                        try? article.modelContext?.save()
+                    } label: {
+                        Image(systemName: star <= article.rating ? "star.fill" : "star")
+                            .font(.body)
+                            .foregroundStyle(star <= article.rating ? Color.primary : Color.secondary.opacity(0.38))
+                            .frame(width: 36, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(star) star\(star == 1 ? "" : "s")")
+                    .accessibilityAddTraits(star <= article.rating ? .isSelected : [])
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(article.rating == 0 ? "Rating" : "Rated \(article.rating) of 5")
+        }
+    }
+}
+
 struct EmptyLibraryState: View {
     let title: String
     let systemImage: String
@@ -264,5 +361,17 @@ struct EmptyLibraryState: View {
                 Button(actionTitle, action: action)
             }
         }
+    }
+}
+
+extension View {
+    func articleListRow() -> some View {
+        listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+            .listRowSeparatorTint(Color.primary.opacity(0.08))
+    }
+
+    func articleTimelineList() -> some View {
+        listStyle(.plain)
+            .contentMargins(.bottom, 12, for: .scrollContent)
     }
 }

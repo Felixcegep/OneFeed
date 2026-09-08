@@ -31,6 +31,10 @@ final class Article {
     var videoID: String?
     var enclosureURL: URL?
     var enclosureMIME: String?
+    /// 0 is unrated; 1 through 5 are stars.
+    var rating: Int = 0
+    var aiSummary: String?
+    var declinedVideoSummary: Bool = false
     var feed: Feed?
 
     var state: ArticleState {
@@ -38,19 +42,49 @@ final class Article {
         set { stateRawValue = newValue.rawValue }
     }
 
-    var durationPhrase: String {
+    var kindLabel: String? {
         switch contentKind {
-        case "youtube", "podcast", "music":
-            return "\(estimatedReadingMinutes) min"
-        default:
+        case "youtube": "Video"
+        case "podcast": "Podcast"
+        case "music": "Music"
+        default: nil
+        }
+    }
+
+    /// Timed length when known. Videos without a fetched duration return nil
+    /// instead of a fake "1 min".
+    var timedDurationPhrase: String? {
+        if durationSeconds >= 60 {
+            let minutes = max(1, Int((Double(durationSeconds) / 60.0).rounded()))
+            return "\(minutes) min"
+        }
+        if durationSeconds > 0 {
+            return "\(durationSeconds) sec"
+        }
+        if contentKind == "article" {
             return "\(estimatedReadingMinutes) min read"
         }
+        return nil
+    }
+
+    var durationPhrase: String {
+        timedDurationPhrase ?? kindLabel ?? "\(estimatedReadingMinutes) min read"
     }
 
     var readableHTML: String? {
         let value = contentHTML ?? summary
         guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return value
+    }
+
+    var displayExcerpt: String? {
+        if let aiSummary {
+            let plain = ContentClassifier.plainExcerpt(aiSummary, maxCharacters: 280)
+            if !plain.isEmpty { return plain }
+        }
+        guard let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let plain = ContentClassifier.plainExcerpt(summary)
+        return plain.isEmpty ? nil : plain
     }
 
     init(
@@ -72,6 +106,9 @@ final class Article {
         videoID: String? = nil,
         enclosureURL: URL? = nil,
         enclosureMIME: String? = nil,
+        rating: Int = 0,
+        aiSummary: String? = nil,
+        declinedVideoSummary: Bool = false,
         feed: Feed? = nil
     ) {
         self.id = id
@@ -92,6 +129,16 @@ final class Article {
         self.videoID = videoID
         self.enclosureURL = enclosureURL
         self.enclosureMIME = enclosureMIME
+        self.rating = min(5, max(0, rating))
+        self.aiSummary = aiSummary
+        self.declinedVideoSummary = declinedVideoSummary
         self.feed = feed
     }
+
+    func setRating(_ value: Int) {
+        rating = min(5, max(0, value))
+    }
+
+    /// SwiftData fatals if persisted properties are read after the row is gone.
+    var isStored: Bool { modelContext != nil }
 }

@@ -22,8 +22,53 @@ nonisolated enum ContentClassifier: Sendable {
     private static let htmlTagPattern = #/<[^>]+>/#
 
     static func stripHTML(_ html: String) -> String {
-        let stripped = html.replacing(htmlTagPattern, with: " ")
+        var stripped = html.replacing(htmlTagPattern, with: " ")
+        stripped = stripped.replacing(/<\/?[a-zA-Z][^>]*>?/, with: " ")
+        stripped = decodeEntities(stripped)
         return stripped.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    static func plainExcerpt(_ html: String, maxCharacters: Int = 220) -> String {
+        let plain = stripHTML(html)
+        guard plain.count > maxCharacters else { return plain }
+        let limit = plain.index(plain.startIndex, offsetBy: maxCharacters)
+        if let space = plain[..<limit].lastIndex(of: " ") {
+            return String(plain[..<space]) + "…"
+        }
+        return String(plain[..<limit]) + "…"
+    }
+
+    private static let namedEntities: [(String, String)] = [
+        ("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+        ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"),
+        ("&mdash;", "—"), ("&ndash;", "–"), ("&hellip;", "…"),
+        ("&rsquo;", "’"), ("&lsquo;", "‘"), ("&rdquo;", "”"), ("&ldquo;", "“")
+    ]
+
+    private static func decodeEntities(_ string: String) -> String {
+        var result = string
+        for (entity, value) in namedEntities {
+            result = result.replacingOccurrences(of: entity, with: value, options: .caseInsensitive)
+        }
+        return decodeNumericEntities(result)
+    }
+
+    private static func decodeNumericEntities(_ string: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "&#(x)?([0-9a-fA-F]+);", options: [.caseInsensitive]) else {
+            return string
+        }
+        let matches = regex.matches(in: string, range: NSRange(string.startIndex..., in: string))
+        var result = string
+        for match in matches.reversed() {
+            guard let fullRange = Range(match.range, in: result),
+                  let valueRange = Range(match.range(at: 2), in: result) else { continue }
+            let isHex = match.range(at: 1).location != NSNotFound
+            let raw = String(result[valueRange])
+            let value = isHex ? UInt32(raw, radix: 16) : UInt32(raw)
+            guard let value, value >= 32, let scalar = Unicode.Scalar(value) else { continue }
+            result.replaceSubrange(fullRange, with: String(Character(scalar)))
+        }
+        return result
     }
 
     static func wordCount(in html: String) -> Int {

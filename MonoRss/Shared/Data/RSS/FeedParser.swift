@@ -190,7 +190,8 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
     private func appendEntry() {
         let title = values["title"]?.trimmed.nonEmpty ?? "Untitled article"
         let guid = values["guid"] ?? values["id"] ?? entryURL?.absoluteString ?? title
-        let dateText = values["pubdate"] ?? values["published"] ?? values["updated"]
+        // Atom prefers <published>; many feeds only ship <updated>. RSS uses <pubDate>.
+        let dateText = values["pubdate"] ?? values["published"] ?? values["updated"] ?? values["dc:date"]
         let date = dateText.flatMap(Self.parseDate) ?? .now
         let content = values["content:encoded"] ?? values["encoded"] ?? values["content"]
         let summary = values["description"] ?? values["summary"]
@@ -233,13 +234,34 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
     }
 
     private static func parseDate(_ value: String) -> Date? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Default ISO8601DateFormatter rejects fractional seconds (common in Atom).
+        // withFractionalSeconds, in turn, requires them — so try both.
         let iso = ISO8601DateFormatter()
-        if let date = iso.date(from: value) { return date }
-        for format in ["EEE, dd MMM yyyy HH:mm:ss Z", "dd MMM yyyy HH:mm:ss Z", "yyyy-MM-dd'T'HH:mm:ssZ"] {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: trimmed) { return date }
+
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: trimmed) { return date }
+
+        iso.formatOptions = [.withFullDate]
+        if let date = iso.date(from: trimmed) { return date }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        for format in [
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd HH:mm:ss",
+            "EEE, dd MMM yyyy HH:mm:ss Z",
+            "EEE, dd MMM yyyy HH:mm:ss zzz",
+            "dd MMM yyyy HH:mm:ss Z",
+        ] {
             formatter.dateFormat = format
-            if let date = formatter.date(from: value) { return date }
+            if let date = formatter.date(from: trimmed) { return date }
         }
         return nil
     }

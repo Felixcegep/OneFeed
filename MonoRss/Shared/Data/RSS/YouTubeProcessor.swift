@@ -17,13 +17,26 @@ nonisolated enum YouTubeProcessor: Sendable {
         if host == "youtube.com" || host.hasSuffix(".youtube.com") {
             if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
                let videoID = components.queryItems?.first(where: { $0.name == "v" })?.value {
-                return String(videoID.prefix(11))
+                let trimmed = String(videoID.prefix(11))
+                return trimmed.count == 11 ? trimmed : nil
             }
             if let match = url.path.firstMatch(of: watchVideoPattern) {
                 return String(match.1)
             }
         }
         return nil
+    }
+
+    static func parseVideoID(fromGUID guid: String) -> String? {
+        let trimmed = guid.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefixes = ["yt:video:", "tag:youtube.com,2008:video:"]
+        for prefix in prefixes {
+            if trimmed.lowercased().hasPrefix(prefix) {
+                let id = String(trimmed.dropFirst(prefix.count).prefix(11))
+                if id.count == 11 { return id }
+            }
+        }
+        return parseVideoID(from: URL(string: trimmed))
     }
 
     static func parseChannelID(from url: URL?) -> String? {
@@ -63,5 +76,35 @@ nonisolated enum YouTubeProcessor: Sendable {
     static func shouldKeep(durationSeconds: Int?, minVideoSeconds: Int) -> Bool {
         guard let durationSeconds else { return true }
         return durationSeconds >= minVideoSeconds
+    }
+
+    /// Updates length in place. Too-short queued videos are skipped, never
+    /// deleted — deleting a row the UI still holds crashes SwiftData.
+    @discardableResult
+    static func applyFetchedDuration(
+        _ duration: Int,
+        to article: Article,
+        deckItems: [DailyDeckItem] = []
+    ) -> Bool {
+        guard duration > 0 else { return false }
+        article.durationSeconds = duration
+        article.estimatedReadingMinutes = ContentClassifier.consumeMinutes(
+            entryType: .youtube,
+            words: 0,
+            durationSeconds: duration
+        )
+        let minSeconds = article.feed?.minVideoSeconds ?? 180
+        guard !shouldKeep(durationSeconds: duration, minVideoSeconds: minSeconds) else { return false }
+        if article.state == .saved || article.state == .current { return false }
+        let isOnScreen = deckItems.contains { item in
+            item.status == .current && item.article?.id == article.id
+        }
+        guard !isOnScreen else { return false }
+        article.state = .skipped
+        article.completedAt = article.completedAt ?? .now
+        for item in deckItems where item.article?.id == article.id && item.status == .queued {
+            item.status = .skipped
+        }
+        return true
     }
 }

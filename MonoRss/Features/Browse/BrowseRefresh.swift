@@ -13,7 +13,7 @@ final class BrowseRefresh {
     var presentedError: String?
 
     var statusText: String {
-        if isRefreshing { return progress.countText + (progress.remainingText.isEmpty ? "" : " · \(progress.remainingText)") }
+        if isRefreshing { return progress.compactStatus }
         guard let lastRefreshedAt else { return "Pull to update" }
         return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
     }

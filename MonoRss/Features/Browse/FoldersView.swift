@@ -19,13 +19,12 @@ enum FeedBrowseDestination: Hashable {
 
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var articles: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
-    @State private var smartFeedsExpanded = true
-    @State private var foldersExpanded = true
+    @State private var showingAddSource = false
+    @State private var toolbarDestination: FeedToolbarDestination?
 
     private var unread: [Article] { FeedFolderGrouping.openArticles(from: articles) }
     private var today: [Article] { FeedFolderGrouping.todayArticles(from: articles) }
@@ -38,63 +37,79 @@ struct FoldersView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 28) {
-                directorySection("Smart Feeds", expanded: $smartFeedsExpanded) {
-                    directoryLink(.today, systemImage: "sun.max", count: today.count)
-                    directoryLink(.unread, systemImage: "circle", count: unread.count)
-                    directoryLink(.saved, systemImage: "bookmark", count: saved.count)
-                }
-                directorySection(folderSectionTitle, expanded: $foldersExpanded) {
-                    if summaries.isEmpty {
-                        Text("Folders appear here after you add sources.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 16)
-                    } else {
-                        ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
-                            NavigationLink {
-                                ArticleCollectionView(destination: .folder(summary.folderID))
-                            } label: {
-                                FeedDirectoryRow(
-                                    title: summary.name,
-                                    swatchName: summary.name,
-                                    count: summary.unreadCount
-                                )
-                            }
-                            .buttonStyle(DirectoryRowButtonStyle())
-                            .accessibilityIdentifier("folder-\(summary.name)")
-                            .accessibilityHint("Opens unread stories in this folder")
-                            if index < summaries.count - 1 { rowDivider }
+        List {
+            Section("Smart Feeds") {
+                smartLink(.today, systemImage: "sun.max", count: today.count)
+                smartLink(.unread, systemImage: "circle", count: unread.count)
+                smartLink(.saved, systemImage: "star", count: saved.count)
+            }
+            Section(folderSectionTitle) {
+                if summaries.isEmpty {
+                    Text("Folders appear here after you add sources.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(summaries) { summary in
+                        NavigationLink {
+                            ArticleCollectionView(destination: .folder(summary.folderID))
+                        } label: {
+                            FeedDirectoryRow(
+                                title: summary.name,
+                                swatchName: summary.name,
+                                count: summary.unreadCount
+                            )
                         }
+                        .accessibilityIdentifier("folder-\(summary.name)")
+                        .accessibilityHint("Opens unread stories in this folder")
                     }
                 }
             }
-            .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 12)
         }
-        .background(OneFeedTheme.grouped.ignoresSafeArea())
-        .navigationTitle("Folders")
+        .listStyle(.insetGrouped)
+        .navigationTitle("Feed")
+        .navigationBarTitleDisplayMode(.large)
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    Task { await refresh.refresh(in: modelContext) }
-                } label: {
-                    if refresh.isRefreshing {
-                        OneFeedMarkPulse(isActive: true, size: 18)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
+                if refresh.isRefreshing {
+                    ProgressView()
+                        .accessibilityLabel("Refresh")
+                } else {
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        Task { await refresh.refresh(in: modelContext) }
                     }
                 }
-                .disabled(refresh.isRefreshing)
-                .accessibilityLabel("Refresh")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Add Source", systemImage: "plus") { showingAddSource = true }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
+                        toolbarDestination = .sources
+                    }
+                    Button("Settings", systemImage: "gearshape") {
+                        toolbarDestination = .settings
+                    }
+                    Button("History", systemImage: "clock") {
+                        toolbarDestination = .history
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("More")
+            }
+        }
+        .navigationDestination(item: $toolbarDestination) { destination in
+            switch destination {
+            case .sources: SourcesView()
+            case .settings: SettingsView()
+            case .history: HistoryView()
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
         .task { refresh.adoptLatestFetch(from: feeds) }
+        .sheet(isPresented: $showingAddSource) { AddSourceView() }
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { refresh.presentedError != nil },
             set: { if !$0 { refresh.presentedError = nil } }
@@ -105,45 +120,18 @@ struct FoldersView: View {
         }
     }
 
-    private func directorySection<Content: View>(
-        _ title: String,
-        expanded: Binding<Bool>,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button {
-                withAnimation(reduceMotion ? nil : OneFeedMotion.overlay) {
-                    expanded.wrappedValue.toggle()
-                }
-            } label: {
-                OneFeedSectionLabel(title: title, expanded: expanded.wrappedValue)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint(expanded.wrappedValue ? "Collapses this section" : "Expands this section")
-
-            if expanded.wrappedValue {
-                OneFeedGroupCard { content() }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func directoryLink(_ destination: FeedBrowseDestination, systemImage: String, count: Int) -> some View {
+    private func smartLink(_ destination: FeedBrowseDestination, systemImage: String, count: Int) -> some View {
         NavigationLink {
             ArticleCollectionView(destination: destination)
         } label: {
             FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
-        .buttonStyle(DirectoryRowButtonStyle())
-        if destination != .saved { rowDivider }
     }
+}
 
-    private var rowDivider: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.06))
-            .frame(height: 1)
-            .padding(.leading, 60)
-    }
+private enum FeedToolbarDestination: Hashable, Identifiable {
+    case sources, settings, history
+    var id: Self { self }
 }
 
 struct ArticleCollectionView: View {
@@ -173,27 +161,25 @@ struct ArticleCollectionView: View {
                     description: emptyDescription
                 )
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 14) {
-                        ForEach(items) { article in
-                            Button { selectedArticle = article } label: {
-                                ArticleCard(article: article)
-                            }
-                            .buttonStyle(.plain)
-                            .articleActions(for: article, in: modelContext)
+                List {
+                    ForEach(items.filter(\.isStored)) { article in
+                        Button { selectedArticle = article } label: {
+                            ArticleRow(article: article)
                         }
+                        .buttonStyle(.plain)
+                        .articleListRow()
+                        .articleActions(for: article, in: modelContext)
                     }
-                    .padding(.horizontal, OneFeedTheme.pagePadding)
-                    .padding(.vertical, 12)
                 }
+                .articleTimelineList()
             }
         }
-        .background(OneFeedTheme.grouped.ignoresSafeArea())
         .navigationTitle(destination.title)
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
+                guard article.isStored else { return }
                 ArticleActions.apply(state, to: article, in: modelContext)
             }
         }
@@ -212,7 +198,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .today: "sun.max"
         case .unread: "checkmark.circle"
-        case .saved: "bookmark"
+        case .saved: "star"
         case .folder: "checkmark.circle"
         }
     }

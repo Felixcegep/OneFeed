@@ -82,6 +82,53 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(try context.fetch(FetchDescriptor<Feed>()).first?.remoteID == nil)
     }
 
+    @Test func mergeDuplicatesKeepsNamedFeedAndDropsOrphanCopy() throws {
+        let context = try context()
+        let url = URL(string: "https://aeon.co/essays/more")!
+        let aeon = Feed(title: "Aeon | a world of ideas", feedURL: URL(string: "https://aeon.co/feed")!)
+        context.insert(aeon)
+        let orphan = Article(guid: "local-guid", title: "More nothing now", url: url, state: .queued)
+        let linked = Article(guid: "greader-id", title: "More nothing now", url: url, state: .queued, remoteID: "greader-id", feed: aeon)
+        context.insert(orphan)
+        context.insert(linked)
+        try context.save()
+
+        #expect(try ArticleIdentity.mergeDuplicates(in: context) == 1)
+        let remaining = try context.fetch(FetchDescriptor<Article>())
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.feed?.title == "Aeon | a world of ideas")
+        #expect(remaining.first?.remoteID == "greader-id")
+        #expect(try context.fetchCount(FetchDescriptor<Feed>()) == 1)
+    }
+
+    @Test func syncReusesLocalFeedAndArticleByURL() async throws {
+        let context = try context()
+        let credentials = InMemoryFreshRSSCredentialStore()
+        let api = DuplicateStorySyncAPI()
+        let account = SyncAccount(provider: .freshRSS, serverURL: URL(string: "http://rss.local")!, username: "reader")
+        context.insert(account)
+        await credentials.save(try FreshRSSCredentials(username: "reader", password: "api-password"), for: account.id)
+        let local = Feed(title: "Aeon", feedURL: URL(string: "https://aeon.co/feed")!)
+        context.insert(local)
+        context.insert(Article(
+            guid: "rss-guid",
+            title: "More nothing now",
+            url: URL(string: "https://aeon.co/essays/more"),
+            state: .queued,
+            feed: local
+        ))
+        try context.save()
+
+        try await FreshRSSSyncService(credentialStore: credentials, clientFactory: { _ in api }).sync(account: account, in: context)
+
+        #expect(try context.fetchCount(FetchDescriptor<Feed>()) == 1)
+        #expect(try context.fetch(FetchDescriptor<Feed>()).first?.remoteID == "feed/aeon")
+        let articles = try context.fetch(FetchDescriptor<Article>())
+        #expect(articles.count == 1)
+        #expect(articles.first?.remoteID == "item-more")
+        #expect(articles.first?.feed?.id == local.id)
+    }
+
     @Test func finishingSavedArticleKeepsFavoriteAndMarksRead() throws {
         let context = try context()
         let article = Article(guid: "saved", title: "Saved", state: .saved, remoteID: "remote-saved", isRemoteStarred: true)
@@ -102,6 +149,9 @@ struct SwiftDataFreshRSSSyncTests {
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
         let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
         #expect(schemes.contains("onefeed"))
+        #expect(schemes.contains("feed"))
+        #expect(schemes.contains("feeds"))
+        #expect(schemes.contains("x-onefeed-feed"))
         let ats = Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any] ?? [:]
         #expect(ats["NSAllowsArbitraryLoads"] as? Bool == true)
         // iOS ignores NSAllowsArbitraryLoads when any of these companion keys are present,
@@ -113,6 +163,10 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(identifiers.contains("felix.MonoRss.feed-refresh"))
         let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
         #expect(modes.contains("fetch"))
+        let documentTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleDocumentTypes") as? [[String: Any]] ?? []
+        let contentTypes = documentTypes.flatMap { $0["LSItemContentTypes"] as? [String] ?? [] }
+        #expect(contentTypes.contains("public.rss"))
+        #expect(contentTypes.contains("public.atom"))
     }
 
     @Test func syncFollowsItemIDContinuationPages() async throws {
@@ -158,6 +212,37 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(feeds.refreshed)
         #expect(sync.synced)
     }
+}
+
+private actor DuplicateStorySyncAPI: FreshRSSAPI {
+    func login(credentials: FreshRSSCredentials) async throws -> FreshRSSAuthResponse { .init(authToken: "token") }
+    func subscriptions(authToken: String) async throws -> FreshRSSSubscriptionResponse {
+        .init(subscriptions: [.init(
+            id: "feed/aeon",
+            title: "Aeon | a world of ideas",
+            feedURL: URL(string: "https://aeon.co/feed"),
+            htmlURL: URL(string: "https://aeon.co")
+        )])
+    }
+    func itemIDs(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamItemIDsResponse {
+        .init(itemRefs: [])
+    }
+    func itemContents(itemIDs: [String], authToken: String) async throws -> FreshRSSStreamContentsResponse { .init(items: []) }
+    func streamContents(streamID: String, authToken: String, unreadOnly: Bool, limit: Int, continuation: String?) async throws -> FreshRSSStreamContentsResponse {
+        .init(items: [FreshRSSItem(
+            id: "item-more",
+            title: "More nothing now",
+            canonical: [FreshRSSLink(href: URL(string: "https://aeon.co/essays/more"))]
+        )])
+    }
+    func markRead(itemID: String, authToken: String) async throws {}
+    func markUnread(itemID: String, authToken: String) async throws {}
+    func setStarred(itemID: String, authToken: String, starred: Bool) async throws {}
+    func setReadLater(itemID: String, authToken: String, readLater: Bool) async throws {}
+    func quickAdd(url: String, authToken: String) async throws -> FreshRSSQuickAddResponse {
+        .init(numResults: 1, query: url, streamID: "feed/aeon")
+    }
+    func unsubscribe(streamID: String, authToken: String) async throws {}
 }
 
 private actor YouTubeSyncAPI: FreshRSSAPI {
@@ -229,8 +314,8 @@ private actor PagingSyncAPI: FreshRSSAPI {
 @MainActor
 private final class RecordingFeedRepository: FeedRepository {
     private(set) var refreshed = false
-    func addSource(from input: String, in context: ModelContext) async throws -> Feed {
-        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!)
+    func addSource(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!, folderName: folderName)
     }
     func refresh(_ feed: Feed, in context: ModelContext) async throws {}
     func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws { refreshed = true }
@@ -245,8 +330,8 @@ private final class RecordingFreshRSSService: FreshRSSSyncing {
     func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
     func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws { synced = true }
     func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
-    func addSubscription(from input: String, in context: ModelContext) async throws -> Feed {
-        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!)
+    func addSubscription(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!, folderName: folderName)
     }
     func removeSubscription(_ feed: Feed, in context: ModelContext) async throws { context.delete(feed) }
     func subscribeLocalFeeds(in context: ModelContext) async throws {}

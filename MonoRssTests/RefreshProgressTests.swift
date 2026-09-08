@@ -31,5 +31,6 @@ struct RefreshProgressTests {
         progress.finishItem(newArticles: 1, now: start.addingTimeInterval(4))
         #expect(progress.articlesFound == 4)
         #expect(progress.fraction == 0.5)
+        #expect(progress.compactStatus == "2 of 4 · 4 new")
     }
 }

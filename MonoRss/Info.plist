@@ -8,6 +8,18 @@
 	<array>
 		<dict>
 			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>felix.MonoRss.feed</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>feed</string>
+				<string>feeds</string>
+				<string>x-onefeed-feed</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
 			<string>felix.MonoRss</string>
@@ -17,6 +29,105 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>RSS or Atom Feed</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.rss</string>
+				<string>public.atom</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>OPML</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.opml.opml</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>RSS Feed</string>
+			<key>UTTypeIdentifier</key>
+			<string>public.rss</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rss</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/rss+xml</string>
+					<string>application/rdf+xml</string>
+					<string>text/rss</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Atom Feed</string>
+			<key>UTTypeIdentifier</key>
+			<string>public.atom</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>atom</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/atom+xml</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>OPML</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.opml.opml</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>opml</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/x-opml</string>
+					<string>application/xml</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

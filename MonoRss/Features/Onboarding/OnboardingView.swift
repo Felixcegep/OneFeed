@@ -69,17 +69,17 @@ struct OnboardingView: View {
 
     private var title: String {
         switch viewModel.page {
-        case 0: "A small daily stack."
+        case 0: "Today, from sources you chose."
         case 1: "Follow what matters."
-        default: "Read, save, skip, done. Then the next card."
+        default: "Read in the app. Star what you want to keep."
         }
     }
 
     private var subtitle: String {
         switch viewModel.page {
-        case 0: "About ten things from sources you chose—never an overflowing inbox."
+        case 0: "A short daily stack, laid out like a newspaper."
         case 1: "Add websites, RSS feeds, or connect FreshRSS in Settings."
-        default: ""
+        default: "Reader view for the article. Website when you want the original page."
         }
     }
 }

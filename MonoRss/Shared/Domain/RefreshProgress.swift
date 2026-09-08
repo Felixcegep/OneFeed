@@ -95,6 +95,18 @@ final class RefreshProgress {
         return remainingCount == 1 ? "1 left" : "\(remainingCount) left"
     }
 
+    /// One line for the navigation subtitle so the list does not need a tall banner.
+    var compactStatus: String {
+        if total > 0 {
+            var parts = ["\(completed) of \(total)"]
+            if articlesFound > 0 {
+                parts.append(articlesFound == 1 ? "1 new" : "\(articlesFound) new")
+            }
+            return parts.joined(separator: " · ")
+        }
+        return primaryText
+    }
+
     func detailText(now: Date = .now) -> String {
         var parts: [String] = []
         if let currentTitle, !currentTitle.isEmpty { parts.append(currentTitle) }

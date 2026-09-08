@@ -10,41 +10,58 @@ struct SavedView: View {
             if viewModel.articles.isEmpty {
                 ContentUnavailableView(
                     "Nothing saved",
-                    systemImage: "bookmark",
-                    description: Text("Articles you save will wait here without folders or tags.")
+                    systemImage: "star",
+                    description: Text("Star an article and it will wait here.")
                 )
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 14) {
-                        ForEach(viewModel.articles) { article in
-                            Button {
-                                viewModel.selectedArticle = article
-                            } label: {
-                                ArticleCard(article: article)
+                List {
+                    ForEach(viewModel.articles.filter(\.isStored)) { article in
+                        Button {
+                            viewModel.selectedArticle = article
+                        } label: {
+                            ArticleRow(article: article)
+                        }
+                        .buttonStyle(.plain)
+                        .articleListRow()
+                        .accessibilityHint("Opens the saved article")
+                        .swipeActions {
+                            Button("Return to Feed", systemImage: "arrow.uturn.backward") {
+                                viewModel.restore(article)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityHint("Opens the saved article")
-                            .swipeActions {
-                                Button("Return to Feed", systemImage: "arrow.uturn.backward") {
-                                    viewModel.restore(article)
+                            .tint(.secondary)
+                        }
+                        .contextMenu {
+                            Button("Return to Feed", systemImage: "arrow.uturn.backward") {
+                                viewModel.restore(article)
+                            }
+                            Menu("Rate") {
+                                ForEach(1...5, id: \.self) { stars in
+                                    Button {
+                                        guard article.isStored else { return }
+                                        article.setRating(stars)
+                                        try? modelContext.save()
+                                    } label: {
+                                        Label(
+                                            "\(stars) star\(stars == 1 ? "" : "s")",
+                                            systemImage: article.rating >= stars ? "star.fill" : "star"
+                                        )
+                                    }
                                 }
-                                .tint(.secondary)
-                            }
-                            .contextMenu {
-                                Button("Return to Feed", systemImage: "arrow.uturn.backward") {
-                                    viewModel.restore(article)
+                                if article.rating > 0 {
+                                    Button("Clear rating", systemImage: "star.slash") {
+                                        article.setRating(0)
+                                        try? modelContext.save()
+                                    }
                                 }
                             }
                         }
                     }
-                    .padding(.horizontal, OneFeedTheme.pagePadding)
-                    .padding(.vertical, 12)
                 }
-                .background(OneFeedTheme.grouped.ignoresSafeArea())
+                .articleTimelineList()
             }
         }
         .navigationTitle("Saved")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .task { viewModel.configure(with: modelContext) }
         .fullScreenCover(item: $viewModel.selectedArticle) { article in
             ReaderView(article: article) { state in

@@ -32,7 +32,7 @@ enum BackgroundRefreshCoordinator {
         _ = try? DailyDeckService().generateIfNeeded(in: context)
         _ = try? ArticleRetentionService().purge(in: context)
         let current = try? DailyDeckService().currentItem(in: context)
-        await ArticleExtractionService().enrichUpcoming(in: context, from: current)
+        await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
         lastSuccessfulRefresh = .now
     }
 

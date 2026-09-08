@@ -8,6 +8,7 @@ enum ArticleActions {
         to article: Article,
         in context: ModelContext
     ) {
+        guard article.isStored else { return }
         let queue = ArticleQueueService()
         let sync: any FreshRSSSyncing = FreshRSSSyncService()
         sync.enqueueMutation(for: article, transition: state, in: context)
@@ -33,13 +34,13 @@ struct ArticleSwipeActions: ViewModifier {
                 .tint(.secondary)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button("Save", systemImage: "bookmark") {
+                Button("Save", systemImage: "star") {
                     ArticleActions.apply(.saved, to: article, in: context)
                 }
                 .tint(OneFeedTheme.accent)
             }
             .contextMenu {
-                Button("Save", systemImage: "bookmark") {
+                Button("Save", systemImage: "star") {
                     ArticleActions.apply(.saved, to: article, in: context)
                 }
                 Button("Done", systemImage: "checkmark") {
@@ -47,6 +48,25 @@ struct ArticleSwipeActions: ViewModifier {
                 }
                 Button("Skip", systemImage: "forward") {
                     ArticleActions.apply(.skipped, to: article, in: context)
+                }
+                Menu("Rate") {
+                    ForEach(1...5, id: \.self) { stars in
+                        Button {
+                            article.setRating(stars)
+                            try? context.save()
+                        } label: {
+                            Label(
+                                "\(stars) star\(stars == 1 ? "" : "s")",
+                                systemImage: article.rating >= stars ? "star.fill" : "star"
+                            )
+                        }
+                    }
+                    if article.rating > 0 {
+                        Button("Clear rating", systemImage: "star.slash") {
+                            article.setRating(0)
+                            try? context.save()
+                        }
+                    }
                 }
             }
     }

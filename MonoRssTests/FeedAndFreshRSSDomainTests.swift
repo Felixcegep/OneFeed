@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import MonoRss
 
@@ -21,6 +22,72 @@ struct FeedAndFreshRSSDomainTests {
         #expect(article.url == URL(string: "https://example.test/story"))
         #expect(article.contentHTML == "<p>Body</p>")
         #expect(article.publishedAt == ISO8601DateFormatter().date(from: "2026-08-29T12:00:00Z"))
+    }
+
+    @Test func feedParserReadsAtomFractionalSecondsAndPublished() throws {
+        let xml = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <title>Fractional</title>
+          <entry>
+            <id>tag:example.test,2026:frac</id>
+            <title>With millis</title>
+            <published>2026-09-04T00:00:00.000Z</published>
+            <updated>2026-09-05T12:34:56.789Z</updated>
+          </entry>
+          <entry>
+            <id>tag:example.test,2026:offset</id>
+            <title>With offset</title>
+            <updated>2026-06-12T09:19:34-05:00</updated>
+          </entry>
+          <entry>
+            <id>tag:example.test,2026:naive</id>
+            <title>No zone</title>
+            <updated>2026-01-15T10:30:00</updated>
+          </entry>
+        </feed>
+        """
+
+        let parsed = try FeedParser().parse(Data(xml.utf8))
+        #expect(parsed.articles.count == 3)
+
+        let frac = ISO8601DateFormatter()
+        frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        #expect(parsed.articles[0].publishedAt == frac.date(from: "2026-09-04T00:00:00.000Z"))
+        #expect(parsed.articles[1].publishedAt == ISO8601DateFormatter().date(from: "2026-06-12T09:19:34-05:00"))
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let naive = parsed.articles[2].publishedAt
+        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: naive)
+        #expect(parts.year == 2026 && parts.month == 1 && parts.day == 15)
+        #expect(parts.hour == 10 && parts.minute == 30 && parts.second == 0)
+    }
+
+    @Test func incomingFeedURLNormalizesFeedSchemesLikeNetNewsWire() {
+        #expect(
+            IncomingFeedURL.subscriptionAddress(from: URL(string: "feed:https://jvns.ca/atom.xml")!)
+                == "https://jvns.ca/atom.xml"
+        )
+        #expect(
+            IncomingFeedURL.subscriptionAddress(from: URL(string: "feed://example.com/rss")!)
+                == "http://example.com/rss"
+        )
+        #expect(
+            IncomingFeedURL.subscriptionAddress(from: URL(string: "feeds:example.com/atom.xml")!)
+                == "https://example.com/atom.xml"
+        )
+        #expect(
+            IncomingFeedURL.subscriptionAddress(from: URL(string: "x-onefeed-feed:https://vercel.com/atom")!)
+                == "https://vercel.com/atom"
+        )
+        #expect(
+            IncomingFeedURL.subscriptionAddress(from: URL(string: "onefeed://subscribe?url=https%3A%2F%2Fswift.org%2Fatom.xml")!)
+                == "https://swift.org/atom.xml"
+        )
+        #expect(IncomingFeedURL.subscriptionAddress(from: URL(string: "onefeed://reader/abc")!) == nil)
+
+        #expect(FeedService.normalizedURL(from: "feed:https://jvns.ca/atom.xml") == URL(string: "https://jvns.ca/atom.xml"))
+        #expect(FeedService.normalizedURL(from: "example.com/feed") == URL(string: "https://example.com/feed"))
     }
 
     @Test func freshRSSConfigurationAcceptsHTTPAndHTTPS() throws {
@@ -87,8 +154,9 @@ struct FeedAndFreshRSSDomainTests {
         let alsoPhilosophy = Feed(title: "CCK", feedURL: URL(string: "https://d.test/rss")!, folderName: "Philosophy")
 
         let groups = FeedFolderGrouping.groups(from: [philosophy, unfiled, development, alsoPhilosophy])
-        #expect(groups.map(\.name) == ["Development", "Philosophy", "Unfiled"])
-        #expect(groups[1].feeds.map(\.title) == ["Acephale", "CCK"])
+        // Seeded folders (Philosophy) sort ahead of unknown names (Development).
+        #expect(groups.map(\.name) == ["Philosophy", "Development", "Unfiled"])
+        #expect(groups[0].feeds.map(\.title) == ["Acephale", "CCK"])
         #expect(groups[2].feeds.map(\.title) == ["Ars"])
     }
 
@@ -101,9 +169,9 @@ struct FeedAndFreshRSSDomainTests {
         let done = Article(guid: "4", title: "Done", publishedAt: .now, state: .read, feed: philosophy)
 
         let groups = FeedFolderGrouping.folderArticleGroups(from: [newest, older, other, done])
-        #expect(groups.map(\.name) == ["Development", "Philosophy"])
-        #expect(groups[0].articles.map(\.title) == ["New", "Old"])
-        #expect(groups[1].articles.map(\.title) == ["Essay"])
+        #expect(groups.map(\.name) == ["Philosophy", "Development"])
+        #expect(groups[0].articles.map(\.title) == ["Essay"])
+        #expect(groups[1].articles.map(\.title) == ["New", "Old"])
     }
 
     @Test func folderSummariesIncludeEmptyFoldersAndUnreadCounts() {
@@ -280,12 +348,179 @@ struct FeedAndFreshRSSDomainTests {
         <meta itemprop="duration" content="PT18M" /></html>
         """
         #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: html) == 1080)
+        let nested = """
+        <html><script>var ytInitialPlayerResponse = {"videoDetails":{"lengthSeconds":"240","nested":{"a":1}},"streamingData":{}};</script></html>
+        """
+        #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: nested) == 240)
+        let bulky = String(repeating: "x", count: 80_000) + html
+        #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: bulky) == 1080)
+        #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: #""lengthSeconds": 1847"#) == 1847)
+        #expect(YouTubeMetadataService.parseDuration(fromWatchHTML: #""approxDurationMs":"90000""#) == 90)
+    }
+
+    @Test func youtubeMetadataParsesPlayerJSON() throws {
+        let data = #"{"videoDetails":{"lengthSeconds":"1847"}}"#.data(using: .utf8)!
+        #expect(YouTubeMetadataService.parseDuration(fromPlayerJSON: data) == 1847)
+        let adaptive = #"{"streamingData":{"adaptiveFormats":[{"approxDurationMs":"125000"}]}}"#.data(using: .utf8)!
+        #expect(YouTubeMetadataService.parseDuration(fromPlayerJSON: adaptive) == 125)
     }
 
     @Test func youtubeProcessorParsesIDsAndThumbnail() {
         let watch = URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
         #expect(YouTubeProcessor.parseVideoID(from: watch) == "dQw4w9WgXcQ")
+        #expect(YouTubeProcessor.parseVideoID(fromGUID: "yt:video:dQw4w9WgXcQ") == "dQw4w9WgXcQ")
         #expect(YouTubeProcessor.thumbnailURL(for: "dQw4w9WgXcQ")?.absoluteString.contains("hqdefault.jpg") == true)
         #expect(YouTubeProcessor.isShort(url: URL(string: "https://www.youtube.com/shorts/abc12345678"), title: ""))
+    }
+
+    @Test @MainActor func shortQueuedVideoIsSkippedInsteadOfDeleted() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(
+            title: "Channel",
+            feedURL: URL(string: "https://youtube.test/rss")!,
+            minVideoSeconds: 180
+        )
+        context.insert(feed)
+        let queued = Article(
+            guid: "short",
+            title: "Clip",
+            state: .queued,
+            contentKind: "youtube",
+            videoID: "dQw4w9WgXcQ",
+            feed: feed
+        )
+        let current = Article(
+            guid: "long",
+            title: "Talk",
+            state: .current,
+            contentKind: "youtube",
+            videoID: "abcdefghijk",
+            feed: feed
+        )
+        let longEnough = Article(
+            guid: "ok",
+            title: "Lecture",
+            state: .queued,
+            contentKind: "youtube",
+            videoID: "lmnopqrstuv",
+            feed: feed
+        )
+        context.insert(queued)
+        context.insert(current)
+        context.insert(longEnough)
+
+        #expect(YouTubeProcessor.applyFetchedDuration(90, to: queued))
+        #expect(queued.state == .skipped)
+        #expect(queued.durationSeconds == 90)
+        #expect(try context.fetchCount(FetchDescriptor<Article>()) == 3)
+
+        #expect(!YouTubeProcessor.applyFetchedDuration(90, to: current))
+        #expect(current.state == .current)
+        #expect(current.durationSeconds == 90)
+
+        #expect(!YouTubeProcessor.applyFetchedDuration(600, to: longEnough))
+        #expect(longEnough.state == .queued)
+        #expect(longEnough.durationSeconds == 600)
+    }
+
+    @Test func videoDurationPhraseOmitsFakeOneMinute() {
+        let unknown = Article(
+            guid: "yt-unknown",
+            title: "Talk",
+            contentKind: "youtube",
+            durationSeconds: 0,
+            videoID: "dQw4w9WgXcQ"
+        )
+        #expect(unknown.kindLabel == "Video")
+        #expect(unknown.timedDurationPhrase == nil)
+        #expect(unknown.durationPhrase == "Video")
+
+        let known = Article(
+            guid: "yt-known",
+            title: "Talk",
+            estimatedReadingMinutes: 1,
+            contentKind: "youtube",
+            durationSeconds: 1847,
+            videoID: "dQw4w9WgXcQ"
+        )
+        #expect(known.timedDurationPhrase == "31 min")
+        #expect(known.durationPhrase == "31 min")
+    }
+
+    @Test func articleRatingClampsAndClears() {
+        let article = Article(guid: "rated", title: "Essay")
+        article.setRating(8)
+        #expect(article.rating == 5)
+        article.setRating(3)
+        #expect(article.rating == 3)
+        article.setRating(0)
+        #expect(article.rating == 0)
+    }
+
+    @Test func geminiClientParsesSummaryAndErrors() throws {
+        let payload = #"{"candidates":[{"content":{"parts":[{"text":"A short summary."}]}}]}"#.data(using: .utf8)!
+        #expect(try GeminiClient.parseSummary(from: payload) == "A short summary.")
+
+        let error = #"{"error":{"message":"API key expired"}}"#.data(using: .utf8)!
+        do {
+            _ = try GeminiClient.parseSummary(from: error)
+            Issue.record("Expected a Gemini API error")
+        } catch let thrown as GeminiClientError {
+            #expect(thrown == .api("API key expired"))
+        } catch {
+            Issue.record("Wrong error type: \(error)")
+        }
+    }
+
+    @Test func displayExcerptPrefersAISummary() {
+        let article = Article(
+            guid: "1",
+            title: "Talk",
+            summary: "Feed blurb",
+            contentKind: "youtube",
+            aiSummary: "The video explains why 1/137 shows up in physics."
+        )
+        #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+    }
+
+    @Test func stripHTMLTurnsMarkupAndEntitiesIntoPlainPreviewText() {
+        let aeon = #"<p><img src="https://images.aeonmedia.co/images/essay.jpg" alt="">More nothing now &amp; then</p>"#
+        #expect(ContentClassifier.stripHTML(aeon) == "More nothing now & then")
+        #expect(ContentClassifier.plainExcerpt(aeon).contains("<") == false)
+
+        let truncated = #"<p><img src="https://images.aeonmedia.co/images/e2cbb509-e695-4191-8ab0-d8a48f630ec2/essay-gettyimages-225765"#
+        #expect(ContentClassifier.stripHTML(truncated).isEmpty)
+        #expect(Article(guid: "1", title: "More nothing now", summary: truncated).displayExcerpt == nil)
+
+        let prose = #"<p>Nathan E. Sanders and I are writing a series of essays&nbsp;for <cite>The Renovator</cite>.</p>"#
+        #expect(ContentClassifier.stripHTML(prose).contains("Nathan E. Sanders"))
+        #expect(ContentClassifier.stripHTML(prose).contains("<") == false)
+    }
+
+    @Test func articleIdentityCollapsesSameURLAndPrefersANamedFeed() {
+        let url = URL(string: "https://aeon.co/essays/more?utm_source=rss")!
+        let aeon = Feed(title: "Aeon | a world of ideas", feedURL: URL(string: "https://aeon.co/feed")!)
+        let orphan = Article(guid: "local", title: "More nothing now", url: url, state: .queued)
+        let linked = Article(guid: "remote", title: "More nothing now", url: URL(string: "https://aeon.co/essays/more"), state: .queued, feed: aeon)
+
+        let visible = FeedFolderGrouping.openArticles(from: [orphan, linked])
+        #expect(visible.count == 1)
+        #expect(visible.first?.feed?.title == "Aeon | a world of ideas")
+        #expect(ArticleIdentity.normalizedURLString(url) == "https://aeon.co/essays/more")
+    }
+
+    @Test @MainActor func readerDocumentUsesEditorialTypeAndStripsScripts() {
+        let article = Article(
+            guid: "1",
+            title: "Essay",
+            contentHTML: "<p>Hello reader</p><script>alert(1)</script>"
+        )
+        let html = ReaderViewModel(article: article).documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("overflow-x: hidden"))
+        #expect(html.contains("New York"))
+        #expect(html.contains("1.68"))
+        #expect(html.contains("#4A6FE3"))
+        #expect(html.contains("Hello reader"))
+        #expect(!html.contains("alert(1)"))
     }
 }

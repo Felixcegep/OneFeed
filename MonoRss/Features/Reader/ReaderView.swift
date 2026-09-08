@@ -17,12 +17,15 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.sans.rawValue
+    @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
     @State private var viewModel: ReaderViewModel
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
     @State private var savePulse = 0
+    @State private var showingSummaryPrompt = false
+    @State private var showingAPIKeySheet = false
+    @State private var geminiKey = ""
     let onFinish: (ArticleState) -> Void
 
     init(article: Article, onFinish: @escaping (ArticleState) -> Void) {
@@ -35,19 +38,28 @@ struct ReaderView: View {
         NavigationStack {
             Group {
                 if mode == .website, let url = playbackURL {
-                    inAppWebsite(url)
+                    VStack(spacing: 0) {
+                        youtubeSummaryBanner
+                        inAppWebsite(url)
+                    }
                 } else {
-                    ReaderWebContent(html: viewModel.documentHTML(
-                        fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .sans,
-                        textSize: ReaderTextSize(rawValue: textSize) ?? .standard
-                    ))
-                    .id(dynamicTypeSize)
+                    VStack(spacing: 0) {
+                        youtubeSummaryBanner
+                        ReaderWebContent(
+                            html: viewModel.documentHTML(
+                                fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
+                                textSize: ReaderTextSize(rawValue: textSize) ?? .standard
+                            ),
+                            baseURL: article.url ?? URL(string: "about:blank")!
+                        )
+                        .id(dynamicTypeSize)
+                    }
                 }
             }
             .background(OneFeedTheme.page)
             .overlay(alignment: .top) {
                 if viewModel.isExtracting {
-                    OneFeedMarkPulse(isActive: true, size: 20)
+                    ProgressView()
                         .padding(.top, 8)
                         .transition(.opacity)
                 }
@@ -55,13 +67,13 @@ struct ReaderView: View {
             .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
             .task {
                 await viewModel.enrichReadableHTML()
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                readerActions
+                if viewModel.shouldOfferYouTubeSummary {
+                    showingSummaryPrompt = true
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close", systemImage: "chevron.down") { dismiss() }
+                    Button("Close", systemImage: "xmark") { dismiss() }
                         .accessibilityHint("Closes the reader without changing this article")
                 }
                 ToolbarItem(placement: .principal) {
@@ -77,12 +89,61 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if viewModel.article.url != nil {
-                        Button("Open browser", systemImage: "safari") {
-                            isPresentingBrowser = true
+                    Menu {
+                        Picker("Font", selection: $fontChoice) {
+                            ForEach(ReaderFontChoice.allCases) { choice in
+                                Text(choice.label).tag(choice.rawValue)
+                            }
                         }
-                        .accessibilityHint("Opens a full in-app browser")
+                        Picker("Size", selection: $textSize) {
+                            ForEach(ReaderTextSize.allCases) { size in
+                                Text(size.label).tag(size.rawValue)
+                            }
+                        }
+                        if article.contentKind == "youtube" {
+                            Divider()
+                            Button("Summarize video", systemImage: "text.quote") {
+                                if GeminiAPIKeyStore.load() == nil {
+                                    showingAPIKeySheet = true
+                                } else {
+                                    Task { await viewModel.summarizeYouTube() }
+                                }
+                            }
+                            .disabled(viewModel.isSummarizing)
+                        }
+                    } label: {
+                        Image(systemName: "textformat.size")
                     }
+                    .accessibilityLabel("Reading options")
+                }
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button {
+                        savePulse += 1
+                        onFinish(.saved)
+                    } label: {
+                        Label("Save", systemImage: "star")
+                    }
+                    .accessibilityHint("Keeps this in Saved")
+                    Button {
+                        onFinish(.skipped)
+                    } label: {
+                        Label("Skip", systemImage: "forward")
+                    }
+                    Button {
+                        onFinish(.read)
+                    } label: {
+                        Label("Done", systemImage: "checkmark.circle")
+                    }
+                    .accessibilityHint("Marks this article done")
+                    ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(article.url == nil)
+                    Button("Open browser", systemImage: "safari") {
+                        isPresentingBrowser = true
+                    }
+                    .disabled(article.url == nil)
+                    .accessibilityLabel("Open in browser")
                 }
             }
             .toolbarTitleDisplayMode(.inline)
@@ -91,6 +152,39 @@ struct ReaderView: View {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
                 }
+            }
+            .confirmationDialog("Summarize this video?", isPresented: $showingSummaryPrompt, titleVisibility: .visible) {
+                Button("Summarize") {
+                    if GeminiAPIKeyStore.load() == nil {
+                        showingAPIKeySheet = true
+                    } else {
+                        Task { await viewModel.summarizeYouTube() }
+                    }
+                }
+                Button("Not now", role: .cancel) {
+                    viewModel.declineYouTubeSummary()
+                }
+            } message: {
+                Text("Gemini can write a short summary from the YouTube link. This uses your Google AI Studio key.")
+            }
+            .alert("Couldn’t summarize", isPresented: Binding(
+                get: { viewModel.summaryError != nil && !viewModel.isSummarizing },
+                set: { if !$0 { viewModel.summaryError = nil } }
+            )) {
+                Button("Try again") { Task { await viewModel.summarizeYouTube() } }
+                Button("OK", role: .cancel) { viewModel.summaryError = nil }
+            } message: {
+                Text(viewModel.summaryError ?? "")
+            }
+            .sheet(isPresented: $showingAPIKeySheet) {
+                GeminiAPIKeyForm(key: $geminiKey) {
+                    GeminiAPIKeyStore.save(geminiKey)
+                    showingAPIKeySheet = false
+                    if GeminiAPIKeyStore.load() != nil {
+                        Task { await viewModel.summarizeYouTube() }
+                    }
+                }
+                .onAppear { geminiKey = GeminiAPIKeyStore.load() ?? "" }
             }
         }
     }
@@ -115,25 +209,31 @@ struct ReaderView: View {
         WebsiteReaderPane(url: url)
     }
 
-    private var readerActions: some View {
-        HStack(spacing: 10) {
-            Button {
-                savePulse += 1
-                onFinish(.saved)
-            } label: {
-                Label("Save", systemImage: "bookmark")
-                    .symbolEffect(.bounce, value: savePulse)
+    @ViewBuilder
+    private var youtubeSummaryBanner: some View {
+        if article.contentKind != "youtube" {
+            EmptyView()
+        } else if viewModel.isSummarizing {
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Summarizing…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
-                .buttonStyle(DecisionActionStyle())
-                .accessibilityHint("Keeps this in Saved")
-            Button { onFinish(.read) } label: { Label("Done", systemImage: "checkmark") }
-                .buttonStyle(DecisionActionStyle())
-                .accessibilityHint("Marks this article done")
+            .padding(.horizontal, OneFeedTheme.pagePadding)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+            ScrollView {
+                Text(summary)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 160)
+            .padding(.horizontal, OneFeedTheme.pagePadding)
+            .padding(.vertical, 12)
         }
-        .labelStyle(.titleAndIcon)
-        .padding(.horizontal, OneFeedTheme.pagePadding)
-        .padding(.vertical, 10)
-        .background(.bar)
     }
 }
 
@@ -156,7 +256,7 @@ private struct WebsiteReaderPane: View {
             .webViewBackForwardNavigationGestures(.enabled)
             .overlay(alignment: .top) {
                 if page.isLoading {
-                    OneFeedMarkPulse(isActive: true, size: 18)
+                    ProgressView()
                         .padding(.top, 8)
                 }
             }
@@ -166,10 +266,12 @@ private struct WebsiteReaderPane: View {
 
 private struct ReaderWebContent: View {
     let html: String
+    let baseURL: URL
     @State private var page: WebPage
 
-    init(html: String) {
+    init(html: String, baseURL: URL) {
         self.html = html
+        self.baseURL = baseURL
         var configuration = WebPage.Configuration()
         configuration.loadsSubresources = true
         configuration.defaultNavigationPreferences.allowsContentJavaScript = false
@@ -181,6 +283,6 @@ private struct ReaderWebContent: View {
         WebView(page)
             .webViewLinkPreviews(.enabled)
             .webViewTextSelection(.enabled)
-            .task(id: html) { page.load(html: html, baseURL: URL(string: "about:blank")!) }
+            .task(id: html) { page.load(html: html, baseURL: baseURL) }
     }
 }

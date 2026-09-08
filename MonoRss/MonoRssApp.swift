@@ -27,9 +27,16 @@ struct MonoRssApp: App {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
                 let context = ModelContext(container)
-                if !UserDefaults.standard.bool(forKey: AppPreferenceKey.didSeedTinyRSSCatalog) {
+                let seededVersion = UserDefaults.standard.integer(forKey: AppPreferenceKey.seedCatalogVersion)
+                let legacySeeded = UserDefaults.standard.bool(forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+                if seededVersion < FeedSeedCatalog.version || !legacySeeded {
                     _ = try? FeedSeedService().apply(in: context)
                     UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+                    UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
+                } else {
+                    Task { @MainActor in
+                        _ = try? FeedSeedService().removeRetired(in: ModelContext(container))
+                    }
                 }
             }
             if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
@@ -77,11 +84,6 @@ struct MonoRssApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { BackgroundRefreshCoordinator.schedule() }
-            if phase == .active, !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
-                Task { @MainActor in
-                    await BackgroundRefreshCoordinator.refreshIfStale(in: ModelContext(sharedModelContainer))
-                }
-            }
         }
     }
 }

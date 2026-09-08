@@ -26,7 +26,11 @@ private struct FeedDayGroup: Identifiable {
 
 struct FeedStreamView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Article.publishedAt, order: .reverse) private var articles: [Article]
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+        sort: \Article.publishedAt,
+        order: .reverse
+    ) private var articles: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var refresh = BrowseRefresh()
     @State private var selectedArticle: Article?
@@ -53,7 +57,7 @@ struct FeedStreamView: View {
         return open.filter {
             $0.title.localizedCaseInsensitiveContains(query)
                 || ($0.feed?.title.localizedCaseInsensitiveContains(query) ?? false)
-                || ($0.summary?.localizedCaseInsensitiveContains(query) ?? false)
+                || ($0.displayExcerpt?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 
@@ -93,9 +97,9 @@ struct FeedStreamView: View {
                                         .padding(.top, 6)
                                         .accessibilityAddTraits(.isHeader)
                                 }
-                                ForEach(group.articles) { article in
+                                ForEach(group.articles.filter(\.isStored)) { article in
                                     Button { selectedArticle = article } label: {
-                                        ArticleCard(article: article)
+                                        ArticleRow(article: article)
                                     }
                                     .buttonStyle(.plain)
                                     .articleActions(for: article, in: modelContext)
@@ -105,7 +109,10 @@ struct FeedStreamView: View {
                     }
                     .padding(.horizontal, OneFeedTheme.pagePadding)
                     .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .clipped()
             }
         }
         .background(OneFeedTheme.grouped.ignoresSafeArea())
@@ -154,9 +161,10 @@ struct FeedStreamView: View {
         }
         .refreshable { await refresh.refresh(in: modelContext) }
         .sheet(isPresented: $showingAddSource) { AddSourceView() }
-        .fullScreenCover(item: $selectedArticle) { article in
+            .fullScreenCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
+                guard article.isStored else { return }
                 ArticleActions.apply(state, to: article, in: modelContext)
             }
         }
@@ -185,6 +193,9 @@ struct FeedStreamView: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .padding(.bottom, 4)
         }
     }

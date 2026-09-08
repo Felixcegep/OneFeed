@@ -4,10 +4,11 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
-    @AppStorage(AppPreferenceKey.readerFont) private var readerFont = ReaderFontChoice.sans.rawValue
+    @AppStorage(AppPreferenceKey.readerFont) private var readerFont = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var readerTextSize = ReaderTextSize.standard.rawValue
     @AppStorage(AppPreferenceKey.articleRetentionDays) private var retentionDays = ArticleRetentionService.defaultRetentionDays
     @State private var viewModel = SettingsViewModel()
+    @State private var geminiKey = ""
 
     var body: some View {
         Form {
@@ -17,7 +18,7 @@ struct SettingsView: View {
             } header: {
                 Text("Reading")
             } footer: {
-                Text("These choices apply to the in-app reader.")
+                Text("Serif is the default for long articles. These choices apply in the reader.")
             }
             Section {
                 Picker("Keep articles", selection: $retentionDays) {
@@ -29,6 +30,25 @@ struct SettingsView: View {
                 Text("Library")
             } footer: {
                 Text("Unread articles older than this are removed. Saved articles stay.")
+            }
+            Section {
+                SecureField("AI Studio API key", text: $geminiKey)
+                    .textContentType(.password)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onChange(of: geminiKey) { _, newValue in
+                        GeminiAPIKeyStore.save(newValue)
+                    }
+                if !geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button("Remove key", role: .destructive) {
+                        geminiKey = ""
+                        GeminiAPIKeyStore.delete()
+                    }
+                }
+            } header: {
+                Text("Gemini")
+            } footer: {
+                Text("When you open a YouTube video, OneFeed asks before sending the link to Google AI Studio for a short summary.")
             }
             Section {
                 if let account = viewModel.freshRSS {
@@ -57,27 +77,32 @@ struct SettingsView: View {
                 Text("FreshRSS")
             } footer: {
                 Text(viewModel.freshRSS == nil
-                     ? "Bring your subscriptions and reading state into OneFeed while keeping the one-article experience."
+                     ? "Bring your subscriptions and reading state into OneFeed."
                      : "Done and Save sync to FreshRSS. Skip stays on this device.")
             }
             Section {
-                Button("Load tiny-rss sources", systemImage: "tray.and.arrow.down") { viewModel.seedTinyRSSCatalog() }
+                Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
+                    viewModel.seedAllCatalogSources()
+                }
                 Button("Import OPML", systemImage: "square.and.arrow.down") { viewModel.isImportingOPML = true }
                 Button("Export OPML", systemImage: "square.and.arrow.up") { viewModel.isExportingOPML = true }.disabled(viewModel.feeds.isEmpty)
             } header: {
                 Text("Data")
             } footer: {
-                Text("Starter sources match the tiny-rss seed list and are fetched locally so they can enter Today and Feed without the server.")
+                Text("Restores Must read, Builders, topic folders, À scanner, and Papers — then fetches them. OPML import keeps folder names.")
             }
             Section("About") {
                 LabeledContent("OneFeed", value: "1.0")
-                Text("A small daily stack from sources you chose.").foregroundStyle(.secondary)
+                Text("A reader for sources you chose.").foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .refreshProgressBanner(viewModel.progress)
-        .task { viewModel.configure(with: modelContext) }
+        .task {
+            viewModel.configure(with: modelContext)
+            geminiKey = GeminiAPIKeyStore.load() ?? ""
+        }
         .sheet(isPresented: $viewModel.isConnectingFreshRSS, onDismiss: viewModel.reload) {
             FreshRSSConnectView(existingAccount: viewModel.freshRSS)
         }
@@ -131,5 +156,38 @@ private struct FreshRSSConnectView: View {
                 }
             }
         }
+    }
+}
+
+struct GeminiAPIKeyForm: View {
+    @Binding var key: String
+    var onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField("AI Studio API key", text: $key)
+                        .textContentType(.password)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("Create a key in Google AI Studio. It stays in the Keychain on this device.")
+                }
+            }
+            .navigationTitle("Gemini")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { onSave() }
+                        .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }

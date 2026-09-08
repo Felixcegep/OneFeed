@@ -52,17 +52,42 @@ final class SettingsViewModel {
         do { try await freshRSSService.disconnect(account: account, in: context); statusMessage = "FreshRSS disconnected."; reload() }
         catch { statusMessage = error.localizedDescription }
     }
-    func seedTinyRSSCatalog() {
+    func seedAllCatalogSources() {
         guard let context else { return }
         do {
             let result = try FeedSeedService().apply(in: context)
             UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+            UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
-                statusMessage = "Starter sources are already loaded."
+                statusMessage = "All seeded sources are already loaded."
                 reload()
                 return
             }
-            statusMessage = "Loaded \(result.inserted) starter source\(result.inserted == 1 ? "" : "s"). Updating…"
+            statusMessage = "Restored \(result.inserted) source\(result.inserted == 1 ? "" : "s") · \(result.updated) updated. Fetching…"
+            reload()
+            Task {
+                if freshRSS != nil {
+                    try? await freshRSSService.subscribeLocalFeeds(in: context)
+                }
+                await refreshImportedSources(importedCount: result.inserted)
+            }
+        } catch { statusMessage = error.localizedDescription }
+    }
+
+    func seedTinyRSSCatalog() {
+        seedAllCatalogSources()
+    }
+
+    func seedCuratedReadingPack() {
+        guard let context else { return }
+        do {
+            let result = try FeedSeedService().applyCuratedReadingPack(in: context)
+            if result.inserted == 0 && result.updated == 0 {
+                statusMessage = "AI reading pack already loaded."
+                reload()
+                return
+            }
+            statusMessage = "Loaded \(result.inserted) source\(result.inserted == 1 ? "" : "s"). Updating…"
             reload()
             Task {
                 if freshRSS != nil {

@@ -10,8 +10,30 @@ import UIKit
 final class ReaderViewModel {
     let article: Article
     private(set) var isExtracting = false
+    private(set) var isSummarizing = false
+    var summaryError: String?
+    private let gemini: GeminiClient
 
-    init(article: Article) { self.article = article }
+    init(article: Article, gemini: GeminiClient = GeminiClient()) {
+        self.article = article
+        self.gemini = gemini
+    }
+
+    var hasAISummary: Bool {
+        guard let aiSummary = article.aiSummary else { return false }
+        return !aiSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var shouldOfferYouTubeSummary: Bool {
+        article.contentKind == "youtube"
+            && !hasAISummary
+            && !article.declinedVideoSummary
+            && youtubeURL != nil
+    }
+
+    var youtubeURL: URL? {
+        article.videoID.flatMap { YouTubeProcessor.watchURL(for: $0) } ?? article.url
+    }
 
     func enrichReadableHTML() async {
         guard article.contentKind == "article" else { return }
@@ -23,30 +45,150 @@ final class ReaderViewModel {
         }
     }
 
+    func declineYouTubeSummary() {
+        article.declinedVideoSummary = true
+        try? article.modelContext?.save()
+    }
+
+    func summarizeYouTube() async {
+        guard let url = youtubeURL else {
+            summaryError = GeminiClientError.missingVideo.localizedDescription
+            return
+        }
+        isSummarizing = true
+        summaryError = nil
+        defer { isSummarizing = false }
+        do {
+            let text = try await gemini.summarizeYouTube(url: url)
+            article.aiSummary = text
+            try? article.modelContext?.save()
+        } catch {
+            summaryError = error.localizedDescription
+        }
+    }
+
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
-        let body = article.readableHTML ?? "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        let fallback = "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        let body = ReaderHTML.sanitizedBody(article.readableHTML ?? fallback)
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
-        case .serif: "ui-serif, 'New York', Georgia, serif"
+        case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
         case .mono: "ui-monospace, 'SFMono-Regular', Menlo, monospace"
         }
         let bodySize = textSize.points
+        let headingSize = max(bodySize * 1.42, bodySize + 7)
+        let sectionSize = max(bodySize * 1.18, bodySize + 3)
         #if canImport(UIKit)
-        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 34)
-        let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 15)
-        let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 13)
+        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 28)
+        let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 14)
+        let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 12)
         #else
-        let titleSize: CGFloat = 34
-        let metaSize: CGFloat = 15
-        let sourceSize: CGFloat = 13
+        let titleSize: CGFloat = 28
+        let metaSize: CGFloat = 14
+        let sourceSize: CGFloat = 12
         #endif
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-        :root { color-scheme: light dark; } body { font-family: \(family); font-size: \(bodySize)px; line-height: 1.58; margin: 0 auto; padding: 28px 24px 48px; max-width: 680px; color: CanvasText; background: Canvas; }
-        .source { font: 600 \(sourceSize)px/1.2 -apple-system; letter-spacing: 1.1px; text-transform: uppercase; opacity: .56; }
-        h1 { font: 650 \(titleSize)px/1.12 -apple-system; letter-spacing: -.8px; margin: 16px 0 12px; } .meta { font: \(metaSize)px/1.35 -apple-system; opacity: .6; margin-bottom: 32px; }
-        img, video, iframe { max-width: 100%; height: auto; } a { color: inherit; text-decoration-thickness: 1px; } pre { overflow-x: auto; } blockquote { margin-left: 0; padding-left: 18px; border-left: 2px solid color-mix(in srgb, CanvasText 25%, transparent); }
+        :root {
+          color-scheme: light dark;
+          --paper: #FFFFFF;
+          --ink: #1F1F1F;
+          --title: #1A1A1A;
+          --meta: #8A8A8A;
+          --rule: #ECECEC;
+          --link: #4A6FE3;
+          --quote: #D86B33;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --paper: #121212;
+            --ink: #EDEDED;
+            --title: #F2F2F2;
+            --meta: #A6A6A6;
+            --rule: #2E2E2E;
+            --link: #7B97EE;
+          }
+        }
+        html { overflow-x: hidden; }
+        body {
+          font-family: \(family);
+          font-size: \(bodySize)px;
+          font-optical-sizing: auto;
+          line-height: 1.68;
+          margin: 0 auto;
+          padding: 32px 24px 64px;
+          max-width: 680px;
+          color: var(--ink);
+          background: var(--paper);
+          overflow-x: hidden;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          hyphens: auto;
+          -webkit-hyphens: auto;
+        }
+        .source {
+          font: 650 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--meta);
+        }
+        h1 {
+          font-family: \(family);
+          font-size: \(titleSize)px;
+          font-weight: 650;
+          line-height: 1.22;
+          letter-spacing: -0.02em;
+          color: var(--title);
+          margin: 14px 0 10px;
+        }
+        .meta {
+          font: \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          color: var(--meta);
+          margin: 0 0 28px;
+          padding-bottom: 20px;
+          border-bottom: 1px solid var(--rule);
+        }
+        h2, h3 {
+          font-family: \(family);
+          font-weight: 650;
+          line-height: 1.3;
+          letter-spacing: -0.015em;
+          color: var(--title);
+          margin: 1.6em 0 0.55em;
+        }
+        h2 { font-size: \(headingSize)px; }
+        h3 { font-size: \(sectionSize)px; }
+        p { margin: 0 0 1.05em; }
+        img, video, iframe, figure {
+          max-width: 100%;
+          height: auto;
+          display: block;
+          margin: 1.4em 0;
+          border-radius: 10px;
+        }
+        figcaption, cite {
+          font: 400 \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          color: var(--meta);
+          display: block;
+          margin-top: 8px;
+        }
+        a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+        pre, code { overflow-x: auto; max-width: 100%; }
+        pre {
+          padding: 14px 16px;
+          border-radius: 10px;
+          background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+        }
+        blockquote {
+          margin: 1.4em 0;
+          padding: 2px 0 2px 16px;
+          border-left: 3px solid var(--quote);
+          font-style: italic;
+          color: color-mix(in srgb, var(--ink) 88%, var(--meta));
+        }
+        table { display: block; max-width: 100%; overflow-x: auto; }
+        hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
         </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
         """
     }

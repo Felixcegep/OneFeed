@@ -22,15 +22,22 @@ enum FeedServiceError: LocalizedError, Sendable {
 /// without leaking URLSession or parser details into a feature.
 @MainActor
 protocol FeedRepository: AnyObject {
-    func addSource(from input: String, in context: ModelContext) async throws -> Feed
+    func addSource(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed
     func refresh(_ feed: Feed, in context: ModelContext) async throws
     func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws
+    func backfillYouTubeDurations(in context: ModelContext) async
 }
 
 extension FeedRepository {
+    func addSource(from input: String, in context: ModelContext) async throws -> Feed {
+        try await addSource(from: input, folderName: nil, in: context)
+    }
+
     func refreshAll(in context: ModelContext) async throws {
         try await refreshAll(in: context, progress: nil)
     }
+
+    func backfillYouTubeDurations(in context: ModelContext) async {}
 }
 
 @MainActor
@@ -42,31 +49,48 @@ final class FeedService {
     init(
         session: URLSession = FeedService.makeSession(),
         parser: FeedParser = FeedParser(),
-        youtubeMetadata: YouTubeMetadataService = YouTubeMetadataService()
+        youtubeMetadata: YouTubeMetadataService? = nil
     ) {
         self.session = session
         self.parser = parser
-        self.youtubeMetadata = youtubeMetadata
+        self.youtubeMetadata = youtubeMetadata ?? YouTubeMetadataService(session: session)
     }
 
     private nonisolated static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 12
-        configuration.timeoutIntervalForResource = 20
+        configuration.timeoutIntervalForRequest = 8
+        configuration.timeoutIntervalForResource = 16
         configuration.waitsForConnectivity = false
-        configuration.httpMaximumConnectionsPerHost = 6
+        configuration.httpMaximumConnectionsPerHost = 4
         return URLSession(configuration: configuration)
     }
 
-    func addSource(from input: String, in context: ModelContext) async throws -> Feed {
+    func addSource(from input: String, folderName: String? = nil, in context: ModelContext) async throws -> Feed {
         guard let initialURL = Self.normalizedURL(from: input) else { throw FeedServiceError.invalidAddress }
         let (feedURL, parsed) = try await discoverAndParse(initialURL)
         let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
-        if let existing = try context.fetch(descriptor).first { return existing }
+        let normalizedFolder = folderName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = (normalizedFolder?.isEmpty == false) ? normalizedFolder : nil
+        if let existing = try context.fetch(descriptor).first {
+            if let folder, existing.folderName != folder {
+                existing.folderName = folder
+                FolderStore.remember(folder)
+                try context.save()
+            }
+            return existing
+        }
 
-        let feed = Feed(title: parsed.title, websiteURL: parsed.websiteURL ?? initialURL, feedURL: feedURL, lastFetchedAt: .now)
+        let feed = Feed(
+            title: parsed.title,
+            websiteURL: parsed.websiteURL ?? initialURL,
+            feedURL: feedURL,
+            lastFetchedAt: .now,
+            folderName: folder
+        )
         context.insert(feed)
-        try await insert(parsed.articles, into: feed, in: context)
+        if let folder { FolderStore.remember(folder) }
+        var index = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
+        _ = try await insert(parsed.articles, into: feed, in: context, index: &index)
         try context.save()
         return feed
     }
@@ -75,9 +99,11 @@ final class FeedService {
         let loaded = try await Self.download(
             RemoteFeedRequest(id: feed.id, url: feed.feedURL, etag: feed.etag, lastModified: feed.lastModified),
             session: session,
-            parser: parser
+            parser: parser,
+            timeout: 12
         )
-        try await apply(loaded, to: feed, in: context)
+        var index = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
+        _ = try await apply(loaded, to: feed, in: context, index: &index)
     }
 
     func refreshAll(in context: ModelContext, progress: RefreshProgress? = nil) async throws {
@@ -85,7 +111,9 @@ final class FeedService {
         progress?.begin(phase: .sources, total: feeds.count)
         let requests = feeds.map { RemoteFeedRequest(id: $0.id, url: $0.feedURL, etag: $0.etag, lastModified: $0.lastModified) }
         let feedsByID = Dictionary(uniqueKeysWithValues: feeds.map { ($0.id, $0) })
+        var identityIndex = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
         var succeeded = 0
+        var insertedCount = 0
         var firstError: Error?
         let session = self.session
         let parser = self.parser
@@ -127,7 +155,14 @@ final class FeedService {
                         continue
                     }
                     if let loaded = outcome.loaded {
-                        try await apply(loaded, to: feed, in: context, persist: false, fetchDurations: false)
+                        insertedCount += try await apply(
+                            loaded,
+                            to: feed,
+                            in: context,
+                            persist: false,
+                            fetchDurations: false,
+                            index: &identityIndex
+                        )
                         unsaved += 1
                         if unsaved >= 6 {
                             try context.save()
@@ -160,6 +195,10 @@ final class FeedService {
             }
         }
         if unsaved > 0 { try? context.save() }
+        await enrichMissingYouTubeDurations(in: context)
+        if insertedCount > 0 {
+            _ = try? ArticleIdentity.mergeDuplicates(in: context)
+        }
         if succeeded == 0, let firstError { throw firstError }
     }
 
@@ -188,15 +227,19 @@ final class FeedService {
         init(_ message: String) { errorDescription = message }
     }
 
-    private static let maxConcurrentFetches = 8
+    private static let maxConcurrentFetches = 4
 
     private nonisolated static func download(
         _ request: RemoteFeedRequest,
         session: URLSession,
-        parser: FeedParser
+        parser: FeedParser,
+        timeout: TimeInterval = 8
     ) async throws -> LoadedFeed {
-        var urlRequest = URLRequest(url: request.url, timeoutInterval: 12)
-        urlRequest.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
+        var urlRequest = URLRequest(url: request.url, timeoutInterval: timeout)
+        urlRequest.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) OneFeed/1.0",
+            forHTTPHeaderField: "User-Agent"
+        )
         urlRequest.setValue("application/atom+xml, application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8", forHTTPHeaderField: "Accept")
         if let etag = request.etag { urlRequest.setValue(etag, forHTTPHeaderField: "If-None-Match") }
         if let modified = request.lastModified { urlRequest.setValue(modified, forHTTPHeaderField: "If-Modified-Since") }
@@ -212,13 +255,16 @@ final class FeedService {
         )
     }
 
+    @discardableResult
     private func apply(
         _ loaded: LoadedFeed,
         to feed: Feed,
         in context: ModelContext,
         persist: Bool = true,
-        fetchDurations: Bool = true
-    ) async throws {
+        fetchDurations: Bool = true,
+        index: inout ArticleIdentityIndex
+    ) async throws -> Int {
+        var inserted = 0
         switch loaded {
         case .notModified:
             feed.lastFetchedAt = .now
@@ -228,9 +274,19 @@ final class FeedService {
             feed.etag = etag
             feed.lastModified = lastModified
             feed.lastFetchedAt = .now
-            try await insert(parsed.articles, into: feed, in: context, fetchDurations: fetchDurations)
+            inserted = try await insert(
+                parsed.articles,
+                into: feed,
+                in: context,
+                index: &index,
+                fetchDurations: fetchDurations
+            )
         }
-        if persist { try context.save() }
+        if persist {
+            await enrichMissingYouTubeDurations(in: context)
+            try context.save()
+        }
+        return inserted
     }
 
     private func discoverAndParse(_ url: URL) async throws -> (URL, ParsedFeed) {
@@ -250,19 +306,25 @@ final class FeedService {
         return (feedHTTP.url ?? discovered, try parser.parse(feedData))
     }
 
+    @discardableResult
     private func insert(
         _ parsedArticles: [ParsedArticle],
         into feed: Feed,
         in context: ModelContext,
+        index: inout ArticleIdentityIndex,
         fetchDurations: Bool = true
-    ) async throws {
-        let existing = Set(feed.articles.map(\.guid))
+    ) async throws -> Int {
         let feedKind = ContentKind(rawValue: feed.contentKind) ?? .article
         let filterRules = FilterEngine.blockedWordRules(from: feed.blockedWords)
         let feedContext = FilterFeedContext(title: feed.title, url: feed.feedURL.absoluteString)
+        var inserted = 0
 
-        let cutoff = ArticleRetentionService.ingestCutoff(isFirstPopulate: existing.isEmpty)
-        for parsed in parsedArticles where !existing.contains(parsed.guid) {
+        let cutoff = ArticleRetentionService.ingestCutoff(isFirstPopulate: feed.articles.isEmpty)
+        for parsed in parsedArticles {
+            if let existing = index.existing(url: parsed.url, guid: parsed.guid, feedID: feed.id) {
+                if existing.feed == nil { existing.feed = feed }
+                continue
+            }
             if let cutoff, parsed.publishedAt < cutoff { continue }
             let classified = ContentClassifier.classify(
                 url: parsed.url,
@@ -278,8 +340,9 @@ final class FeedService {
                 if classified.isShort, !feed.includeShorts { continue }
                 if !feed.includeVideos { continue }
 
+                let videoID = classified.videoID ?? YouTubeProcessor.parseVideoID(fromGUID: parsed.guid)
                 var duration = classified.durationSeconds
-                if fetchDurations, !classified.isShort, duration == nil, let videoID = classified.videoID {
+                if fetchDurations, !classified.isShort, duration == nil, let videoID {
                     duration = await youtubeMetadata.fetchDuration(videoID: videoID)
                 }
                 if !YouTubeProcessor.shouldKeep(durationSeconds: duration, minVideoSeconds: feed.minVideoSeconds) {
@@ -293,7 +356,7 @@ final class FeedService {
                 let article = Article(
                     guid: parsed.guid,
                     title: parsed.title,
-                    url: parsed.url,
+                    url: parsed.url ?? videoID.flatMap { YouTubeProcessor.watchURL(for: $0) },
                     author: parsed.author,
                     publishedAt: parsed.publishedAt,
                     summary: parsed.summary,
@@ -307,13 +370,15 @@ final class FeedService {
                     isRemoteStarred: filterResult.star,
                     contentKind: classified.kind.rawValue,
                     durationSeconds: duration ?? 0,
-                    imageURL: parsed.imageURL ?? classified.videoID.flatMap { YouTubeProcessor.thumbnailURL(for: $0) },
-                    videoID: classified.videoID,
+                    imageURL: parsed.imageURL ?? videoID.flatMap { YouTubeProcessor.thumbnailURL(for: $0) },
+                    videoID: videoID,
                     enclosureURL: parsed.enclosureURL,
                     enclosureMIME: parsed.enclosureMIME,
                     feed: feed
                 )
                 context.insert(article)
+                index.register(article)
+                inserted += 1
                 continue
             }
 
@@ -321,7 +386,7 @@ final class FeedService {
             let filterResult = FilterEngine.apply(rules: filterRules, entry: filterEntry, feed: feedContext)
             if filterResult.drop { continue }
 
-            context.insert(Article(
+            let article = Article(
                 guid: parsed.guid,
                 title: parsed.title,
                 url: parsed.url,
@@ -343,8 +408,12 @@ final class FeedService {
                 enclosureURL: parsed.enclosureURL,
                 enclosureMIME: parsed.enclosureMIME,
                 feed: feed
-            ))
+            )
+            context.insert(article)
+            index.register(article)
+            inserted += 1
         }
+        return inserted
     }
 
     private static func filterEntry(from parsed: ParsedArticle) -> FilterEntry {
@@ -356,14 +425,95 @@ final class FeedService {
         )
     }
 
-    static func normalizedURL(from input: String) -> URL? {
+    private static let durationConcurrency = 2
+    private static let durationBackfillLimit = 8
+
+    private func enrichMissingYouTubeDurations(in context: ModelContext, limit: Int = 8) async {
+        let missing = articlesMissingYouTubeDuration(in: context, limit: limit)
+        guard !missing.isEmpty else { return }
+
+        let metadata = youtubeMetadata
+        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
+        var iterator = missing.makeIterator()
+        var inFlight = 0
+        await withTaskGroup(of: (UUID, String?, Int?).self) { group in
+            func enqueue() {
+                while inFlight < Self.durationConcurrency, let article = iterator.next() {
+                    let id = article.id
+                    let videoID = article.videoID
+                        ?? YouTubeProcessor.parseVideoID(from: article.url)
+                        ?? YouTubeProcessor.parseVideoID(fromGUID: article.guid)
+                    guard let videoID else { continue }
+                    inFlight += 1
+                    group.addTask {
+                        (id, videoID, await metadata.fetchDuration(videoID: videoID, allowWatchHTML: false))
+                    }
+                }
+            }
+            enqueue()
+            for await (id, videoID, duration) in group {
+                inFlight -= 1
+                if let article = missing.first(where: { $0.isStored && $0.id == id }) {
+                    if let videoID, article.videoID == nil {
+                        article.videoID = videoID
+                    }
+                    if let duration, duration > 0 {
+                        _ = YouTubeProcessor.applyFetchedDuration(duration, to: article, deckItems: deckItems)
+                    }
+                }
+                enqueue()
+            }
+        }
+        try? context.save()
+    }
+
+    private func articlesMissingYouTubeDuration(in context: ModelContext, limit: Int) -> [Article] {
+        let deckItems = ((try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? [])
+            .sorted { $0.position < $1.position }
+        var targets: [Article] = []
+        var seen = Set<UUID>()
+        for item in deckItems {
+            guard let article = item.article, article.isStored else { continue }
+            guard article.contentKind == "youtube", article.durationSeconds <= 0 else { continue }
+            if seen.insert(article.id).inserted {
+                targets.append(article)
+            }
+            if targets.count >= limit { return targets }
+        }
+        let youtube = "youtube"
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.contentKind == youtube && article.durationSeconds <= 0
+            }
+        )
+        descriptor.fetchLimit = max(limit * 2, 16)
+        descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
+        let extra = ((try? context.fetch(descriptor)) ?? []).filter { article in
+            article.isStored && !seen.contains(article.id)
+        }
+        for article in extra {
+            targets.append(article)
+            if targets.count >= limit { break }
+        }
+        return targets
+    }
+
+    func backfillYouTubeDurations(in context: ModelContext) async {
+        await enrichMissingYouTubeDurations(in: context, limit: Self.durationBackfillLimit)
+    }
+
+    nonisolated static func normalizedURL(from input: String) -> URL? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("feed:") || lower.hasPrefix("feeds:") || lower.hasPrefix("x-onefeed-feed:") {
+            return URL(string: IncomingFeedURL.strippingFeedSchemes(trimmed))
+        }
         if let url = URL(string: trimmed), url.scheme != nil { return url }
         return URL(string: "https://\(trimmed)")
     }
 
-    static func discoverFeedURL(in html: String, relativeTo baseURL: URL) -> URL? {
+    nonisolated static func discoverFeedURL(in html: String, relativeTo baseURL: URL) -> URL? {
         let pattern = #"<link[^>]+(?:type=[\"']application/(?:rss|atom)\+xml[\"'][^>]*href=[\"']([^\"']+)|href=[\"']([^\"']+)[\"'][^>]*type=[\"']application/(?:rss|atom)\+xml)[^>]*>"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)) else { return nil }

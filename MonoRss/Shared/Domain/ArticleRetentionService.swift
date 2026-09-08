@@ -34,12 +34,14 @@ struct ArticleRetentionService {
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
         let saved = ArticleState.saved.rawValue
         let keptIDs = Set((try context.fetch(FetchDescriptor<DailyDeckItem>())).compactMap(\.article?.id))
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let candidates = try context.fetch(
+            FetchDescriptor<Article>(predicate: #Predicate { article in
+                article.publishedAt < cutoff && article.stateRawValue != saved && article.isRemoteStarred == false
+            })
+        )
         var removed = 0
-        for article in articles {
-            if article.stateRawValue == saved || article.isRemoteStarred { continue }
+        for article in candidates {
             if keptIDs.contains(article.id) { continue }
-            if article.publishedAt >= cutoff { continue }
             context.delete(article)
             removed += 1
         }

@@ -70,10 +70,7 @@ struct MonoRssTests {
         )
         context.insert(feed)
 
-        StubFeedURLProtocol.response = (
-            Data(xml.utf8),
-            HTTPURLResponse(url: feedURL, statusCode: 200, httpVersion: nil, headerFields: nil)!
-        )
+        StubFeedURLProtocol.setResponse(Data(xml.utf8), for: feedURL)
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubFeedURLProtocol.self]
         let session = URLSession(configuration: config)
@@ -86,16 +83,61 @@ struct MonoRssTests {
         #expect(!titles.contains("Short clip"))
         #expect(!titles.contains("spam headline"))
     }
+
+    @Test func feedServiceDoesNotInsertASecondCopyOfTheSameURL() async throws {
+        let context = ModelContext(try container())
+        let original = Feed(title: "Aeon", feedURL: URL(string: "https://aeon.test/rss")!)
+        let duplicate = Feed(title: "Also Aeon", feedURL: URL(string: "https://aeon.test/mirror")!)
+        context.insert(original)
+        context.insert(duplicate)
+        context.insert(Article(
+            guid: "local",
+            title: "More nothing now",
+            url: URL(string: "https://aeon.co/essays/more"),
+            feed: original
+        ))
+
+        let xml = """
+        <rss version="2.0"><channel><title>Also Aeon</title>
+        <item><guid>other</guid><title>More nothing now</title><link>https://aeon.co/essays/more</link><description>Hello</description></item>
+        </channel></rss>
+        """
+        StubFeedURLProtocol.setResponse(Data(xml.utf8), for: duplicate.feedURL)
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubFeedURLProtocol.self]
+        let session = URLSession(configuration: config)
+        try await FeedService(session: session, parser: FeedParser(), youtubeMetadata: YouTubeMetadataService())
+            .refresh(duplicate, in: context)
+
+        #expect(try context.fetchCount(FetchDescriptor<Article>()) == 1)
+    }
 }
 
 private final class StubFeedURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var response: (Data, URLResponse)?
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var responses: [String: (Data, URLResponse)] = [:]
+
+    static func setResponse(_ data: Data, for url: URL, status: Int = 200) {
+        lock.lock()
+        defer { lock.unlock() }
+        responses[url.absoluteString] = (
+            data,
+            HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!
+        )
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let client, let response = Self.response else { return }
+        guard let client, let url = request.url else { return }
+        Self.lock.lock()
+        let response = Self.responses[url.absoluteString]
+        Self.lock.unlock()
+        guard let response else {
+            client.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
         client.urlProtocol(self, didReceive: response.1, cacheStoragePolicy: .notAllowed)
         client.urlProtocol(self, didLoad: response.0)
         client.urlProtocolDidFinishLoading(self)

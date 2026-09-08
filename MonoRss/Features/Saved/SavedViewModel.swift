@@ -32,12 +32,12 @@ final class SavedViewModel {
         let saved = ArticleState.saved.rawValue
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == saved || $0.isRemoteStarred })
         descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
-        do { articles = try context.fetch(descriptor) }
+            do { articles = ArticleIdentity.collapsingDuplicates(try context.fetch(descriptor)) }
         catch { presentedError = error.localizedDescription }
     }
 
     func restore(_ article: Article) {
-        guard let context else { return }
+        guard let context, article.isStored else { return }
         if article.remoteID != nil { freshRSSService.enqueueMutation(for: article, transition: .queued, in: context) }
         do { try queue.restoreSaved(article, in: context); reload() }
         catch { presentedError = error.localizedDescription }
@@ -45,6 +45,11 @@ final class SavedViewModel {
 
     func finishReading(_ article: Article, as state: ArticleState) {
         guard let context else { return }
+        selectedArticle = nil
+        guard article.isStored else {
+            reload()
+            return
+        }
         if state == .read {
             freshRSSService.enqueueMutation(for: article, transition: .read, in: context)
             do { _ = try queue.transition(article, to: .read, in: context) }

@@ -35,8 +35,27 @@ struct DailyDeckService {
 
     func currentItem(in context: ModelContext) throws -> DailyDeckItem? {
         guard let deck = try todayDeck(in: context) else { return nil }
-        let currentValue = ArticleState.current.rawValue
-        return deck.items.first { $0.statusRawValue == currentValue }
+        let items = deck.items.sorted { $0.position < $1.position }
+        if let current = items.first(where: { $0.status == .current && $0.article?.isStored == true }) {
+            return current
+        }
+        var repaired = false
+        if let orphan = items.first(where: { $0.status == .current }) {
+            orphan.status = .skipped
+            repaired = true
+        }
+        if let next = items.first(where: { $0.status == .queued && $0.article?.isStored == true }) {
+            next.status = .current
+            if let article = next.article {
+                article.state = .current
+                article.firstDisplayedAt = article.firstDisplayedAt ?? .now
+            }
+            repaired = true
+            if repaired { try context.save() }
+            return next
+        }
+        if repaired { try context.save() }
+        return nil
     }
 
     @discardableResult
@@ -68,6 +87,15 @@ struct DailyDeckService {
         return nextItem
     }
 
+    func remainingArticles(in context: ModelContext) throws -> [Article] {
+        guard let deck = try todayDeck(in: context) else { return [] }
+        return deck.items
+            .filter { $0.status == .current || $0.status == .queued }
+            .sorted { $0.position < $1.position }
+            .compactMap(\.article)
+            .filter(\.isStored)
+    }
+
     private static func dayStart(for date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
     }
@@ -84,6 +112,7 @@ struct DailyDeckService {
              (article.stateRawValue != skipped && article.stateRawValue != read))
         })
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
+        descriptor.fetchLimit = 80
         let fetched = try context.fetch(descriptor)
 
         return fetched.filter { article in

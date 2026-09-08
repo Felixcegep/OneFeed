@@ -37,9 +37,11 @@ struct FolderSummary: Identifiable {
 
 enum FeedFolderGrouping {
     static func openArticles(from articles: [Article]) -> [Article] {
-        articles
-            .filter { $0.state == .queued || $0.state == .current }
-            .sorted { $0.publishedAt > $1.publishedAt }
+        ArticleIdentity.collapsingDuplicates(
+            articles
+                .filter { $0.state == .queued || $0.state == .current }
+                .sorted { $0.publishedAt > $1.publishedAt }
+        )
     }
 
     static func todayArticles(from articles: [Article], calendar: Calendar = .current) -> [Article] {
@@ -47,9 +49,11 @@ enum FeedFolderGrouping {
     }
 
     static func savedArticles(from articles: [Article]) -> [Article] {
-        articles
-            .filter { $0.state == .saved || $0.isRemoteStarred }
-            .sorted { ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt) }
+        ArticleIdentity.collapsingDuplicates(
+            articles
+                .filter { $0.state == .saved || $0.isRemoteStarred }
+                .sorted { ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt) }
+        )
     }
 
     static func folderSummaries(feeds: [Feed], articles: [Article]) -> [FolderSummary] {
@@ -93,11 +97,26 @@ enum FeedFolderGrouping {
         }
         let named = buckets
             .filter { $0.key != .unfiled }
-            .sorted { $0.key.title.localizedCaseInsensitiveCompare($1.key.title) == .orderedAscending }
+            .sorted { lhs, rhs in
+                compareFolderNames(lhs.key.title, rhs.key.title)
+            }
             .map { FeedFolderGroup(folderID: $0.key, feeds: $0.value.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) }
         if let unfiled = buckets[.unfiled], !unfiled.isEmpty {
             return named + [FeedFolderGroup(folderID: .unfiled, feeds: unfiled.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending })]
         }
         return named
+    }
+
+    /// Seeded cadence/topic order first, then alphabetical extras.
+    static func compareFolderNames(_ lhs: String, _ rhs: String) -> Bool {
+        let order = FeedSeedCatalog.folderOrder
+        let li = order.firstIndex { $0.caseInsensitiveCompare(lhs) == .orderedSame }
+        let ri = order.firstIndex { $0.caseInsensitiveCompare(rhs) == .orderedSame }
+        switch (li, ri) {
+        case let (l?, r?): return l < r
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+        }
     }
 }

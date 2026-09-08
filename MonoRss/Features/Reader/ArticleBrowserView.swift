@@ -23,7 +23,7 @@ struct ArticleBrowserView: View {
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) {
                     if page.isLoading {
-                        OneFeedMarkPulse(isActive: true, size: 18)
+                        ProgressView()
                             .padding(.top, 8)
                     }
                 }

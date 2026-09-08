@@ -17,13 +17,13 @@ struct HistoryView: View {
                 List {
                     ForEach(viewModel.days) { group in
                         Section(group.label) {
-                            ForEach(group.articles) { article in
+                            ForEach(group.articles.filter(\.isStored)) { article in
                                 ArticleRow(article: article, status: article.state == .read ? "Read" : "Skipped")
                             }
                         }
                     }
                 }
-                .listStyle(.plain)
+                .listStyle(.insetGrouped)
             }
         }
         .navigationTitle("History")

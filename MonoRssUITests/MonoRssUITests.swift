@@ -18,12 +18,12 @@ final class MonoRssUITests: XCTestCase {
 
         app.tabBars.buttons["Feed"].tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].exists)
+        XCTAssertTrue(app.staticTexts["All Unread"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Development"].exists || app.staticTexts["Security"].exists)
 
         app.tabBars.buttons["Today"].tap()
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 2))
-        app.buttons["Done"].tap()
-        XCTAssertTrue(app.staticTexts["Swift concurrency without the noise"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].waitForExistence(timeout: 2))
     }
 
     @MainActor
@@ -44,17 +44,9 @@ final class MonoRssUITests: XCTestCase {
 
         app.tabBars.buttons["Feed"].tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Development"].waitForExistence(timeout: 2) || app.staticTexts["Development"].exists)
-        XCTAssertTrue(app.buttons["Security"].exists || app.staticTexts["Security"].exists)
+        XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2) || app.buttons["Development"].exists)
+        XCTAssertTrue(app.staticTexts["Security"].exists || app.buttons["Security"].exists)
         capture("02-Feed", app: app)
-
-        app.navigationBars["Feed"].buttons["More"].tap()
-        XCTAssertTrue(app.buttons["Folders"].waitForExistence(timeout: 2))
-        app.buttons["Folders"].tap()
-        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2))
-        XCTAssertTrue(app.staticTexts["Security"].exists)
-        capture("03-Folders", app: app)
 
         let securityFolder = app.descendants(matching: .any)["folder-Security"]
         XCTAssertTrue(securityFolder.waitForExistence(timeout: 2))
@@ -62,15 +54,13 @@ final class MonoRssUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Security"].waitForExistence(timeout: 2))
         capture("04-Folder-Articles", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.tabBars.buttons["Today"].tap()
         XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
         capture("05-Today", app: app)
 
-        app.buttons["Read"].tap()
+        app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].tap()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["TRAIL OF BITS"].waitForExistence(timeout: 5))
         capture("06-Reader", app: app)
         app.buttons["Close"].tap()
 

@@ -9,32 +9,55 @@ struct OPMLTests {
         try InMemoryStore.makeContext()
     }
 
-    @Test func importFlattensNestedOutlinesAndSkipsDuplicateURLs() throws {
+    @Test func importPreservesFolderHierarchyAndSkipsDuplicateURLs() throws {
         let context = try context()
         let opml = """
         <?xml version="1.0"?><opml version="2.0"><body>
-          <outline text="Tech"><outline text="One" xmlUrl="https://one.test/rss" />
-            <outline title="Two" xmlUrl="https://two.test/feed" /></outline>
+          <outline text="Must read">
+            <outline text="One" xmlUrl="https://one.test/rss" />
+            <outline title="Two" xmlUrl="https://two.test/feed" />
+          </outline>
+          <outline text="Builders">
+            <outline text="Three" xmlUrl="https://three.test/atom" />
+          </outline>
           <outline text="Duplicate" xmlUrl="https://one.test/rss" />
+          <outline text="Loose" xmlUrl="https://loose.test/rss" />
         </body></opml>
         """
 
         let inserted = try OPMLService().importDocument(Data(opml.utf8), in: context)
-        #expect(inserted == 2)
-        #expect(try context.fetchCount(FetchDescriptor<Feed>()) == 2)
+        #expect(inserted == 4)
         let feeds = try context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))
-        #expect(feeds.map(\.title) == ["One", "Two"])
+        #expect(feeds.map(\.title) == ["Loose", "One", "Three", "Two"])
+        #expect(feeds.first { $0.title == "One" }?.folderName == "Must read")
+        #expect(feeds.first { $0.title == "Two" }?.folderName == "Must read")
+        #expect(feeds.first { $0.title == "Three" }?.folderName == "Builders")
+        #expect(feeds.first { $0.title == "Loose" }?.folderName == nil)
     }
 
-    @Test func exportEscapesTitlesAndURLs() throws {
+    @Test func exportGroupsFeedsByFolder() throws {
         let context = try context()
-        let feed = Feed(title: "A & B", feedURL: URL(string: "https://example.test/a?x=1&y=2")!)
-        context.insert(feed)
+        let must = Feed(title: "A & B", feedURL: URL(string: "https://example.test/a?x=1&y=2")!, folderName: "Must read")
+        let loose = Feed(title: "Loose", feedURL: URL(string: "https://loose.test/rss")!)
+        context.insert(must)
+        context.insert(loose)
 
-        let document = OPMLService().exportDocument(feeds: [feed])
+        let document = OPMLService().exportDocument(feeds: [must, loose])
         let xml = String(decoding: document.data, as: UTF8.self)
         #expect(xml.contains("A &amp; B"))
         #expect(xml.contains("x=1&amp;y=2"))
+        #expect(xml.contains("<outline text=\"Must read\""))
         #expect(xml.contains("xmlUrl=\"https://example.test/a?x=1&amp;y=2\""))
+        #expect(xml.contains("xmlUrl=\"https://loose.test/rss\""))
+    }
+
+    @Test func curatedPackOPMLRoundTripsFolders() throws {
+        let context = try context()
+        let document = FeedSeedCatalog.opmlDocument()
+        let inserted = try OPMLService().importDocument(document.data, in: context)
+        #expect(inserted == FeedSeedCatalog.feeds.count)
+        #expect(FeedSeedCatalog.feeds.count == 60)
+        let folders = Set((try context.fetch(FetchDescriptor<Feed>())).compactMap(\.folderName))
+        #expect(folders == Set(FeedSeedCatalog.folderOrder))
     }
 }

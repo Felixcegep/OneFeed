@@ -56,6 +56,60 @@ enum AppPreferenceKey {
     static let readerFont = "readerFont"
     static let readerTextSize = "readerTextSize"
     static let didSeedTinyRSSCatalog = "didSeedTinyRSSCatalog"
+    static let seedCatalogVersion = "seedCatalogVersion"
     static let articleRetentionDays = "articleRetentionDays"
     static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
+    static let knownFolderNames = "knownFolderNames"
+}
+
+/// Folder names the user created (even before any feed is filed there).
+enum FolderStore {
+    static func knownNames() -> [String] {
+        let stored = UserDefaults.standard.stringArray(forKey: AppPreferenceKey.knownFolderNames) ?? []
+        return normalize(stored)
+    }
+
+    static func remember(_ names: [String]) {
+        var merged = Set(knownNames())
+        for name in names {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            merged.insert(trimmed)
+        }
+        UserDefaults.standard.set(normalize(Array(merged)), forKey: AppPreferenceKey.knownFolderNames)
+    }
+
+    static func remember(_ name: String) {
+        remember([name])
+    }
+
+    static func remove(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = knownNames().filter { $0.caseInsensitiveCompare(trimmed) != .orderedSame }
+        UserDefaults.standard.set(next, forKey: AppPreferenceKey.knownFolderNames)
+    }
+
+    /// Known empty folders plus folders that already contain feeds.
+    static func allNames(from feeds: [Feed]) -> [String] {
+        var names = Set(knownNames())
+        for feed in feeds {
+            if let folder = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
+                names.insert(folder)
+            }
+        }
+        return normalize(Array(names))
+    }
+
+    private static func normalize(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for name in names {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            ordered.append(trimmed)
+        }
+        return ordered.sorted(by: FeedFolderGrouping.compareFolderNames)
+    }
 }
