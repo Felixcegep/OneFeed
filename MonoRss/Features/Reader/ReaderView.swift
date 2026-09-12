@@ -72,7 +72,7 @@ struct ReaderView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .oneFeedLeading) {
                     Button("Close", systemImage: "xmark") { dismiss() }
                         .accessibilityHint("Closes the reader without changing this article")
                 }
@@ -88,7 +88,7 @@ struct ReaderView: View {
                         .accessibilityLabel("Reading mode")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .oneFeedTrailing) {
                     Menu {
                         Picker("Font", selection: $fontChoice) {
                             ForEach(ReaderFontChoice.allCases) { choice in
@@ -116,7 +116,7 @@ struct ReaderView: View {
                     }
                     .accessibilityLabel("Reading options")
                 }
-                ToolbarItemGroup(placement: .bottomBar) {
+                ToolbarItemGroup(placement: .oneFeedBottomBar) {
                     Button {
                         savePulse += 1
                         onFinish(.saved)
@@ -146,7 +146,7 @@ struct ReaderView: View {
                     .accessibilityLabel("Open in browser")
                 }
             }
-            .toolbarTitleDisplayMode(.inline)
+            .oneFeedInlineTitle()
             .sensoryFeedback(.success, trigger: savePulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {

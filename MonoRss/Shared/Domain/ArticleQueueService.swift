@@ -10,7 +10,11 @@ struct ArticleQueueService {
         currentDescriptor.sortBy = [SortDescriptor(\.firstDisplayedAt, order: .forward)]
         let currents = try context.fetch(currentDescriptor)
         if let current = currents.first {
-            for duplicate in currents.dropFirst() { duplicate.state = .queued; duplicate.firstDisplayedAt = nil }
+            for duplicate in currents.dropFirst() {
+                duplicate.state = .queued
+                duplicate.firstDisplayedAt = nil
+                LibraryChange.note(duplicate)
+            }
             if currents.count > 1 { try context.save() }
             WidgetSnapshotStore.write(article: current)
             return current
@@ -25,7 +29,10 @@ struct ArticleQueueService {
         let selected = candidates.first(where: { $0.feed?.id != lastDisplayedFeedID }) ?? candidates.first
         selected?.state = .current
         selected?.firstDisplayedAt = .now
-        if selected != nil { try context.save() }
+        if let selected {
+            LibraryChange.note(selected)
+            try context.save()
+        }
         WidgetSnapshotStore.write(article: selected)
         return selected
     }
@@ -41,6 +48,7 @@ struct ArticleQueueService {
         article.state = state
         article.completedAt = .now
         if state == .saved { article.isRemoteStarred = true }
+        LibraryChange.note(article)
         try context.save()
         return try ensureCurrent(in: context, lastDisplayedFeedID: previousFeedID)
     }
@@ -54,6 +62,7 @@ struct ArticleQueueService {
         article.state = state
         article.completedAt = .now
         if state == .saved { article.isRemoteStarred = true }
+        LibraryChange.note(article)
         try context.save()
         _ = try ensureCurrent(in: context)
     }
@@ -62,6 +71,7 @@ struct ArticleQueueService {
         article.state = .queued
         article.completedAt = nil
         article.isRemoteStarred = false
+        LibraryChange.note(article)
         try context.save()
         _ = try ensureCurrent(in: context)
     }

@@ -4,13 +4,13 @@ import SwiftData
 enum OneFeedTheme {
     /// Warm orange in the NetNewsWire family; used as the app tint, not as a brand copy.
     static let accent = Color(red: 0.89, green: 0.38, blue: 0.16)
-    static let page = Color(uiColor: .systemBackground)
-    static let grouped = Color(uiColor: .systemGroupedBackground)
-    static let surface = Color(uiColor: .secondarySystemGroupedBackground)
-    static let secondarySurface = Color(uiColor: .tertiarySystemFill)
+    static let page = Color.oneFeedSystemBackground
+    static let grouped = Color.oneFeedGroupedBackground
+    static let surface = Color.oneFeedSecondaryGroupedBackground
+    static let secondarySurface = Color.oneFeedTertiaryFill
     static let primaryText = Color.primary
     static let secondaryText = Color.secondary
-    static let separator = Color(uiColor: .separator)
+    static let separator = Color.oneFeedSeparator
     static let radius: CGFloat = 14
     static let cardRadius: CGFloat = 16
     static let pagePadding: CGFloat = 16
@@ -365,9 +365,14 @@ struct EmptyLibraryState: View {
 }
 
 extension View {
+    @ViewBuilder
     func articleListRow() -> some View {
+        #if os(iOS)
         listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
             .listRowSeparatorTint(Color.primary.opacity(0.08))
+        #else
+        listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        #endif
     }
 
     func articleTimelineList() -> some View {

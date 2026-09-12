@@ -156,6 +156,7 @@ final class FreshRSSSyncService {
             let (client, token) = try await authorizedClient(for: account)
             try await client.unsubscribe(streamID: remoteID, authToken: token)
         }
+        LibraryChange.noteRemovedFeed(feed)
         context.delete(feed)
         try context.save()
     }

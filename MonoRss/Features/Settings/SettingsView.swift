@@ -9,6 +9,10 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.articleRetentionDays) private var retentionDays = ArticleRetentionService.defaultRetentionDays
     @State private var viewModel = SettingsViewModel()
     @State private var geminiKey = ""
+    @State private var library = LibrarySyncService.shared
+    @State private var isPickingLibraryFolder = false
+    @State private var isPickingLibraryFile = false
+    @State private var isConfirmingDetachLibrary = false
 
     var body: some View {
         Form {
@@ -34,7 +38,7 @@ struct SettingsView: View {
             Section {
                 SecureField("AI Studio API key", text: $geminiKey)
                     .textContentType(.password)
-                    .textInputAutocapitalization(.never)
+                    .oneFeedAutocapitalizationNever()
                     .autocorrectionDisabled()
                     .onChange(of: geminiKey) { _, newValue in
                         GeminiAPIKeyStore.save(newValue)
@@ -78,7 +82,44 @@ struct SettingsView: View {
             } footer: {
                 Text(viewModel.freshRSS == nil
                      ? "Bring your subscriptions and reading state into OneFeed."
-                     : "Done and Save sync to FreshRSS. Skip stays on this device.")
+                     : "Done and Save sync to FreshRSS. Skip stays in OneFeed, and follows your library folder if you chose one.")
+            }
+            Section {
+                if library.isLinked {
+                    LabeledContent("Location", value: library.folderDisplayName ?? "Folder")
+                    if let lastSyncAt = library.lastSyncAt {
+                        LabeledContent("Last Sync", value: lastSyncAt.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if case .error(let message) = library.status {
+                        Text(message).font(.footnote).foregroundStyle(.red)
+                    }
+                    Button {
+                        Task { await library.syncNow() }
+                    } label: {
+                        if library.status == .syncing {
+                            Label {
+                                Text("Syncing…")
+                            } icon: {
+                                OneFeedMarkPulse(isActive: true, size: 18)
+                            }
+                        } else {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                    .disabled(library.status == .syncing || library.status == .waitingForDownload)
+                    Button("Change Folder", systemImage: "folder") { isPickingLibraryFolder = true }
+                    Button("Choose Library File", systemImage: "doc") { isPickingLibraryFile = true }
+                    Button("Stop Using Folder", systemImage: "xmark.circle", role: .destructive) {
+                        isConfirmingDetachLibrary = true
+                    }
+                } else {
+                    Button("Choose Folder", systemImage: "folder") { isPickingLibraryFolder = true }
+                    Button("Choose Library File", systemImage: "doc") { isPickingLibraryFile = true }
+                }
+            } header: {
+                Text("iCloud or Google Drive")
+            } footer: {
+                Text(library.footerText)
             }
             Section {
                 Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
@@ -97,10 +138,11 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+        .oneFeedInlineTitle()
         .refreshProgressBanner(viewModel.progress)
         .task {
             viewModel.configure(with: modelContext)
+            library.configure(with: modelContext)
             geminiKey = GeminiAPIKeyStore.load() ?? ""
         }
         .sheet(isPresented: $viewModel.isConnectingFreshRSS, onDismiss: viewModel.reload) {
@@ -108,6 +150,21 @@ struct SettingsView: View {
         }
         .confirmationDialog("Disconnect FreshRSS? Your locally stored articles will remain available.", isPresented: $viewModel.isConfirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { Task { await viewModel.disconnect() } }
+        }
+        .confirmationDialog("Stop using this folder? Subscriptions stay on this device.", isPresented: $isConfirmingDetachLibrary, titleVisibility: .visible) {
+            Button("Stop Using Folder", role: .destructive) { library.detach() }
+        }
+        .fileImporter(isPresented: $isPickingLibraryFolder, allowedContentTypes: LibraryDocumentPicker.folderTypes) { result in
+            Task {
+                do { await library.attach(url: try result.get()) }
+                catch { viewModel.statusMessage = error.localizedDescription }
+            }
+        }
+        .fileImporter(isPresented: $isPickingLibraryFile, allowedContentTypes: LibraryDocumentPicker.fileTypes) { result in
+            Task {
+                do { await library.attach(url: try result.get()) }
+                catch { viewModel.statusMessage = error.localizedDescription }
+            }
         }
         .fileImporter(isPresented: $viewModel.isImportingOPML, allowedContentTypes: [.xml, UTType(filenameExtension: "opml") ?? .xml]) { result in
             do { viewModel.importOPML(from: try result.get()) }
@@ -135,14 +192,21 @@ private struct FreshRSSConnectView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("http://host:8081 or full …/api/greader.php URL", text: $viewModel.server).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField("Username", text: $viewModel.username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("http://host:8081 or full …/api/greader.php URL", text: $viewModel.server)
+                        .textContentType(.URL)
+                        .oneFeedURLKeyboard()
+                        .oneFeedAutocapitalizationNever()
+                        .autocorrectionDisabled()
+                    TextField("Username", text: $viewModel.username)
+                        .textContentType(.username)
+                        .oneFeedAutocapitalizationNever()
+                        .autocorrectionDisabled()
                     SecureField("API password", text: $viewModel.apiPassword).textContentType(.password)
-                } header: { Text("FreshRSS account") } footer: { Text("HTTP and HTTPS are both supported. You can paste either the server root or the full GReader API URL — both work. Credentials are stored only in the iOS Keychain.") }
+                } header: { Text("FreshRSS account") } footer: { Text("HTTP and HTTPS are both supported. You can paste either the server root or the full GReader API URL — both work. Credentials stay in the Keychain on this device.") }
                 if let errorMessage = viewModel.presentedError { Section { Text(errorMessage).foregroundStyle(.red) } }
             }
             .navigationTitle("Connect FreshRSS")
-            .navigationBarTitleDisplayMode(.inline)
+            .oneFeedInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -170,14 +234,14 @@ struct GeminiAPIKeyForm: View {
                 Section {
                     SecureField("AI Studio API key", text: $key)
                         .textContentType(.password)
-                        .textInputAutocapitalization(.never)
+                        .oneFeedAutocapitalizationNever()
                         .autocorrectionDisabled()
                 } footer: {
                     Text("Create a key in Google AI Studio. It stays in the Keychain on this device.")
                 }
             }
             .navigationTitle("Gemini")
-            .navigationBarTitleDisplayMode(.inline)
+            .oneFeedInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -188,6 +252,8 @@ struct GeminiAPIKeyForm: View {
                 }
             }
         }
+        #if os(iOS)
         .presentationDetents([.medium])
+        #endif
     }
 }

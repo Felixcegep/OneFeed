@@ -77,13 +77,49 @@ struct MonoRssApp: App {
     var body: some Scene {
         WindowGroup {
             AppRootView()
+                #if os(macOS)
+                .frame(minWidth: 720, minHeight: 500)
+                #endif
         }
+        #if os(macOS)
+        .defaultSize(width: 960, height: 720)
+        #endif
         .modelContainer(sharedModelContainer)
+        #if os(iOS)
         .backgroundTask(.appRefresh(BackgroundRefreshCoordinator.identifier)) {
             await BackgroundRefreshCoordinator.refresh(in: ModelContext(sharedModelContainer))
         }
+        #endif
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { BackgroundRefreshCoordinator.schedule() }
+            switch phase {
+            case .background:
+                BackgroundRefreshCoordinator.schedule()
+                Task { await LibrarySyncService.shared.flush() }
+            case .active:
+                Task { await BackgroundRefreshCoordinator.refreshIfStale(in: ModelContext(sharedModelContainer)) }
+                Task { await LibrarySyncService.shared.syncNow() }
+            default:
+                break
+            }
         }
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Add Source…") {
+                    NotificationCenter.default.post(name: OneFeedNotify.subscribe, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+                Button("Refresh") {
+                    NotificationCenter.default.post(name: OneFeedNotify.refresh, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+            }
+        }
+        #if os(macOS)
+        Settings {
+            SettingsView()
+                .frame(minWidth: 480, minHeight: 520)
+                .modelContainer(sharedModelContainer)
+        }
+        #endif
     }
 }

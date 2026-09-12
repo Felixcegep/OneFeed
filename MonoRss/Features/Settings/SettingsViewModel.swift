@@ -63,6 +63,7 @@ final class SettingsViewModel {
                 reload()
                 return
             }
+            LibraryChange.noteStructureChanged()
             statusMessage = "Restored \(result.inserted) source\(result.inserted == 1 ? "" : "s") · \(result.updated) updated. Fetching…"
             reload()
             Task {
@@ -106,6 +107,7 @@ final class SettingsViewModel {
             let count = try OPMLService().importDocument(Data(contentsOf: url), in: context)
             statusMessage = "Imported \(count) source\(count == 1 ? "" : "s"). Updating…"
             reload()
+            LibraryChange.noteStructureChanged()
             Task {
                 if freshRSS != nil {
                     try? await freshRSSService.subscribeLocalFeeds(in: context)

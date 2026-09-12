@@ -102,6 +102,7 @@ nonisolated enum YouTubeProcessor: Sendable {
         guard !isOnScreen else { return false }
         article.state = .skipped
         article.completedAt = article.completedAt ?? .now
+        LibraryChange.note(article)
         for item in deckItems where item.article?.id == article.id && item.status == .queued {
             item.status = .skipped
         }

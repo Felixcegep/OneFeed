@@ -81,6 +81,7 @@ struct FeedSeedService {
         var removed = 0
         for (url, feed) in byURL {
             guard FeedSeedCatalog.isRetired(title: feed.title, url: feed.feedURL) else { continue }
+            LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
             byURL[url] = nil
             removed += 1

@@ -61,9 +61,9 @@ struct SavedView: View {
             }
         }
         .navigationTitle("Saved")
-        .navigationBarTitleDisplayMode(.large)
+        .oneFeedLargeTitle()
         .task { viewModel.configure(with: modelContext) }
-        .fullScreenCover(item: $viewModel.selectedArticle) { article in
+        .oneFeedArticleCover(item: $viewModel.selectedArticle) { article in
             ReaderView(article: article) { state in
                 viewModel.finishReading(article, as: state)
             }

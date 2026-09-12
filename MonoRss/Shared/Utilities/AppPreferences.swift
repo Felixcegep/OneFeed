@@ -60,6 +60,10 @@ enum AppPreferenceKey {
     static let articleRetentionDays = "articleRetentionDays"
     static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
     static let knownFolderNames = "knownFolderNames"
+    static let libraryFolderBookmark = "libraryFolderBookmark"
+    static let libraryBookmarkIsFile = "libraryBookmarkIsFile"
+    static let libraryTombstones = "libraryTombstones"
+    static let libraryDisplayName = "libraryDisplayName"
 }
 
 /// Folder names the user created (even before any feed is filed there).
@@ -100,7 +104,7 @@ enum FolderStore {
         return normalize(Array(names))
     }
 
-    private static func normalize(_ names: [String]) -> [String] {
+    static func normalize(_ names: [String]) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
         for name in names {

@@ -35,6 +35,10 @@ final class Article {
     var rating: Int = 0
     var aiSummary: String?
     var declinedVideoSummary: Bool = false
+    /// Bumped only on user-facing state changes (read / skip / save / current).
+    /// Fresh RSS inserts stay at `.distantPast` so another device’s reading
+    /// state wins on first merge.
+    var libraryUpdatedAt: Date = .distantPast
     var feed: Feed?
 
     var state: ArticleState {
@@ -109,6 +113,7 @@ final class Article {
         rating: Int = 0,
         aiSummary: String? = nil,
         declinedVideoSummary: Bool = false,
+        libraryUpdatedAt: Date = .distantPast,
         feed: Feed? = nil
     ) {
         self.id = id
@@ -132,7 +137,12 @@ final class Article {
         self.rating = min(5, max(0, rating))
         self.aiSummary = aiSummary
         self.declinedVideoSummary = declinedVideoSummary
+        self.libraryUpdatedAt = libraryUpdatedAt
         self.feed = feed
+    }
+
+    func touchLibrary() {
+        libraryUpdatedAt = .now
     }
 
     func setRating(_ value: Int) {

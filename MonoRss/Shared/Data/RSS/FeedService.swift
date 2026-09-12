@@ -74,8 +74,10 @@ final class FeedService {
         if let existing = try context.fetch(descriptor).first {
             if let folder, existing.folderName != folder {
                 existing.folderName = folder
+                existing.touchLibrary()
                 FolderStore.remember(folder)
                 try context.save()
+                LibraryChange.noteStructureChanged()
             }
             return existing
         }
@@ -92,6 +94,7 @@ final class FeedService {
         var index = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
         _ = try await insert(parsed.articles, into: feed, in: context, index: &index)
         try context.save()
+        LibraryChange.note(feed)
         return feed
     }
 

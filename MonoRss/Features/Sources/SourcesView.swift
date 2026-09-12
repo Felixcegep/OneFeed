@@ -37,11 +37,11 @@ struct SourcesView: View {
                         .accessibilityIdentifier("folder-\(folder.name)")
                     }
                 }
-                .listStyle(.insetGrouped)
+                .oneFeedGroupedListStyle()
             }
         }
         .navigationTitle("Sources")
-        .navigationBarTitleDisplayMode(.inline)
+        .oneFeedInlineTitle()
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -147,9 +147,9 @@ private struct FolderFeedsView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .oneFeedGroupedListStyle()
         .navigationTitle(folderID.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .oneFeedInlineTitle()
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add", systemImage: "plus") { onAddInFolder() }
@@ -252,7 +252,7 @@ private struct SourceDetailView: View {
             }
         }
         .navigationTitle(viewModel.feed.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .oneFeedInlineTitle()
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
@@ -292,11 +292,11 @@ struct AddSourceView: View {
                 Section {
                     TextField("example.com\nsecond.com/feed", text: $viewModel.addressList, axis: .vertical)
                         .textContentType(.URL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
+                        .oneFeedURLKeyboard()
+                        .oneFeedAutocapitalizationNever()
                         .autocorrectionDisabled()
                         .lineLimit(4...10)
-                        .submitLabel(.go)
+                        .oneFeedSubmitGo()
                         .onSubmit { add() }
                 } header: {
                     Text("Websites or RSS URLs")
@@ -314,7 +314,7 @@ struct AddSourceView: View {
                     }
                     if viewModel.isCreatingNewFolder {
                         TextField("Must read, Builders…", text: $viewModel.newFolderName)
-                            .textInputAutocapitalization(.words)
+                            .oneFeedAutocapitalizationWords()
                     }
                 } header: {
                     Text("Folder")
@@ -343,7 +343,7 @@ struct AddSourceView: View {
                 }
             }
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
-            .navigationBarTitleDisplayMode(.inline)
+            .oneFeedInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

@@ -1,4 +1,6 @@
+#if os(iOS)
 import BackgroundTasks
+#endif
 import Foundation
 import SwiftData
 
@@ -8,10 +10,12 @@ enum BackgroundRefreshCoordinator {
     static let staleInterval: TimeInterval = 15 * 60
 
     static func schedule() {
+        #if os(iOS)
         let request = BGAppRefreshTaskRequest(identifier: identifier)
         request.earliestBeginDate = .now.addingTimeInterval(30 * 60)
         do { try BGTaskScheduler.shared.submit(request) }
         catch { /* The system may reject duplicate or unavailable refresh requests. */ }
+        #endif
     }
 
     static func refresh(in context: ModelContext) async {
@@ -34,6 +38,7 @@ enum BackgroundRefreshCoordinator {
         let current = try? DailyDeckService().currentItem(in: context)
         await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
         lastSuccessfulRefresh = .now
+        await LibrarySyncService.shared.flush()
     }
 
     static var lastSuccessfulRefresh: Date? {

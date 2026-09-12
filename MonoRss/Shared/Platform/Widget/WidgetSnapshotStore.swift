@@ -1,5 +1,7 @@
 import Foundation
+#if os(iOS)
 import WidgetKit
+#endif
 
 struct CurrentArticleSnapshot: Codable, Sendable {
     let id: UUID
@@ -14,6 +16,7 @@ enum WidgetSnapshotStore {
     static let key = "currentArticleSnapshot"
 
     static func write(article: Article?) {
+        #if os(iOS)
         let defaults = UserDefaults(suiteName: suiteName)
         if let article {
             let snapshot = CurrentArticleSnapshot(
@@ -28,5 +31,6 @@ enum WidgetSnapshotStore {
             defaults?.removeObject(forKey: key)
         }
         WidgetCenter.shared.reloadTimelines(ofKind: "CurrentArticleWidget")
+        #endif
     }
 }

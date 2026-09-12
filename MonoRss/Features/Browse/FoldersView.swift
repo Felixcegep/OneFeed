@@ -64,13 +64,13 @@ struct FoldersView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .oneFeedGroupedListStyle()
         .navigationTitle("Feed")
-        .navigationBarTitleDisplayMode(.large)
+        .oneFeedLargeTitle()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 if refresh.isRefreshing {
                     ProgressView()
                         .accessibilityLabel("Refresh")
@@ -80,10 +80,10 @@ struct FoldersView: View {
                     }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
                         toolbarDestination = .sources
@@ -175,8 +175,8 @@ struct ArticleCollectionView: View {
             }
         }
         .navigationTitle(destination.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .fullScreenCover(item: $selectedArticle) { article in
+        .oneFeedInlineTitle()
+        .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
                 guard article.isStored else { return }

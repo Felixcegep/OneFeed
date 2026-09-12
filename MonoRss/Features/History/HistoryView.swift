@@ -23,11 +23,11 @@ struct HistoryView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .oneFeedGroupedListStyle()
             }
         }
         .navigationTitle("History")
-        .navigationBarTitleDisplayMode(.inline)
+        .oneFeedInlineTitle()
         .task { viewModel.load(from: modelContext) }
     }
 }

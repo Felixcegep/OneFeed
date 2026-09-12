@@ -21,6 +21,9 @@ final class Feed {
     var includeShorts: Bool = false
     var minVideoSeconds: Int = 180
     var blockedWords: String = ""
+    /// Bumped only when the user changes subscription metadata, so RSS fetches
+    /// cannot overwrite a newer library file from another device.
+    var libraryUpdatedAt: Date = .distantPast
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article] = []
@@ -41,7 +44,8 @@ final class Feed {
         includeVideos: Bool = true,
         includeShorts: Bool = false,
         minVideoSeconds: Int = 180,
-        blockedWords: String = ""
+        blockedWords: String = "",
+        libraryUpdatedAt: Date = .now
     ) {
         self.id = id
         self.title = title
@@ -59,5 +63,10 @@ final class Feed {
         self.includeShorts = includeShorts
         self.minVideoSeconds = minVideoSeconds
         self.blockedWords = blockedWords
+        self.libraryUpdatedAt = libraryUpdatedAt
+    }
+
+    func touchLibrary() {
+        libraryUpdatedAt = .now
     }
 }

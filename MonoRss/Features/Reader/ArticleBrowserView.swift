@@ -28,12 +28,12 @@ struct ArticleBrowserView: View {
                     }
                 }
                 .navigationTitle(page.title ?? url.host() ?? "Article")
-                .navigationBarTitleDisplayMode(.inline)
+                .oneFeedInlineTitle()
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItem(placement: .oneFeedLeading) {
                         Button("Close", systemImage: "xmark") { dismiss() }
                     }
-                    ToolbarItemGroup(placement: .topBarTrailing) {
+                    ToolbarItemGroup(placement: .oneFeedTrailing) {
                         Button("Back", systemImage: "chevron.backward") {
                             if let item = page.backForwardList.backList.last { _ = page.load(item) }
                         }

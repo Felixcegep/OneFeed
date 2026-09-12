@@ -39,7 +39,7 @@ struct CurrentView: View {
             }
         }
         .navigationTitle("Today")
-        .navigationBarTitleDisplayMode(.large)
+        .oneFeedLargeTitle()
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .task {
@@ -58,7 +58,7 @@ struct CurrentView: View {
                 SourcesView()
             }
         }
-        .fullScreenCover(item: $readerArticle) { article in
+        .oneFeedArticleCover(item: $readerArticle) { article in
             ReaderView(article: article, onFinish: { state in
                 readerArticle = nil
                 guard article.isStored else { return }

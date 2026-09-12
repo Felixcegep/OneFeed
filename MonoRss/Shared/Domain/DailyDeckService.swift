@@ -49,6 +49,7 @@ struct DailyDeckService {
             if let article = next.article {
                 article.state = .current
                 article.firstDisplayedAt = article.firstDisplayedAt ?? .now
+                LibraryChange.note(article)
             }
             repaired = true
             if repaired { try context.save() }
@@ -67,6 +68,7 @@ struct DailyDeckService {
             article.state = state
             article.completedAt = .now
             if state == .saved { article.isRemoteStarred = true }
+            LibraryChange.note(article)
         }
 
         let nextItem = item.deck?.items
@@ -79,6 +81,7 @@ struct DailyDeckService {
             if let article = nextItem.article {
                 article.state = .current
                 article.firstDisplayedAt = .now
+                LibraryChange.note(article)
             }
         }
 

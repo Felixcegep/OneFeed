@@ -53,6 +53,7 @@ final class SourcesViewModel {
         FolderStore.remember(name)
         newFolderName = ""
         isPresentingNewFolder = false
+        LibraryChange.noteStructureChanged()
         reload()
     }
 
@@ -61,6 +62,7 @@ final class SourcesViewModel {
         let trimmed = folderName?.trimmingCharacters(in: .whitespacesAndNewlines)
         feed.folderName = (trimmed?.isEmpty == false) ? trimmed : nil
         if let trimmed, !trimmed.isEmpty { FolderStore.remember(trimmed) }
+        LibraryChange.note(feed)
         try? context.save()
         reload()
     }
@@ -73,6 +75,7 @@ final class SourcesViewModel {
             UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
             UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
             reload()
+            LibraryChange.noteStructureChanged()
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
                 statusMessage = "All seeded sources are already loaded."
                 isImportingPack = false
@@ -200,6 +203,7 @@ final class AddSourceViewModel {
             presentedError = "Added \(addedCount), \(failures.count) failed.\n\(failures.prefix(3).joined(separator: "\n"))"
         }
         addressList = ""
+        LibraryChange.noteStructureChanged()
         return true
     }
 }
@@ -232,35 +236,37 @@ final class SourceDetailViewModel {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             feed.folderName = trimmed.isEmpty ? nil : trimmed
             if !trimmed.isEmpty { FolderStore.remember(trimmed) }
+            LibraryChange.note(feed)
             try? context.save()
         }
     }
 
     var isEnabled: Bool {
         get { feed.isEnabled }
-        set { feed.isEnabled = newValue; try? context.save() }
+        set { feed.isEnabled = newValue; LibraryChange.note(feed); try? context.save() }
     }
     var includeInToday: Bool {
         get { feed.includeInToday }
-        set { feed.includeInToday = newValue; try? context.save() }
+        set { feed.includeInToday = newValue; LibraryChange.note(feed); try? context.save() }
     }
     var includeVideos: Bool {
         get { feed.includeVideos }
-        set { feed.includeVideos = newValue; try? context.save() }
+        set { feed.includeVideos = newValue; LibraryChange.note(feed); try? context.save() }
     }
     var includeShorts: Bool {
         get { feed.includeShorts }
-        set { feed.includeShorts = newValue; try? context.save() }
+        set { feed.includeShorts = newValue; LibraryChange.note(feed); try? context.save() }
     }
     var blockedWords: String {
         get { feed.blockedWords }
-        set { feed.blockedWords = newValue; try? context.save() }
+        set { feed.blockedWords = newValue; LibraryChange.note(feed); try? context.save() }
     }
     func remove() async {
         do {
             try await freshRSSService.removeSubscription(feed, in: context)
         } catch {
             presentedError = error.localizedDescription
+            LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
             try? context.save()
         }

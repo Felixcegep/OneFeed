@@ -118,9 +118,9 @@ struct FeedStreamView: View {
         .background(OneFeedTheme.grouped.ignoresSafeArea())
         .navigationTitle("Feed")
         .refreshProgressBanner(refresh.progress)
-        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search articles")
+        .oneFeedSearchable($search, prompt: "Search articles")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 if refresh.isRefreshing {
                     Text(refresh.progress.countText)
                         .font(.subheadline.monospacedDigit())
@@ -128,10 +128,10 @@ struct FeedStreamView: View {
                         .accessibilityLabel(refresh.progress.accessibilityText())
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
                         toolbarDestination = .sources
@@ -161,7 +161,7 @@ struct FeedStreamView: View {
         }
         .refreshable { await refresh.refresh(in: modelContext) }
         .sheet(isPresented: $showingAddSource) { AddSourceView() }
-            .fullScreenCover(item: $selectedArticle) { article in
+        .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
                 guard article.isStored else { return }
@@ -207,7 +207,7 @@ struct FeedStreamView: View {
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
                 .background(selected ? Color.primary : OneFeedTheme.secondarySurface, in: Capsule())
-                .foregroundStyle(selected ? Color(uiColor: .systemBackground) : .primary)
+                .foregroundStyle(selected ? Color.oneFeedSystemBackground : .primary)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

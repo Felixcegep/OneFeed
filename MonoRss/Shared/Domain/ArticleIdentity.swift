@@ -54,9 +54,17 @@ enum ArticleIdentity {
         articles.max(by: { score($0) < score($1) }) ?? articles[0]
     }
 
-    private static func identityKey(for article: Article) -> String {
-        if let url = normalizedURLString(article.url) { return "url:\(url)" }
-        return "id:\(article.id.uuidString)"
+    static func identityKey(for article: Article) -> String {
+        libraryKey(url: article.url, guid: article.guid, id: article.id)
+    }
+
+    static func libraryKey(url: URL?, guid: String, id: UUID) -> String {
+        if let url = normalizedURLString(url) { return "url:\(url)" }
+        return "id:\(id.uuidString)"
+    }
+
+    static func feedKey(_ url: URL) -> String {
+        normalizedURLString(url) ?? url.absoluteString
     }
 
     private static func score(_ article: Article) -> Int {
