@@ -36,33 +36,22 @@ struct ReaderView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if mode == .website, let url = playbackURL {
-                    VStack(spacing: 0) {
-                        youtubeSummaryBanner
-                        inAppWebsite(url)
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        youtubeSummaryBanner
-                        ReaderWebContent(
-                            html: viewModel.documentHTML(
-                                fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
-                                textSize: ReaderTextSize(rawValue: textSize) ?? .standard
-                            ),
-                            baseURL: article.url ?? URL(string: "about:blank")!
-                        )
-                        .id(dynamicTypeSize)
-                    }
-                }
+            VStack(spacing: 0) {
+                readerTopBar
+                youtubeSummaryBanner
+                articleCanvas
             }
-            .background(OneFeedTheme.page)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(OneFeedTheme.paper)
             .overlay(alignment: .top) {
                 if viewModel.isExtracting {
                     ProgressView()
                         .padding(.top, 8)
                         .transition(.opacity)
                 }
+            }
+            .overlay(alignment: .bottom) {
+                floatingActionBar
             }
             .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
             .task {
@@ -71,86 +60,12 @@ struct ReaderView: View {
                     showingSummaryPrompt = true
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .oneFeedLeading) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
-                        .accessibilityHint("Closes the reader without changing this article")
-                }
-                ToolbarItem(placement: .principal) {
-                    if viewModel.article.url != nil {
-                        Picker("View", selection: $mode) {
-                            ForEach(ReaderDisplayMode.allCases) { option in
-                                Text(option.title).tag(option)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(maxWidth: 220)
-                        .accessibilityLabel("Reading mode")
-                    }
-                }
-                ToolbarItem(placement: .oneFeedTrailing) {
-                    Menu {
-                        Picker("Font", selection: $fontChoice) {
-                            ForEach(ReaderFontChoice.allCases) { choice in
-                                Text(choice.label).tag(choice.rawValue)
-                            }
-                        }
-                        Picker("Size", selection: $textSize) {
-                            ForEach(ReaderTextSize.allCases) { size in
-                                Text(size.label).tag(size.rawValue)
-                            }
-                        }
-                        if article.contentKind == "youtube" {
-                            Divider()
-                            Button("Summarize video", systemImage: "text.quote") {
-                                if GeminiAPIKeyStore.load() == nil {
-                                    showingAPIKeySheet = true
-                                } else {
-                                    Task { await viewModel.summarizeYouTube() }
-                                }
-                            }
-                            .disabled(viewModel.isSummarizing)
-                        }
-                    } label: {
-                        Image(systemName: "textformat.size")
-                    }
-                    .accessibilityLabel("Reading options")
-                }
-                ToolbarItemGroup(placement: .oneFeedBottomBar) {
-                    Button {
-                        savePulse += 1
-                        onFinish(.saved)
-                    } label: {
-                        Label("Save", systemImage: "star")
-                    }
-                    .accessibilityHint("Keeps this in Saved")
-                    Button {
-                        onFinish(.skipped)
-                    } label: {
-                        Label("Skip", systemImage: "forward")
-                    }
-                    Button {
-                        onFinish(.read)
-                    } label: {
-                        Label("Done", systemImage: "checkmark.circle")
-                    }
-                    .accessibilityHint("Marks this article done")
-                    ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(article.url == nil)
-                    Button("Open browser", systemImage: "safari") {
-                        isPresentingBrowser = true
-                    }
-                    .disabled(article.url == nil)
-                    .accessibilityLabel("Open in browser")
-                }
-            }
-            .oneFeedInlineTitle()
+            .toolbar(.hidden)
             .sensoryFeedback(.success, trigger: savePulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
+                        .oneFeedMacSheetCanvas()
                 }
             }
             .confirmationDialog("Summarize this video?", isPresented: $showingSummaryPrompt, titleVisibility: .visible) {
@@ -190,6 +105,153 @@ struct ReaderView: View {
     }
 
     private var article: Article { viewModel.article }
+
+    private var readerTopBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+            .accessibilityHint("Closes the reader without changing this article")
+
+            if viewModel.article.url != nil {
+                Picker("View", selection: $mode) {
+                    ForEach(ReaderDisplayMode.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .accessibilityLabel("Reading mode")
+            } else {
+                Spacer(minLength: 0)
+            }
+
+            Spacer(minLength: 8)
+
+            Menu {
+                Picker("Font", selection: $fontChoice) {
+                    ForEach(ReaderFontChoice.allCases) { choice in
+                        Text(choice.label).tag(choice.rawValue)
+                    }
+                }
+                Picker("Size", selection: $textSize) {
+                    ForEach(ReaderTextSize.allCases) { size in
+                        Text(size.label).tag(size.rawValue)
+                    }
+                }
+                if article.contentKind == "youtube" {
+                    Divider()
+                    Button("Summarize video", systemImage: "text.quote") {
+                        if GeminiAPIKeyStore.load() == nil {
+                            showingAPIKeySheet = true
+                        } else {
+                            Task { await viewModel.summarizeYouTube() }
+                        }
+                    }
+                    .disabled(viewModel.isSummarizing)
+                }
+            } label: {
+                Image(systemName: "textformat.size")
+                    .font(.body.weight(.medium))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            #if os(macOS)
+            .menuStyle(.borderlessButton)
+            #endif
+            .accessibilityLabel("Reading options")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.5)
+        }
+    }
+
+    private var floatingActionBar: some View {
+        HStack(spacing: 2) {
+            decisionActions
+            Spacer(minLength: 10)
+            outboundActions
+        }
+        .buttonStyle(.plain)
+        .labelStyle(.titleAndIcon)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 16)
+        .padding(.top, 8)
+    }
+
+    @ViewBuilder
+    private var articleCanvas: some View {
+        if mode == .website, let url = playbackURL {
+            inAppWebsite(url)
+        } else {
+            ReaderWebContent(
+                html: viewModel.documentHTML(
+                    fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
+                    textSize: ReaderTextSize(rawValue: textSize) ?? .standard
+                ),
+                baseURL: article.url ?? URL(string: "about:blank")!
+            )
+            .id(dynamicTypeSize)
+        }
+    }
+
+    @ViewBuilder
+    private var decisionActions: some View {
+        readerChip("Save", systemImage: "star") {
+            savePulse += 1
+            onFinish(.saved)
+        }
+        .accessibilityHint("Keeps this in Saved")
+        readerChip("Skip", systemImage: "forward") {
+            onFinish(.skipped)
+        }
+        readerChip("Done", systemImage: "checkmark.circle") {
+            onFinish(.read)
+        }
+        .accessibilityHint("Marks this article done")
+    }
+
+    @ViewBuilder
+    private var outboundActions: some View {
+        ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+            readerChipLabel("Share", systemImage: "square.and.arrow.up")
+        }
+        .disabled(article.url == nil)
+        .accessibilityLabel("Share")
+        Button {
+            isPresentingBrowser = true
+        } label: {
+            readerChipLabel("Open browser", systemImage: "safari")
+        }
+        .disabled(article.url == nil)
+        .accessibilityLabel("Open in browser")
+    }
+
+    private func readerChip(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            readerChipLabel(title, systemImage: systemImage)
+        }
+    }
+
+    private func readerChipLabel(_ title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.subheadline.weight(.medium))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+    }
 
     private static func initialMode(for article: Article) -> ReaderDisplayMode {
         if article.contentKind == "youtube", article.videoID != nil || article.url != nil { return .website }
@@ -254,6 +316,7 @@ private struct WebsiteReaderPane: View {
             .webViewLinkPreviews(.enabled)
             .webViewTextSelection(.enabled)
             .webViewBackForwardNavigationGestures(.enabled)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if page.isLoading {
                     ProgressView()
@@ -283,6 +346,7 @@ private struct ReaderWebContent: View {
         WebView(page)
             .webViewLinkPreviews(.enabled)
             .webViewTextSelection(.enabled)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task(id: html) { page.load(html: html, baseURL: baseURL) }
     }
 }

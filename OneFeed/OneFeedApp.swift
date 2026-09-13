@@ -1,6 +1,6 @@
 //
-//  MonoRssApp.swift
-//  MonoRss
+//  OneFeedApp.swift
+//  OneFeed
 //
 //  Created by Felix Lachapelle on 2026-08-29.
 //
@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct MonoRssApp: App {
+struct OneFeedApp: App {
     @Environment(\.scenePhase) private var scenePhase
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -78,11 +78,11 @@ struct MonoRssApp: App {
         WindowGroup {
             AppRootView()
                 #if os(macOS)
-                .frame(minWidth: 720, minHeight: 500)
+                .frame(minWidth: 860, minHeight: 560)
                 #endif
         }
         #if os(macOS)
-        .defaultSize(width: 960, height: 720)
+        .defaultSize(width: 1100, height: 760)
         #endif
         .modelContainer(sharedModelContainer)
         #if os(iOS)

@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 import Testing
-@testable import MonoRss
+@testable import OneFeed
 
 @MainActor
 struct DailyDeckTests {

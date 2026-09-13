@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MonoRss
+@testable import OneFeed
 
 private actor RecordingMutationAPI: FreshRSSAPI {
     enum Failure: Error, Equatable { case unavailable }

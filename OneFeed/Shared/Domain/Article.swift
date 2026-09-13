@@ -38,7 +38,7 @@ final class Article {
     /// Bumped only on user-facing state changes (read / skip / save / current).
     /// Fresh RSS inserts stay at `.distantPast` so another device’s reading
     /// state wins on first merge.
-    var libraryUpdatedAt: Date = .distantPast
+    var libraryUpdatedAt: Date = Date.distantPast
     var feed: Feed?
 
     var state: ArticleState {

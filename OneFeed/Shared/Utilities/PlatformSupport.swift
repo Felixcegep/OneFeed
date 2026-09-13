@@ -143,7 +143,25 @@ extension View {
         #if os(iOS)
         fullScreenCover(item: item, content: content)
         #else
-        sheet(item: item, content: content)
+        sheet(item: item) { value in
+            content(value)
+                .oneFeedMacSheetCanvas()
+        }
+        #endif
+    }
+
+    /// macOS sheets size to their content. A fitted card keeps the reader from
+    /// filling the display; `WebView` still needs an explicit frame.
+    @ViewBuilder
+    func oneFeedMacSheetCanvas() -> some View {
+        #if os(macOS)
+        self
+            .frame(width: OneFeedTheme.readerWidth, height: OneFeedTheme.readerHeight)
+            .clipShape(.rect(cornerRadius: OneFeedTheme.readerCorner, style: .continuous))
+            .presentationSizing(.fitted)
+            .presentationCornerRadius(OneFeedTheme.readerCorner)
+        #else
+        self
         #endif
     }
 

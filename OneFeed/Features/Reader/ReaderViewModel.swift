@@ -79,13 +79,15 @@ final class ReaderViewModel {
         let headingSize = max(bodySize * 1.42, bodySize + 7)
         let sectionSize = max(bodySize * 1.18, bodySize + 3)
         #if canImport(UIKit)
-        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 28)
+        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 32)
         let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 14)
         let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 12)
+        let horizontalPad = 22
         #else
-        let titleSize: CGFloat = 28
+        let titleSize: CGFloat = 34
         let metaSize: CGFloat = 14
         let sourceSize: CGFloat = 12
+        let horizontalPad = 40
         #endif
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -115,10 +117,10 @@ final class ReaderViewModel {
           font-family: \(family);
           font-size: \(bodySize)px;
           font-optical-sizing: auto;
-          line-height: 1.68;
+          line-height: 1.72;
           margin: 0 auto;
-          padding: 32px 24px 64px;
-          max-width: 680px;
+          padding: 28px \(horizontalPad)px 160px;
+          max-width: 640px;
           color: var(--ink);
           background: var(--paper);
           overflow-x: hidden;

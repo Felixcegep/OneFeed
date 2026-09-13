@@ -23,7 +23,7 @@ final class Feed {
     var blockedWords: String = ""
     /// Bumped only when the user changes subscription metadata, so RSS fetches
     /// cannot overwrite a newer library file from another device.
-    var libraryUpdatedAt: Date = .distantPast
+    var libraryUpdatedAt: Date = Date.distantPast
 
     @Relationship(deleteRule: .cascade, inverse: \Article.feed)
     var articles: [Article] = []

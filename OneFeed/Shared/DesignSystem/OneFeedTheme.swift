@@ -5,6 +5,7 @@ enum OneFeedTheme {
     /// Warm orange in the NetNewsWire family; used as the app tint, not as a brand copy.
     static let accent = Color(red: 0.89, green: 0.38, blue: 0.16)
     static let page = Color.oneFeedSystemBackground
+    static let paper = Color.oneFeedSystemBackground
     static let grouped = Color.oneFeedGroupedBackground
     static let surface = Color.oneFeedSecondaryGroupedBackground
     static let secondarySurface = Color.oneFeedTertiaryFill
@@ -15,6 +16,9 @@ enum OneFeedTheme {
     static let cardRadius: CGFloat = 16
     static let pagePadding: CGFloat = 16
     static let thumbnailSize: CGFloat = 72
+    static let readerCorner: CGFloat = 22
+    static let readerWidth: CGFloat = 720
+    static let readerHeight: CGFloat = 640
 }
 
 struct PrimaryActionStyle: ButtonStyle {
@@ -127,7 +131,7 @@ struct FeaturedStory: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
@@ -371,7 +375,7 @@ extension View {
         listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
             .listRowSeparatorTint(Color.primary.opacity(0.08))
         #else
-        listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+        listRowInsets(EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 18))
         #endif
     }
 

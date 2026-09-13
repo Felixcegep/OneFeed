@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MonoRss
+@testable import OneFeed
 
 private actor RecordingFreshRSSTransport: FreshRSSHTTPTransport {
     private(set) var requests: [URLRequest] = []

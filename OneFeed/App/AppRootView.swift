@@ -73,12 +73,18 @@ private struct MacRootView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selectedTab) {
-                Label("Today", systemImage: "sun.max").tag(AppTab.today)
-                Label("Feed", systemImage: "list.bullet").tag(AppTab.feed)
-                Label("Saved", systemImage: "star").tag(AppTab.saved)
-                Label("Settings", systemImage: "gearshape").tag(AppTab.settings)
+                Section {
+                    Label("Today", systemImage: "sun.max").tag(AppTab.today)
+                    Label("Feed", systemImage: "list.bullet").tag(AppTab.feed)
+                    Label("Saved", systemImage: "star").tag(AppTab.saved)
+                }
+                Section {
+                    Label("Settings", systemImage: "gearshape").tag(AppTab.settings)
+                }
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
+            .listStyle(.sidebar)
+            .navigationTitle("OneFeed")
+            .navigationSplitViewColumnWidth(min: 196, ideal: 216, max: 260)
         } detail: {
             NavigationStack {
                 switch selectedTab {
@@ -88,7 +94,9 @@ private struct MacRootView: View {
                 case .settings: SettingsView()
                 }
             }
+            .background(OneFeedTheme.page)
         }
+        .navigationSplitViewStyle(.balanced)
     }
 }
 #endif

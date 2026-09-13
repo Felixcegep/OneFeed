@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-@testable import MonoRss
+@testable import OneFeed
 
 enum InMemoryStore {
     static func makeContainer() throws -> ModelContainer {

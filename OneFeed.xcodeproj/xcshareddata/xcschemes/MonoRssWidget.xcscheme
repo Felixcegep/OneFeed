@@ -19,7 +19,7 @@
                BlueprintIdentifier = "9A31A0C10000000000000006"
                BuildableName = "MonoRssWidget.appex"
                BlueprintName = "MonoRssWidget"
-               ReferencedContainer = "container:MonoRss.xcodeproj">
+               ReferencedContainer = "container:OneFeed.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,9 +31,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "4425FA5C30439ECB0053CF66"
-               BuildableName = "MonoRss.app"
+               BuildableName = "OneFeed.app"
                BlueprintName = "MonoRss"
-               ReferencedContainer = "container:MonoRss.xcodeproj">
+               ReferencedContainer = "container:OneFeed.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -66,16 +66,16 @@
             BlueprintIdentifier = "9A31A0C10000000000000006"
             BuildableName = "MonoRssWidget.appex"
             BlueprintName = "MonoRssWidget"
-            ReferencedContainer = "container:MonoRss.xcodeproj">
+            ReferencedContainer = "container:OneFeed.xcodeproj">
          </BuildableReference>
       </RemoteRunnable>
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4425FA5C30439ECB0053CF66"
-            BuildableName = "MonoRss.app"
+            BuildableName = "OneFeed.app"
             BlueprintName = "MonoRss"
-            ReferencedContainer = "container:MonoRss.xcodeproj">
+            ReferencedContainer = "container:OneFeed.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <EnvironmentVariables>
@@ -109,9 +109,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "4425FA5C30439ECB0053CF66"
-            BuildableName = "MonoRss.app"
+            BuildableName = "OneFeed.app"
             BlueprintName = "MonoRss"
-            ReferencedContainer = "container:MonoRss.xcodeproj">
+            ReferencedContainer = "container:OneFeed.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

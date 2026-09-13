@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import MonoRss
+@testable import OneFeed
 
 @MainActor
 struct RefreshProgressTests {

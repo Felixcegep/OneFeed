@@ -50,7 +50,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		4425FA5D30439ECB0053CF66 /* MonoRss.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonoRss.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4425FA5D30439ECB0053CF66 /* OneFeed.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OneFeed.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4425FA6C30439ECC0053CF66 /* MonoRssTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonoRssTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4425FA7630439ECC0053CF66 /* MonoRssUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonoRssUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A31A0C10000000000000003 /* MonoRssWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MonoRssWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -64,7 +64,7 @@
 			);
 			target = 9A31A0C10000000000000006 /* MonoRssWidget */;
 		};
-		9A31A0C10000000000000010 /* Exceptions for "MonoRss" folder in "MonoRss" target */ = {
+		9A31A0C10000000000000010 /* Exceptions for "OneFeed" folder in "MonoRss" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -74,12 +74,12 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		4425FA5F30439ECB0053CF66 /* MonoRss */ = {
+		4425FA5F30439ECB0053CF66 /* OneFeed */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				9A31A0C10000000000000010 /* Exceptions for "MonoRss" folder in "MonoRss" target */,
+				9A31A0C10000000000000010 /* Exceptions for "OneFeed" folder in "MonoRss" target */,
 			);
-			path = MonoRss;
+			path = OneFeed;
 			sourceTree = "<group>";
 		};
 		4425FA6F30439ECC0053CF66 /* MonoRssTests */ = {
@@ -138,7 +138,7 @@
 		4425FA5430439ECB0053CF66 = {
 			isa = PBXGroup;
 			children = (
-				4425FA5F30439ECB0053CF66 /* MonoRss */,
+				4425FA5F30439ECB0053CF66 /* OneFeed */,
 				4425FA6F30439ECC0053CF66 /* MonoRssTests */,
 				4425FA7930439ECC0053CF66 /* MonoRssUITests */,
 				9A31A0C10000000000000004 /* MonoRssWidget */,
@@ -149,7 +149,7 @@
 		4425FA5E30439ECB0053CF66 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				4425FA5D30439ECB0053CF66 /* MonoRss.app */,
+				4425FA5D30439ECB0053CF66 /* OneFeed.app */,
 				4425FA6C30439ECC0053CF66 /* MonoRssTests.xctest */,
 				4425FA7630439ECC0053CF66 /* MonoRssUITests.xctest */,
 				9A31A0C10000000000000003 /* MonoRssWidget.appex */,
@@ -175,14 +175,14 @@
 				9A31A0C10000000000000009 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				4425FA5F30439ECB0053CF66 /* MonoRss */,
+				4425FA5F30439ECB0053CF66 /* OneFeed */,
 			);
 			name = MonoRss;
 			packageProductDependencies = (
 				A1FEEDREAD00000000000002 /* SwiftReadability */,
 			);
-			productName = MonoRss;
-			productReference = 4425FA5D30439ECB0053CF66 /* MonoRss.app */;
+			productName = OneFeed;
+			productReference = 4425FA5D30439ECB0053CF66 /* OneFeed.app */;
 			productType = "com.apple.product-type.application";
 		};
 		4425FA6B30439ECC0053CF66 /* MonoRssTests */ = {
@@ -510,7 +510,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MonoRss/MonoRss.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OneFeed/OneFeed.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = M9FC992T46;
@@ -519,7 +519,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MonoRss/Info.plist;
+				INFOPLIST_FILE = OneFeed/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -536,7 +536,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = felix.MonoRss;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = OneFeed;
+				PRODUCT_NAME = OneFeed;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -558,7 +559,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = MonoRss/MonoRss.entitlements;
+				CODE_SIGN_ENTITLEMENTS = OneFeed/OneFeed.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = M9FC992T46;
@@ -567,7 +568,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = MonoRss/Info.plist;
+				INFOPLIST_FILE = OneFeed/Info.plist;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -584,7 +585,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = felix.MonoRss;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_MODULE_NAME = OneFeed;
+				PRODUCT_NAME = OneFeed;
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -622,7 +624,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonoRss.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonoRss";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OneFeed.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OneFeed";
 				XROS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Debug;
@@ -648,7 +650,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonoRss.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonoRss";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OneFeed.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OneFeed";
 				XROS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;

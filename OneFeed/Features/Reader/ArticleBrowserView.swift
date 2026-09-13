@@ -20,6 +20,7 @@ struct ArticleBrowserView: View {
                 .webViewLinkPreviews(.enabled)
                 .webViewTextSelection(.enabled)
                 .webViewBackForwardNavigationGestures(.enabled)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(edges: .bottom)
                 .overlay(alignment: .top) {
                     if page.isLoading {
