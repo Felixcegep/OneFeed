@@ -64,6 +64,7 @@ enum AppPreferenceKey {
     static let libraryBookmarkIsFile = "libraryBookmarkIsFile"
     static let libraryTombstones = "libraryTombstones"
     static let libraryDisplayName = "libraryDisplayName"
+    static let cloudFileLinkRecord = "cloudFileLinkRecord"
 }
 
 /// Folder names the user created (even before any feed is filed there).

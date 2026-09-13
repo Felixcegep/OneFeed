@@ -182,6 +182,8 @@ struct ArticleCollectionView: View {
                 guard article.isStored else { return }
                 ArticleActions.apply(state, to: article, in: modelContext)
             }
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
     }
 

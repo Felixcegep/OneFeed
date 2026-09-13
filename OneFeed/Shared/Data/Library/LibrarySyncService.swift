@@ -16,11 +16,37 @@ enum LibrarySyncStatus: Equatable, Sendable {
 final class LibrarySyncService {
     static let shared = LibrarySyncService()
 
+    enum Request: Equatable, Sendable {
+        /// Push or pull when unambiguous. Never overwrite either side on conflict.
+        case automatic
+        /// Same as automatic, but a conflict is reported to Settings.
+        case manual
+        case keepThisIPhone
+        case useCloudFile
+    }
+
+    enum Outcome: Equatable, Sendable {
+        case unlinked
+        case inSync
+        case pushed
+        case pulled
+        case conflict
+        case skippedActiveSession
+        case failed(String)
+    }
+
     private(set) var status: LibrarySyncStatus = .unlinked
     private(set) var folderDisplayName: String?
     private(set) var lastSyncAt: Date?
     private(set) var lastError: String?
     private(set) var isLinked = false
+    private(set) var isSyncing = false
+    private(set) var lastOutcome: Outcome = .unlinked
+    private(set) var lastErrorMessage: String?
+    private(set) var linkedRecord: CloudFileLinkRecord?
+
+    /// Reader presented. Automatic and manual pulls wait; `useCloudFile` still pulls.
+    var hasActiveReadingSession = false
 
     private var context: ModelContext?
     private var scopedURL: URL?
@@ -30,6 +56,11 @@ final class LibrarySyncService {
     private var lastWrittenData: Data?
     private var presenter: LibraryFilePresenter?
     private var isApplyingRemote = false
+
+    private let defaults: UserDefaults
+    private let linkStore: CloudFileLinkStore
+    private let fileManager: FileManager
+    private let googleDrive: (any GoogleDriveAPIClienting)?
 
     var footerText: String {
         switch status {
@@ -49,10 +80,47 @@ final class LibrarySyncService {
         }
     }
 
+    var isAutoSyncEnabled: Bool {
+        guard isLinked else { return false }
+        if let linkedRecord, linkedRecord.usesGoogleDriveAPI {
+            return linkedRecord.syncMode == .automatic
+        }
+        return true
+    }
+
+    private var usesGoogleDriveAPI: Bool {
+        (linkedRecord ?? linkStore.load())?.usesGoogleDriveAPI == true
+    }
+
+    private var resolvedGoogleDrive: any GoogleDriveAPIClienting {
+        googleDrive ?? GoogleDriveAPIClient.shared
+    }
+
+    init(
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        googleDrive: (any GoogleDriveAPIClienting)? = nil
+    ) {
+        self.defaults = defaults
+        self.linkStore = CloudFileLinkStore(defaults: defaults)
+        self.fileManager = fileManager
+        self.googleDrive = googleDrive
+        linkedRecord = linkStore.load()
+        if let linkedRecord, linkedRecord.usesGoogleDriveAPI {
+            isLinked = true
+            folderDisplayName = linkedRecord.displayName
+            lastSyncAt = linkedRecord.lastSyncedAt
+            status = .idle
+        } else if linkedRecord == nil {
+            lastOutcome = .unlinked
+        }
+    }
+
     func configure(with context: ModelContext) {
         self.context = context
         guard !isDisabled else {
             status = .unlinked
+            isLinked = false
             return
         }
         Task { await restoreIfNeeded() }
@@ -60,6 +128,7 @@ final class LibrarySyncService {
 
     func attach(url: URL) async {
         guard !isDisabled else { return }
+        clearDriveLink(signOut: true)
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
@@ -76,18 +145,71 @@ final class LibrarySyncService {
     }
 
     func detach() {
+        unlink()
+    }
+
+    func unlink() {
         pushTask?.cancel()
         tearDownAccess()
         LibraryFolderStore.clear()
+        clearDriveLink(signOut: true)
         folderDisplayName = nil
         lastSyncAt = nil
         lastError = nil
+        lastErrorMessage = nil
+        lastOutcome = .unlinked
         isLinked = false
+        isSyncing = false
         status = .unlinked
+    }
+
+    func setSyncMode(_ mode: CloudFileSyncMode) {
+        guard var record = linkedRecord ?? linkStore.load() else { return }
+        record.syncMode = mode
+        persist(record)
+    }
+
+    /// Remembers the Drive file. Does not OAuth, find, create, or sync.
+    func linkGoogleDrive(
+        fileID: String,
+        displayName: String,
+        accountEmail: String?,
+        lastSyncedHash: String? = nil
+    ) {
+        guard !isDisabled else { return }
+        tearDownAccess()
+        LibraryFolderStore.clear()
+        let record = CloudFileLinkRecord(
+            bookmarkData: Data(),
+            displayName: displayName,
+            locationKind: .googleDrive,
+            lastSyncedHash: lastSyncedHash,
+            lastSyncedAt: lastSyncedHash == nil ? nil : .now,
+            googleDriveFileID: fileID,
+            googleDriveAccountEmail: accountEmail
+        )
+        persist(record)
+        lastError = nil
+        lastErrorMessage = nil
+        isLinked = true
+        status = .idle
+        if lastSyncedHash != nil {
+            lastOutcome = .pushed
+        }
     }
 
     func schedulePush() {
         guard isLinked, !isDisabled, !isApplyingRemote else { return }
+        if usesGoogleDriveAPI {
+            guard isAutoSyncEnabled else { return }
+            pushTask?.cancel()
+            pushTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1_500))
+                guard !Task.isCancelled else { return }
+                _ = await sync(request: .automatic)
+            }
+            return
+        }
         pushTask?.cancel()
         pushTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1_500))
@@ -98,6 +220,10 @@ final class LibrarySyncService {
 
     func syncNow() async {
         guard isLinked else { return }
+        if usesGoogleDriveAPI {
+            _ = await sync(request: .manual)
+            return
+        }
         await pullAndMerge()
         await pushNow()
     }
@@ -105,7 +231,54 @@ final class LibrarySyncService {
     func flush() async {
         pushTask?.cancel()
         guard isLinked else { return }
+        if usesGoogleDriveAPI {
+            guard isAutoSyncEnabled else { return }
+            _ = await sync(request: .automatic)
+            return
+        }
         await pushNow()
+    }
+
+    func sync(request: Request) async -> Outcome {
+        guard isSyncing == false else { return lastOutcome }
+        guard !isDisabled else {
+            lastOutcome = .unlinked
+            return .unlinked
+        }
+        guard linkStore.load()?.usesGoogleDriveAPI == true else {
+            lastOutcome = .unlinked
+            return .unlinked
+        }
+
+        isSyncing = true
+        status = .syncing
+        defer { isSyncing = false }
+
+        do {
+            let outcome = try await performDriveSync(request: request)
+            lastOutcome = outcome
+            lastError = nil
+            lastErrorMessage = nil
+            status = outcome == .unlinked ? .unlinked : .idle
+            return outcome
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            lastErrorMessage = message
+            lastOutcome = .failed(message)
+            status = .error(message)
+            return lastOutcome
+        }
+    }
+
+    /// SHA-256 of `LibraryDocument.encoded()` bytes. Drive `md5Checksum` is never used.
+    static func encodedLibraryFile(from context: ModelContext) throws -> Data {
+        var document = try LibraryMerge.snapshot(
+            from: context,
+            extraTombstones: LibraryFolderStore.loadTombstones()
+        )
+        document.updatedAt = portableUpdatedAt(for: document)
+        return try document.encoded()
     }
 
     private var isDisabled: Bool {
@@ -114,6 +287,18 @@ final class LibrarySyncService {
     }
 
     private func restoreIfNeeded() async {
+        if let record = linkStore.load(), record.usesGoogleDriveAPI {
+            tearDownAccess()
+            persist(record)
+            isLinked = true
+            status = .idle
+            return
+        }
+        if googleDrive != nil {
+            status = isLinked ? .idle : .unlinked
+            return
+        }
+
         do {
             guard let resolved = try LibraryFolderStore.resolvedURL() else {
                 status = .unlinked
@@ -135,6 +320,187 @@ final class LibrarySyncService {
         } catch {
             present(error)
         }
+    }
+
+    private func performDriveSync(request: Request) async throws -> Outcome {
+        guard var record = linkStore.load(), record.usesGoogleDriveAPI else { return .unlinked }
+        guard let context else {
+            throw GoogleDriveAPIError.httpFailure(
+                status: 0,
+                message: String(localized: "The library is not ready.")
+            )
+        }
+
+        let localData = try Self.encodedLibraryFile(from: context)
+        let localHash = CloudFileContentHash.sha256Hex(localData)
+
+        let remoteData = try await readDriveData(from: record)
+        let remoteHash = remoteData.map(CloudFileContentHash.sha256Hex)
+
+        var decision = CloudFileReconciler.decide(
+            localHash: localHash,
+            remoteHash: remoteHash,
+            lastSyncedHash: record.lastSyncedHash
+        )
+
+        switch request {
+        case .keepThisIPhone:
+            decision = .push
+        case .useCloudFile:
+            decision = .pull
+        case .automatic, .manual:
+            break
+        }
+
+        switch decision {
+        case .inSync:
+            record.lastSyncedHash = localHash
+            record.lastSyncedAt = .now
+            persist(record)
+            return .inSync
+        case .push:
+            try await writeDrive(localData, to: record)
+            record.lastSyncedHash = localHash
+            record.lastSyncedAt = .now
+            persist(record)
+            return .pushed
+        case .pull:
+            guard let remoteData else {
+                try await writeDrive(localData, to: record)
+                record.lastSyncedHash = localHash
+                record.lastSyncedAt = .now
+                persist(record)
+                return .pushed
+            }
+            if hasActiveReadingSession, request == .automatic || request == .manual {
+                return .skippedActiveSession
+            }
+            return try pullDrive(
+                remoteData,
+                hash: CloudFileContentHash.sha256Hex(remoteData),
+                into: context,
+                record: record
+            )
+        case .conflict:
+            return .conflict
+        }
+    }
+
+    private func readDriveData(from record: CloudFileLinkRecord) async throws -> Data? {
+        guard let fileID = record.googleDriveFileID, fileID.isEmpty == false else { return nil }
+        do {
+            let data = try await resolvedGoogleDrive.downloadFile(id: fileID)
+            return data.isEmpty ? nil : data
+        } catch {
+            if Self.isMissingRemoteFile(error) {
+                return nil
+            }
+            throw error
+        }
+    }
+
+    private func writeDrive(_ data: Data, to record: CloudFileLinkRecord) async throws {
+        guard let fileID = record.googleDriveFileID, fileID.isEmpty == false else {
+            throw GoogleDriveAPIError.httpFailure(
+                status: 0,
+                message: String(localized: "The Google Drive library file could not be saved.")
+            )
+        }
+        try await resolvedGoogleDrive.uploadFile(id: fileID, data: data)
+    }
+
+    private static func isMissingRemoteFile(_ error: Error) -> Bool {
+        if let apiError = error as? GoogleDriveAPIError,
+           case .httpFailure(let status, _) = apiError {
+            return status == 404
+        }
+        if let urlError = error as? URLError {
+            return urlError.code == .fileDoesNotExist
+        }
+        return false
+    }
+
+    private func pullDrive(
+        _ remoteData: Data,
+        hash: String,
+        into context: ModelContext,
+        record: CloudFileLinkRecord
+    ) throws -> Outcome {
+        let document = try LibraryDocument.decode(remoteData)
+        writeRecoveryCopy(of: context)
+        isApplyingRemote = true
+        defer { isApplyingRemote = false }
+        _ = try LibraryMerge.apply(document, to: context, options: .all)
+        if (try? DailyDeckService().todayDeck(in: context)) == nil {
+            _ = try DailyDeckService().generateIfNeeded(in: context)
+        } else {
+            _ = try ArticleQueueService().ensureCurrent(in: context)
+        }
+        try LibraryMerge.applyCurrent(document, to: context)
+        try context.save()
+        LibraryFolderStore.saveTombstones(document.tombstones)
+        var updated = record
+        updated.lastSyncedHash = hash
+        updated.lastSyncedAt = .now
+        persist(updated)
+        return .pulled
+    }
+
+    private func writeRecoveryCopy(of context: ModelContext) {
+        do {
+            let data = try Self.encodedLibraryFile(from: context)
+            let directory = try recoveryDirectory()
+            try data.write(
+                to: directory.appendingPathComponent("OneFeed.library-before-pull.json"),
+                options: .atomic
+            )
+        } catch {
+            return
+        }
+    }
+
+    private func recoveryDirectory() throws -> URL {
+        let support = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = support.appendingPathComponent("LibraryRecovery", isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    private func persist(_ record: CloudFileLinkRecord) {
+        linkStore.save(record)
+        linkedRecord = record
+        lastSyncAt = record.lastSyncedAt
+        folderDisplayName = record.displayName
+        isLinked = record.usesGoogleDriveAPI || isLinked
+    }
+
+    private func clearDriveLink(signOut: Bool) {
+        let shouldSignOut = signOut && (linkedRecord ?? linkStore.load())?.usesGoogleDriveAPI == true
+        linkStore.clear()
+        linkedRecord = nil
+        lastOutcome = .unlinked
+        if shouldSignOut {
+            GoogleDriveOAuthClient.shared.signOut()
+        }
+    }
+
+    private static func portableUpdatedAt(for document: LibraryDocument) -> Date {
+        var latest = document.currentUpdatedAt ?? Date(timeIntervalSince1970: 0)
+        for feed in document.feeds {
+            latest = max(latest, feed.updatedAt)
+        }
+        for article in document.articles {
+            latest = max(latest, article.updatedAt)
+        }
+        for tombstone in document.tombstones {
+            latest = max(latest, tombstone.deletedAt)
+        }
+        return latest
     }
 
     private func pullAndMerge() async {
@@ -163,6 +529,7 @@ final class LibrarySyncService {
             LibraryFolderStore.saveTombstones(merged.tombstones)
             lastSyncAt = .now
             lastError = nil
+            lastErrorMessage = nil
             status = .idle
         } catch {
             present(error)
@@ -185,6 +552,7 @@ final class LibrarySyncService {
             LibraryFolderStore.saveTombstones(merged.tombstones)
             lastSyncAt = .now
             lastError = nil
+            lastErrorMessage = nil
             status = .idle
         } catch {
             present(error)
@@ -295,6 +663,7 @@ final class LibrarySyncService {
 
     private func present(_ error: Error) {
         lastError = error.localizedDescription
+        lastErrorMessage = error.localizedDescription
         status = .error(error.localizedDescription)
     }
 }

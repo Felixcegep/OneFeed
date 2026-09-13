@@ -17,6 +17,7 @@ final class SettingsViewModel {
     var isImportingOPML = false
     var isExportingOPML = false
     var statusMessage: String?
+    private(set) var isLinkingGoogleDrive = false
 
     init() {
         freshRSSService = FreshRSSSyncService()
@@ -99,6 +100,78 @@ final class SettingsViewModel {
         } catch { statusMessage = error.localizedDescription }
     }
 
+    func beginLinkGoogleDrive() {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-uiTesting") || arguments.contains("-inMemoryStore") { return }
+        guard GoogleDriveOAuthConfig.isConfigured else {
+            statusMessage = "Google Drive is not configured on this build."
+            return
+        }
+        guard isLinkingGoogleDrive == false else { return }
+        isLinkingGoogleDrive = true
+        Task {
+            defer { isLinkingGoogleDrive = false }
+            do {
+                try await linkGoogleDrive(
+                    using: GoogleDriveAPIClient.shared,
+                    snapshot: { [weak self] in
+                        guard let context = self?.context else {
+                            throw GoogleDriveLinkError.libraryUnavailable
+                        }
+                        return try LibrarySyncService.encodedLibraryFile(from: context)
+                    }
+                )
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// Settings owns find-or-create. The library service only persists the link.
+    func linkGoogleDrive(
+        using drive: any GoogleDriveAPIClienting,
+        signIn: () async throws -> GoogleDriveCredentials = {
+            try await GoogleDriveOAuthClient.shared.signIn(from: nil)
+        },
+        snapshot: () throws -> Data,
+        library: any GoogleDriveLibraryLinking = LibrarySyncService.shared
+    ) async throws {
+        let credentials = try await signIn()
+        let accountEmail: String?
+        if let existingEmail = credentials.accountEmail, existingEmail.isEmpty == false {
+            accountEmail = existingEmail
+        } else {
+            accountEmail = try? await drive.accountEmail()
+        }
+        if let existing = try await drive.findBackupFile() {
+            let displayName = existing.name.isEmpty
+                ? GoogleDriveOAuthConfig.backupFileName
+                : existing.name
+            library.linkGoogleDrive(
+                fileID: existing.id,
+                displayName: displayName,
+                accountEmail: accountEmail,
+                lastSyncedHash: nil
+            )
+            _ = await library.sync(request: .manual)
+        } else {
+            let data = try snapshot()
+            let created = try await drive.createBackupFile(
+                data: data,
+                name: GoogleDriveOAuthConfig.backupFileName
+            )
+            let displayName = created.name.isEmpty
+                ? GoogleDriveOAuthConfig.backupFileName
+                : created.name
+            library.linkGoogleDrive(
+                fileID: created.id,
+                displayName: displayName,
+                accountEmail: accountEmail,
+                lastSyncedHash: CloudFileContentHash.sha256Hex(data)
+            )
+        }
+    }
+
     func importOPML(from url: URL) {
         guard let context else { return }
         do {
@@ -155,5 +228,21 @@ final class FreshRSSConnectViewModel {
         isConnecting = true
         do { _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context); return true }
         catch { presentedError = error.localizedDescription; isConnecting = false; return false }
+    }
+}
+
+@MainActor
+protocol GoogleDriveLibraryLinking: AnyObject {
+    func linkGoogleDrive(fileID: String, displayName: String, accountEmail: String?, lastSyncedHash: String?)
+    func sync(request: LibrarySyncService.Request) async -> LibrarySyncService.Outcome
+}
+
+extension LibrarySyncService: GoogleDriveLibraryLinking {}
+
+private enum GoogleDriveLinkError: Error, LocalizedError {
+    case libraryUnavailable
+
+    var errorDescription: String? {
+        "The library could not be prepared for Google Drive."
     }
 }

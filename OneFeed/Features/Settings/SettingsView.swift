@@ -12,7 +12,6 @@ struct SettingsView: View {
     @State private var library = LibrarySyncService.shared
     @State private var isPickingLibraryFolder = false
     @State private var isPickingLibraryFile = false
-    @State private var isConfirmingDetachLibrary = false
 
     var body: some View {
         Form {
@@ -85,37 +84,18 @@ struct SettingsView: View {
                      : "Done and Save sync to FreshRSS. Skip stays in OneFeed, and follows your library folder if you chose one.")
             }
             Section {
-                if library.isLinked {
-                    LabeledContent("Location", value: library.folderDisplayName ?? "Folder")
-                    if let lastSyncAt = library.lastSyncAt {
-                        LabeledContent("Last Sync", value: lastSyncAt.formatted(date: .abbreviated, time: .shortened))
-                    }
-                    if case .error(let message) = library.status {
-                        Text(message).font(.footnote).foregroundStyle(.red)
-                    }
-                    Button {
-                        Task { await library.syncNow() }
-                    } label: {
-                        if library.status == .syncing {
-                            Label {
-                                Text("Syncing…")
-                            } icon: {
-                                OneFeedMarkPulse(isActive: true, size: 18)
-                            }
-                        } else {
-                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-                        }
-                    }
-                    .disabled(library.status == .syncing || library.status == .waitingForDownload)
-                    Button("Change Folder", systemImage: "folder") { isPickingLibraryFolder = true }
-                    Button("Choose Library File", systemImage: "doc") { isPickingLibraryFile = true }
-                    Button("Stop Using Folder", systemImage: "xmark.circle", role: .destructive) {
-                        isConfirmingDetachLibrary = true
-                    }
-                } else {
-                    Button("Choose Folder", systemImage: "folder") { isPickingLibraryFolder = true }
-                    Button("Choose Library File", systemImage: "doc") { isPickingLibraryFile = true }
-                }
+                CloudLibrarySettingsSection(
+                    library: library,
+                    isBusy: viewModel.isLinkingGoogleDrive,
+                    onChooseFolder: { isPickingLibraryFolder = true },
+                    onChooseFile: { isPickingLibraryFile = true },
+                    onLinkGoogleDrive: { viewModel.beginLinkGoogleDrive() },
+                    onSyncNow: { Task { await library.syncNow() } },
+                    onUnlink: { library.detach() },
+                    onKeepThisDevice: { Task { _ = await library.sync(request: .keepThisIPhone) } },
+                    onUseCloudFile: { Task { _ = await library.sync(request: .useCloudFile) } },
+                    onSyncModeChange: { library.setSyncMode($0) }
+                )
             } header: {
                 Text("iCloud or Google Drive")
             } footer: {
@@ -150,9 +130,6 @@ struct SettingsView: View {
         }
         .confirmationDialog("Disconnect FreshRSS? Your locally stored articles will remain available.", isPresented: $viewModel.isConfirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { Task { await viewModel.disconnect() } }
-        }
-        .confirmationDialog("Stop using this folder? Subscriptions stay on this device.", isPresented: $isConfirmingDetachLibrary, titleVisibility: .visible) {
-            Button("Stop Using Folder", role: .destructive) { library.detach() }
         }
         .fileImporter(isPresented: $isPickingLibraryFolder, allowedContentTypes: LibraryDocumentPicker.folderTypes) { result in
             Task {

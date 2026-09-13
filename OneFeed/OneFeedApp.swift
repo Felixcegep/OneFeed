@@ -94,10 +94,10 @@ struct OneFeedApp: App {
             switch phase {
             case .background:
                 BackgroundRefreshCoordinator.schedule()
-                Task { await LibrarySyncService.shared.flush() }
+                Task { await Self.syncLibrary(on: .background) }
             case .active:
                 Task { await BackgroundRefreshCoordinator.refreshIfStale(in: ModelContext(sharedModelContainer)) }
-                Task { await LibrarySyncService.shared.syncNow() }
+                Task { await Self.syncLibrary(on: .active) }
             default:
                 break
             }
@@ -121,5 +121,25 @@ struct OneFeedApp: App {
                 .modelContainer(sharedModelContainer)
         }
         #endif
+    }
+
+    /// Drive automatic uses `sync(.automatic)`. Drive manual is a no-op here;
+    /// Settings Sync Now still runs. Folder links keep flush/syncNow.
+    private static func syncLibrary(on phase: ScenePhase) async {
+        if ProcessInfo.processInfo.arguments.contains("-uiTesting") { return }
+        let library = LibrarySyncService.shared
+        if library.linkedRecord?.usesGoogleDriveAPI == true {
+            guard library.isAutoSyncEnabled else { return }
+            _ = await library.sync(request: .automatic)
+            return
+        }
+        switch phase {
+        case .background:
+            await library.flush()
+        case .active:
+            await library.syncNow()
+        default:
+            break
+        }
     }
 }

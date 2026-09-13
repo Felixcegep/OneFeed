@@ -67,6 +67,8 @@ struct SavedView: View {
             ReaderView(article: article) { state in
                 viewModel.finishReading(article, as: state)
             }
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
         .alert("Couldn’t update article", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.presentedError = nil } })) {
             Button("OK", role: .cancel) {}

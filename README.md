@@ -14,6 +14,7 @@ OneFeed is an iPhone and iPad RSS reader built around a single constraint: you c
 - OPML import and export
 - Opportunistic background refresh
 - Optional library folder on iCloud Drive or Google Drive for cross-device subscriptions and reading state
+- Link Google Drive from Settings (automatic or manual sync). Unlinking keeps subscriptions on this device and does not delete the Drive file
 - Native Mac app sharing the same library file
 - Home Screen and Lock Screen current-article widget
 - Light/dark mode, Dynamic Type, VoiceOver labels, and Reduce Motion support
@@ -27,4 +28,4 @@ OneFeed is not an inbox. There is no home timeline, unread badge, unread total, 
 
 ## Development
 
-Open `OneFeed.xcodeproj` in Xcode 26.6 or later. The app targets iOS/iPadOS 26.5 and macOS 26.5. Choose a folder in iCloud Drive or Google Drive (or a `OneFeed.library.json` file) in Settings to keep subscriptions and reading state in a portable file. The test targets contain pure state/parser/FreshRSS/library coverage and a deterministic UI screenshot tour seeded with `-uiTesting -inMemoryStore`.
+Open `OneFeed.xcodeproj` in Xcode 26.6 or later. The app targets iOS/iPadOS 26.5 and macOS 26.5. Choose a folder, a `OneFeed.library.json` file, or Google Drive in Settings to keep subscriptions and reading state in a portable file. The test targets contain pure state/parser/FreshRSS/library coverage and a deterministic UI screenshot tour seeded with `-uiTesting -inMemoryStore`.

@@ -133,6 +133,8 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>GoogleDriveClientID</key>
+	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OneFeed connects to your RSS server on the local network or Tailscale.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
