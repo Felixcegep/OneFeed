@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+<head>
+  <title>OneFeed · All Sources</title>
+  <ownerName>OneFeed</ownerName>
+</head>
+<body>
+  <outline text="Must read" title="Must read">
+    <outline type="rss" text="Interconnects AI" title="Interconnects AI" xmlUrl="https://www.interconnects.ai/feed"/>
+    <outline type="rss" text="Latent Space" title="Latent Space" xmlUrl="https://www.latent.space/feed"/>
+    <outline type="rss" text="Simon Willison" title="Simon Willison" xmlUrl="https://simonwillison.net/atom/entries/"/>
+    <outline type="rss" text="IEEE Spectrum Robotics" title="IEEE Spectrum Robotics" xmlUrl="https://spectrum.ieee.org/feeds/topic/robotics.rss"/>
+    <outline type="rss" text="IEEE Spectrum AI" title="IEEE Spectrum AI" xmlUrl="https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss"/>
+    <outline type="rss" text="The Robot Report" title="The Robot Report" xmlUrl="https://www.therobotreport.com/feed/"/>
+    <outline type="rss" text="OpenAI News" title="OpenAI News" xmlUrl="https://openai.com/news/rss.xml"/>
+    <outline type="rss" text="DeepMind" title="DeepMind" xmlUrl="https://deepmind.google/blog/rss.xml"/>
+  </outline>
+  <outline text="Builders" title="Builders">
+    <outline type="rss" text="Hugging Face Blog" title="Hugging Face Blog" xmlUrl="https://huggingface.co/blog/feed.xml"/>
+    <outline type="rss" text="PlanetScale" title="PlanetScale" xmlUrl="https://planetscale.com/blog/rss.xml"/>
+    <outline type="rss" text="GitHub Blog" title="GitHub Blog" xmlUrl="https://github.blog/feed/"/>
+    <outline type="rss" text="Vercel" title="Vercel" xmlUrl="https://vercel.com/atom"/>
+  </outline>
+  <outline text="Philosophy" title="Philosophy">
+    <outline type="rss" text="1000-Word Philosophy" title="1000-Word Philosophy" xmlUrl="https://1000wordphilosophy.com/feed/"/>
+    <outline type="rss" text="Aeon" title="Aeon" xmlUrl="https://aeon.co/feed.rss"/>
+    <outline type="rss" text="Art Chad" title="Art Chad" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC2Y0KKomVw83JDgjVqVCGzg"/>
+    <outline type="rss" text="Astral Codex Ten" title="Astral Codex Ten" xmlUrl="https://www.astralcodexten.com/feed"/>
+    <outline type="rss" text="Construction Physics" title="Construction Physics" xmlUrl="https://constructionphysics.substack.com/feed"/>
+    <outline type="rss" text="Dynomight" title="Dynomight" xmlUrl="https://dynomight.net/feed.xml"/>
+    <outline type="rss" text="Jonas Čeika" title="Jonas Čeika" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCSkzHxIcfoEr69MWBdo0ppg"/>
+    <outline type="rss" text="Julian de Medeiros" title="Julian de Medeiros" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCQczEOuFom5rQ8m-X87yQlw"/>
+    <outline type="rss" text="Noema" title="Noema" xmlUrl="https://www.noemamag.com/feed/"/>
+    <outline type="rss" text="PlasticPills" title="PlasticPills" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC9XFvuObhfVUNAGNcH8Y_fw"/>
+    <outline type="rss" text="Philosophy of Brains" title="Philosophy of Brains" xmlUrl="https://philosophyofbrains.com/feed"/>
+    <outline type="rss" text="The Point" title="The Point" xmlUrl="https://thepointmag.com/feed"/>
+    <outline type="rss" text="We're In Hell" title="We're In Hell" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCbbsW7_Esx8QZ8PgJ13pGxw"/>
+  </outline>
+  <outline text="Programming &amp; Software" title="Programming &amp; Software">
+    <outline type="rss" text="Aphyr" title="Aphyr" xmlUrl="https://aphyr.com/posts.atom"/>
+    <outline type="rss" text="CoreDumpped" title="CoreDumpped" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCGKEMK3s-ZPbjVOIuAV8clQ"/>
+    <outline type="rss" text="Dan Luu" title="Dan Luu" xmlUrl="https://danluu.com/atom.xml"/>
+    <outline type="rss" text="Marc Brooker" title="Marc Brooker" xmlUrl="https://brooker.co.za/blog/rss.xml"/>
+    <outline type="rss" text="Metadata" title="Metadata" xmlUrl="https://metadata.substack.com/feed"/>
+    <outline type="rss" text="MentalOutlaw" title="MentalOutlaw" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC7YOGHUfC1Tb6E4pudI9STA"/>
+    <outline type="rss" text="NeetCode" title="NeetCode" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC_mYaQAE6-71rjSN6CeCA-g"/>
+    <outline type="rss" text="NeetCodeIO" title="NeetCodeIO" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCevUmOfLTUX9MNGJQKsPdIA"/>
+    <outline type="rss" text="No Boilerplate" title="No Boilerplate" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCUMwY9iS8oMyWDYIe6_RmoA"/>
+    <outline type="rss" text="Tailscale" title="Tailscale" xmlUrl="https://tailscale.com/blog/index.xml"/>
+  </outline>
+  <outline text="Security &amp; Systems" title="Security &amp; Systems">
+    <outline type="rss" text="Bert Hubert" title="Bert Hubert" xmlUrl="https://berthub.eu/articles/index.xml"/>
+    <outline type="rss" text="Cloudflare Networking" title="Cloudflare Networking" xmlUrl="https://blog.cloudflare.com/tag/networking/rss/"/>
+    <outline type="rss" text="Julia Evans" title="Julia Evans" xmlUrl="https://jvns.ca/atom.xml"/>
+    <outline type="rss" text="Rachel by the Bay" title="Rachel by the Bay" xmlUrl="https://rachelbythebay.com/w/atom.xml"/>
+    <outline type="rss" text="Schneier on Security" title="Schneier on Security" xmlUrl="https://www.schneier.com/feed/atom/"/>
+    <outline type="rss" text="Trail of Bits" title="Trail of Bits" xmlUrl="https://blog.trailofbits.com/feed/"/>
+  </outline>
+  <outline text="Business" title="Business">
+    <outline type="rss" text="Bits about Money" title="Bits about Money" xmlUrl="https://www.bitsaboutmoney.com/archive/rss/"/>
+    <outline type="rss" text="Benjamin" title="Benjamin" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC8qAOyPgCtqb_ESbhFGxv9w"/>
+    <outline type="rss" text="How Money Works" title="How Money Works" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCkCGANrihzExmu9QiqZpPlQ"/>
+    <outline type="rss" text="Works in Progress" title="Works in Progress" xmlUrl="https://worksinprogress.co/rss.xml"/>
+  </outline>
+  <outline text="Geopolitics" title="Geopolitics">
+    <outline type="rss" text="7 jours sur Terre" title="7 jours sur Terre" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCWgjYWqcxqss3vFqYVvaI0Q"/>
+    <outline type="rss" text="CHAQUE JOUR SUR TERRE" title="CHAQUE JOUR SUR TERRE" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCPHLvIgDTxzYwSiXDfBYhsQ"/>
+    <outline type="rss" text="JREG" title="JREG" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCGSGPehp0RWfca-kENgBJ9Q"/>
+  </outline>
+  <outline text="Fitness" title="Fitness">
+    <outline type="rss" text="Barbell Medicine" title="Barbell Medicine" xmlUrl="https://www.barbellmedicine.com/feed"/>
+    <outline type="rss" text="Stronger by Science" title="Stronger by Science" xmlUrl="https://www.strongerbyscience.com/articles/feed/feed"/>
+    <outline type="rss" text="Vintagelifts" title="Vintagelifts" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCnv36GcqMDfPcmDFMfPne8A"/>
+  </outline>
+  <outline text="Entertainment" title="Entertainment">
+    <outline type="rss" text="Gigguk" title="Gigguk" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UC7dF9qfBMXrSlaaFFDvV_Yg"/>
+    <outline type="rss" text="Gotabor" title="Gotabor" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCsj6CSOcjaQmsZtKvZUiYXw"/>
+    <outline type="rss" text="ProfessorViral" title="ProfessorViral" xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCqJ5EkPzmVHTTrrHtmgWeeg"/>
+  </outline>
+  <outline text="À scanner" title="À scanner">
+    <outline type="rss" text="TechCrunch AI" title="TechCrunch AI" xmlUrl="https://techcrunch.com/category/artificial-intelligence/feed/"/>
+    <outline type="rss" text="The Verge AI" title="The Verge AI" xmlUrl="https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"/>
+    <outline type="rss" text="Hacker News" title="Hacker News" xmlUrl="https://hnrss.org/frontpage"/>
+  </outline>
+  <outline text="Papers" title="Papers">
+    <outline type="rss" text="arXiv cs.RO" title="arXiv cs.RO" xmlUrl="https://rss.arxiv.org/rss/cs.RO"/>
+    <outline type="rss" text="arXiv cs.AI" title="arXiv cs.AI" xmlUrl="https://rss.arxiv.org/rss/cs.AI"/>
+    <outline type="rss" text="arXiv cs.LG" title="arXiv cs.LG" xmlUrl="https://rss.arxiv.org/rss/cs.LG"/>
+  </outline>
+</body>
+</opml>
