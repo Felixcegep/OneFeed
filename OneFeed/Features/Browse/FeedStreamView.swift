@@ -198,11 +198,14 @@ struct FeedStreamView: View {
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline.weight(.medium))
+                .font(OneFeedTheme.sansUI(15, weight: .medium))
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
-                .background(selected ? Color.primary : OneFeedTheme.secondarySurface, in: Capsule())
-                .foregroundStyle(selected ? Color.oneFeedSystemBackground : .primary)
+                .background(selected ? OneFeedTheme.ink : OneFeedTheme.paper, in: Capsule())
+                .overlay {
+                    Capsule().strokeBorder(selected ? Color.clear : OneFeedTheme.sand, lineWidth: 1)
+                }
+                .foregroundStyle(selected ? OneFeedTheme.plaster : OneFeedTheme.ink)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

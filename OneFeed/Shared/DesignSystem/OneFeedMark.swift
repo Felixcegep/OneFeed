@@ -1,39 +1,39 @@
 import SwiftUI
 
-/// Gallery pacing: springs for presses, slower fades for page changes. Interruptible.
+/// Quiet paper motion: 200–350ms ease, one low-bounce spring for decisions.
 enum OneFeedMotion {
-    static let press = Animation.bouncy(duration: 0.18)
-    static let card = Animation.snappy(duration: 0.32)
-    static let list = Animation.snappy(duration: 0.34)
-    static let overlay = Animation.smooth(duration: 0.32)
-    static let page = Animation.smooth(duration: 0.42)
-    static let decision = Animation.spring(duration: 0.48, bounce: 0.32)
-    static let reveal = Animation.smooth(duration: 0.45)
-    static let success = Animation.spring(duration: 0.46, bounce: 0.38)
-    static let dots = Animation.snappy(duration: 0.26)
+    static let press = Animation.easeOut(duration: 0.2)
+    static let card = Animation.easeInOut(duration: 0.3)
+    static let list = Animation.easeInOut(duration: 0.3)
+    static let overlay = Animation.easeOut(duration: 0.3)
+    static let page = Animation.easeInOut(duration: 0.35)
+    static let decision = Animation.spring(duration: 0.4, bounce: 0.12)
+    static let reveal = Animation.easeOut(duration: 0.3)
+    static let success = Animation.spring(duration: 0.4, bounce: 0.12)
+    static let dots = Animation.easeInOut(duration: 0.2)
 
     static func cardTransition(reduceMotion: Bool) -> AnyTransition {
         if reduceMotion { return .opacity }
         return .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity.combined(with: .offset(x: 12))
+            insertion: .opacity.combined(with: .offset(y: 6)),
+            removal: .opacity
         )
     }
 
-    /// Duolingo / Doherty: skip is a whoosh (~300ms), done ~560ms, save ~680ms, never past 800ms.
+    /// Keep the curtain readable, then leave. Skip is immediate; Save may linger for a tiny burst.
     static func holdBeforeDismiss(reduceMotion: Bool, for state: ArticleState = .read) async {
         if reduceMotion || ProcessInfo.processInfo.arguments.contains("-uiTesting") { return }
         let milliseconds: Int = switch state {
-        case .skipped: 280
-        case .read: 560
-        case .saved: 680
-        default: 420
+        case .skipped: 180
+        case .read: 320
+        case .saved: 520
+        default: 280
         }
         try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 }
 
-/// The OneFeed RSS mark: a small sculpture — ink arcs, one pigment origin.
+/// The OneFeed RSS mark, recast in terracotta on cream.
 struct OneFeedMark: View {
     var size: CGFloat = 28
     var arcProgress: CGFloat = 1
@@ -44,10 +44,10 @@ struct OneFeedMark: View {
         ZStack {
             RSSArc(radiusFraction: 0.34)
                 .trim(from: 0, to: max(0.08, arcProgress))
-                .stroke(Color.primary, style: StrokeStyle(lineWidth: size * 0.1, lineCap: .round))
+                .stroke(OneFeedTheme.accent, style: StrokeStyle(lineWidth: size * 0.1, lineCap: .round))
             RSSArc(radiusFraction: 0.50)
                 .trim(from: 0, to: max(0.08, arcProgress))
-                .stroke(Color.primary, style: StrokeStyle(lineWidth: size * 0.1, lineCap: .round))
+                .stroke(OneFeedTheme.accent, style: StrokeStyle(lineWidth: size * 0.1, lineCap: .round))
             Circle()
                 .fill(OneFeedTheme.accent)
                 .frame(width: size * 0.24, height: size * 0.24)
@@ -60,44 +60,38 @@ struct OneFeedMark: View {
     }
 }
 
-/// Slow draw — the mark is the activity indicator, like a kinetic sculpture.
+/// Thinking pulse: 1200ms scale 1.0 → 1.15. Frozen when inactive or Reduce Motion.
 struct OneFeedMarkPulse: View {
     var isActive: Bool
     var size: CGFloat = 28
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !isActive || reduceMotion)) { timeline in
-            let wave = (isActive && !reduceMotion) ? Self.wave(at: timeline.date) : 1
-            OneFeedMark(
-                size: size,
-                arcProgress: 0.18 + (0.82 * wave),
-                breathing: wave,
-                dotScale: 0.92 + (0.1 * wave)
-            )
-            .opacity(0.55 + (0.45 * wave))
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion)) { timeline in
+            OneFeedMark(size: size)
+                .scaleEffect((isActive && !reduceMotion) ? Self.pulseScale(at: timeline.date) : 1)
         }
         .accessibilityLabel(isActive ? "Updating" : "")
         .accessibilityAddTraits(isActive ? .updatesFrequently : [])
     }
 
-    private static func wave(at date: Date) -> CGFloat {
-        let period = 1.85
-        let cycle = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period * 2)
-        let linear = cycle < period ? cycle / period : 2 - cycle / period
-        return linear * linear * (3 - 2 * linear)
+    private static func pulseScale(at date: Date) -> CGFloat {
+        let period = 1.2
+        let cycle = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
+        let wave = 0.5 - 0.5 * cos(2 * Double.pi * (cycle / period))
+        return 1.0 + (0.15 * wave)
     }
 }
 
-/// Quiet bloom for Save / add-source — no bounce.
+/// Quiet bloom for Save / add-source — scale in, no bounce carnival.
 struct OneFeedMarkBurst: View {
     var size: CGFloat = 28
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var popped = false
 
     var body: some View {
-        OneFeedMark(size: size, arcProgress: popped ? 1 : 0.12, breathing: 1, dotScale: popped ? 1.08 : 0.5)
-            .scaleEffect(popped ? 1 : 0.08)
+        OneFeedMark(size: size)
+            .scaleEffect(popped ? 1 : 0.92)
             .opacity(popped ? 1 : 0)
             .onAppear {
                 if reduceMotion {
@@ -109,7 +103,7 @@ struct OneFeedMarkBurst: View {
     }
 }
 
-/// Exhibition wordmark — serif title, tracked wall label.
+/// Brand lockup — terracotta RSS mark, serif name, stone tagline.
 struct OneFeedBrandLockup: View {
     var markSize: CGFloat = 44
     var showsTagline = true
@@ -119,8 +113,8 @@ struct OneFeedBrandLockup: View {
             OneFeedMark(size: markSize)
             VStack(spacing: 6) {
                 Text("OneFeed")
-                    .font(.system(.title2, design: .serif))
-                    .foregroundStyle(.primary)
+                    .font(OneFeedTheme.serifDisplay(24))
+                    .foregroundStyle(OneFeedTheme.ink)
                 if showsTagline {
                     GalleryLabel(text: "One article at a time")
                 }
@@ -140,6 +134,7 @@ struct OneFeedToolbarRefresh: View {
     var body: some View {
         ZStack {
             Button("Refresh", systemImage: "arrow.clockwise", action: action)
+                .foregroundStyle(OneFeedTheme.ink)
                 .opacity(isRefreshing ? 0 : 1)
                 .disabled(isRefreshing)
                 .accessibilityHidden(isRefreshing)
@@ -153,7 +148,7 @@ struct OneFeedToolbarRefresh: View {
     }
 }
 
-/// Plaster curtain for Save / Skip / Done — covers the piece, not a glass chip on the text.
+/// Cream fade for Save / Skip / Done. Tiny burst only on Save. No chips on Skip.
 struct OneFeedDecisionCurtain: View {
     let state: ArticleState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -164,14 +159,13 @@ struct OneFeedDecisionCurtain: View {
         ZStack {
             OneFeedTheme.plaster.opacity(visible ? 0.97 : 0)
             if shouldBurst {
-                OneFeedParticleBurst(intensity: burstIntensity, isActive: visible)
+                OneFeedParticleBurst(intensity: .small, isActive: visible)
             }
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 artwork
-                    .scaleEffect(visible ? 1 : 0.08)
+                    .scaleEffect(visible ? 1 : 0.94)
                 GalleryLabel(text: caption)
                     .opacity(showCaption ? 1 : 0)
-                    .offset(y: showCaption ? 0 : 8)
             }
         }
         .ignoresSafeArea()
@@ -183,7 +177,7 @@ struct OneFeedDecisionCurtain: View {
                 showCaption = true
                 return
             }
-            withAnimation(OneFeedMotion.success) { visible = true }
+            withAnimation(OneFeedMotion.decision) { visible = true }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(80))
                 withAnimation(OneFeedMotion.overlay) { showCaption = true }
@@ -192,11 +186,7 @@ struct OneFeedDecisionCurtain: View {
     }
 
     private var shouldBurst: Bool {
-        !reduceMotion && (state == .saved || state == .read)
-    }
-
-    private var burstIntensity: OneFeedParticleBurst.Intensity {
-        state == .saved ? .medium : .small
+        !reduceMotion && state == .saved
     }
 
     @ViewBuilder
@@ -207,12 +197,11 @@ struct OneFeedDecisionCurtain: View {
         case .read:
             Image(systemName: "checkmark")
                 .font(.system(size: 34, weight: .medium))
-                .symbolEffect(.bounce, options: .nonRepeating, value: visible)
+                .foregroundStyle(OneFeedTheme.sage)
         case .skipped:
             Image(systemName: "forward")
                 .font(.system(size: 32, weight: .medium))
-                .offset(x: visible ? 0 : -12)
-                .symbolEffect(.bounce, options: .nonRepeating, value: visible)
+                .foregroundStyle(OneFeedTheme.stone)
         default:
             OneFeedMarkBurst(size: 64)
         }

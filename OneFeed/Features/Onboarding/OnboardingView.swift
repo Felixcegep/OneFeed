@@ -5,33 +5,34 @@ struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel = OnboardingViewModel()
     @State private var starting = false
+    @State private var appeared = false
 
     var body: some View {
         ZStack {
             OneFeedTheme.plaster.ignoresSafeArea()
-            OneFeedParticleBurst(intensity: .large, isActive: starting)
             VStack(spacing: 0) {
                 Spacer(minLength: 48)
                 ZStack {
                     if starting {
-                        OneFeedMarkBurst(size: 88)
+                        OneFeedMarkBurst(size: 80)
                     } else {
-                        OneFeedMarkPulse(isActive: viewModel.page == 0, size: 88)
+                        OneFeedMark(size: 80)
                     }
                 }
-                .frame(height: 88)
+                .frame(height: 80)
                 .padding(.bottom, 36)
                 VStack(spacing: 16) {
                     Text(title)
-                        .font(.system(size: 34, weight: .regular, design: .serif))
+                        .font(OneFeedTheme.serifDisplay(32))
+                        .foregroundStyle(OneFeedTheme.ink)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.8)
                         .contentTransition(.opacity)
                         .accessibilityAddTraits(.isHeader)
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
+                            .font(OneFeedTheme.sansUI(17, weight: .regular))
+                            .foregroundStyle(OneFeedTheme.graphite)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 12)
                             .contentTransition(.opacity)
@@ -40,11 +41,11 @@ struct OnboardingView: View {
                 .id(viewModel.page)
                 .transition(.opacity)
                 Spacer(minLength: 24)
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     ForEach(0..<3, id: \.self) { index in
-                        Rectangle()
-                            .fill(index == viewModel.page ? Color.primary : Color.primary.opacity(0.18))
-                            .frame(width: index == viewModel.page ? 18 : 6, height: 2)
+                        Capsule()
+                            .fill(index == viewModel.page ? OneFeedTheme.ink : OneFeedTheme.sand)
+                            .frame(width: index == viewModel.page ? 18 : 6, height: 6)
                             .accessibilityHidden(true)
                     }
                 }
@@ -61,9 +62,8 @@ struct OnboardingView: View {
                     Button("I’ll connect FreshRSS later") {
                         advance()
                     }
-                    .font(.footnote)
-                    .tracking(0.4)
-                    .foregroundStyle(.secondary)
+                    .font(OneFeedTheme.sansUI(15, weight: .regular))
+                    .foregroundStyle(OneFeedTheme.graphite)
                     .frame(minHeight: 44)
                     .padding(.top, 8)
                     .transition(.opacity)
@@ -71,7 +71,15 @@ struct OnboardingView: View {
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 28)
+            .opacity(appeared || reduceMotion ? 1 : 0)
             .animation(reduceMotion ? nil : OneFeedMotion.page, value: viewModel.page)
+        }
+        .onAppear {
+            if reduceMotion {
+                appeared = true
+            } else {
+                withAnimation(OneFeedMotion.page) { appeared = true }
+            }
         }
     }
 

@@ -10,7 +10,7 @@ struct AppRootView: View {
 
     var body: some View {
         root
-            .tint(Color.primary)
+            .tint(OneFeedTheme.ink)
             .onOpenURL(perform: handleIncomingURL)
             .sheet(isPresented: $isPresentingSubscribe, onDismiss: { subscribeAddress = nil }) {
                 AddSourceView(initialAddress: subscribeAddress)

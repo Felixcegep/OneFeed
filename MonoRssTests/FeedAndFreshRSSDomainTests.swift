@@ -546,8 +546,8 @@ struct FeedAndFreshRSSDomainTests {
         let html = ReaderViewModel(article: article).documentHTML(fontChoice: .serif, textSize: .standard)
         #expect(html.contains("overflow-x: hidden"))
         #expect(html.contains("New York"))
-        #expect(html.contains("1.68"))
-        #expect(html.contains("#4A6FE3"))
+        #expect(html.contains("1.55"))
+        #expect(html.contains("#D97757"))
         #expect(html.contains("Hello reader"))
         #expect(!html.contains("alert(1)"))
     }

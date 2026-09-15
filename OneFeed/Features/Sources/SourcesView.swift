@@ -32,6 +32,8 @@ struct SourcesView: View {
                             FolderRow(folder: folder)
                         }
                         .accessibilityIdentifier("folder-\(folder.name)")
+                        .listRowBackground(OneFeedTheme.paper)
+                        .listRowSeparatorTint(OneFeedTheme.sand)
                     }
                 }
                 .oneFeedGroupedListStyle()
@@ -97,10 +99,11 @@ private struct FolderRow: View {
                 .frame(width: 16, alignment: .center)
             VStack(alignment: .leading, spacing: 5) {
                 Text(folder.name)
-                    .font(.body)
+                    .font(OneFeedTheme.sansUI(15, weight: .medium))
+                    .foregroundStyle(OneFeedTheme.ink)
                 Text(sourceCount)
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
+                    .font(OneFeedTheme.sansUI(12, weight: .regular))
+                    .foregroundStyle(OneFeedTheme.stone)
             }
         }
         .padding(.vertical, 6)
@@ -132,6 +135,8 @@ private struct FolderFeedsView: View {
                 } label: {
                     SourceRow(feed: feed)
                 }
+                .listRowBackground(OneFeedTheme.paper)
+                .listRowSeparatorTint(OneFeedTheme.sand)
                 .contextMenu {
                     Menu("Move to Folder") {
                         Button("Unfiled") { viewModel.move(feed, to: nil) }
@@ -170,7 +175,8 @@ private struct SourceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(feed.title)
-                .font(.system(.body, design: .serif))
+                .font(OneFeedTheme.sansUI(15, weight: .medium))
+                .foregroundStyle(OneFeedTheme.ink)
             HStack(spacing: 5) {
                 Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
                     .lineLimit(1)
@@ -182,8 +188,8 @@ private struct SourceRow: View {
                     Text("Synced")
                 }
             }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            .font(OneFeedTheme.sansUI(12, weight: .regular))
+            .foregroundStyle(OneFeedTheme.graphite)
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
@@ -247,6 +253,7 @@ private struct SourceDetailView: View {
         }
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
+        .oneFeedPaperScreen()
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
@@ -327,15 +334,14 @@ struct AddSourceView: View {
                 }
 
                 if let errorMessage = viewModel.presentedError {
-                    Section { Text(errorMessage).foregroundStyle(.red) }
+                    Section { Text(errorMessage).foregroundStyle(OneFeedTheme.error) }
                 }
             }
             .overlay {
                 if showSuccess {
                     ZStack {
                         OneFeedTheme.plaster.opacity(0.97)
-                        OneFeedParticleBurst(intensity: .medium, isActive: true)
-                        VStack(spacing: 18) {
+                        VStack(spacing: 16) {
                             OneFeedMarkBurst(size: 56)
                             GalleryLabel(text: "Added")
                         }
@@ -347,6 +353,7 @@ struct AddSourceView: View {
             .animation(OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
+            .oneFeedPaperScreen()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

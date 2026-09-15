@@ -26,6 +26,7 @@ struct CurrentView: View {
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
                         .listRowBackground(OneFeedTheme.plaster)
+                        .listRowSeparatorTint(OneFeedTheme.sand)
                         .articleActions(for: featured, in: modelContext)
                     }
                     ForEach(Array(stories.dropFirst())) { article in
@@ -38,7 +39,7 @@ struct CurrentView: View {
                     }
                 }
                 .articleTimelineList()
-                .animation(viewModel.isRefreshing ? nil : OneFeedMotion.list, value: stories.count)
+                .animation(viewModel.isRefreshing ? nil : OneFeedMotion.overlay, value: stories.count)
             }
         }
         .animation(viewModel.isRefreshing ? nil : OneFeedMotion.page, value: stories.isEmpty)
@@ -110,37 +111,41 @@ struct CurrentView: View {
 
     private var caughtUp: some View {
         ContentUnavailableView {
-            VStack(spacing: 22) {
+            VStack(spacing: 20) {
                 if viewModel.isRefreshing {
-                    OneFeedMarkPulse(isActive: true, size: 48)
+                    OneFeedMarkPulse(isActive: true, size: 52)
                     Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
-                        .font(.system(.title2, design: .serif))
+                        .font(OneFeedTheme.serifDisplay(32))
+                        .foregroundStyle(OneFeedTheme.ink)
+                        .multilineTextAlignment(.center)
                 } else if celebrateClear {
                     OneFeedMarkBurst(size: 52)
                     Text("The room is still.")
-                        .font(.system(.title2, design: .serif))
+                        .font(OneFeedTheme.serifDisplay(32))
+                        .foregroundStyle(OneFeedTheme.ink)
                 } else {
                     OneFeedMark(size: 52)
                     Text("The room is still.")
-                        .font(.system(.title2, design: .serif))
+                        .font(OneFeedTheme.serifDisplay(32))
+                        .foregroundStyle(OneFeedTheme.ink)
                 }
             }
         } description: {
             Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow, a new hanging.")
+                .font(OneFeedTheme.sansUI(16, weight: .regular))
+                .foregroundStyle(OneFeedTheme.graphite)
         } actions: {
             Button(viewModel.isRefreshing ? viewModel.progress.countText : "Refresh") {
                 Task { await viewModel.refresh() }
             }
+            .buttonStyle(PrimaryActionStyle())
             .disabled(viewModel.isRefreshing)
             Button("Add a source") { showingSources = true }
+                .font(OneFeedTheme.sansUI(15, weight: .regular))
+                .foregroundStyle(OneFeedTheme.graphite)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
-        .overlay {
-            if celebrateClear && !viewModel.isRefreshing {
-                OneFeedParticleBurst(intensity: .large, isActive: true)
-            }
-        }
         .sensoryFeedback(.success, trigger: celebrateClear)
     }
 

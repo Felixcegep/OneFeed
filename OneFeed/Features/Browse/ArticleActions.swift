@@ -29,11 +29,11 @@ struct ArticleSwipeActions: ViewModifier {
                 Button("Done", systemImage: "checkmark") {
                     ArticleActions.apply(.read, to: article, in: context)
                 }
-                .tint(.green)
+                .tint(OneFeedTheme.sage)
                 Button("Skip", systemImage: "forward") {
                     ArticleActions.apply(.skipped, to: article, in: context)
                 }
-                .tint(.secondary)
+                .tint(OneFeedTheme.stone)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button("Save", systemImage: "star") {

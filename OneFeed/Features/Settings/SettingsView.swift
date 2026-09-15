@@ -57,7 +57,7 @@ struct SettingsView: View {
                 if let account = viewModel.freshRSS {
                     LabeledContent("Account", value: account.username ?? "Connected")
                     LabeledContent("Last Sync", value: account.lastSyncAt?.formatted(date: .abbreviated, time: .shortened) ?? "Not yet")
-                    if let error = account.lastSyncError { Text(error).font(.footnote).foregroundStyle(.red) }
+                    if let error = account.lastSyncError { Text(error).font(.footnote).foregroundStyle(OneFeedTheme.error) }
                     Button {
                         Task { await viewModel.sync() }
                     } label: {
@@ -124,6 +124,7 @@ struct SettingsView: View {
         .oneFeedInlineTitle()
         .scrollContentBackground(.hidden)
         .background(OneFeedTheme.plaster)
+        .tint(OneFeedTheme.ink)
         .refreshProgressBanner(viewModel.progress)
         .task {
             viewModel.configure(with: modelContext)
@@ -185,10 +186,11 @@ private struct FreshRSSConnectView: View {
                         .autocorrectionDisabled()
                     SecureField("API password", text: $viewModel.apiPassword).textContentType(.password)
                 } header: { Text("FreshRSS account") } footer: { Text("HTTP and HTTPS are both supported. You can paste either the server root or the full GReader API URL — both work. Credentials stay in the Keychain on this device.") }
-                if let errorMessage = viewModel.presentedError { Section { Text(errorMessage).foregroundStyle(.red) } }
+                if let errorMessage = viewModel.presentedError { Section { Text(errorMessage).foregroundStyle(OneFeedTheme.error) } }
             }
             .navigationTitle("Connect FreshRSS")
             .oneFeedInlineTitle()
+            .oneFeedPaperScreen()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -224,6 +226,7 @@ struct GeminiAPIKeyForm: View {
             }
             .navigationTitle("Gemini")
             .oneFeedInlineTitle()
+            .oneFeedPaperScreen()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

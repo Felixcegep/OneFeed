@@ -55,8 +55,9 @@ struct FoldersView: View {
             Section {
                 if summaries.isEmpty {
                     Text("Folders appear here after you add sources.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
+                        .font(OneFeedTheme.sansUI(15, weight: .regular))
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .listRowBackground(OneFeedTheme.plaster)
                 } else {
                     ForEach(summaries) { summary in
                         NavigationLink {
@@ -70,15 +71,18 @@ struct FoldersView: View {
                         }
                         .accessibilityIdentifier("folder-\(summary.name)")
                         .accessibilityHint("Opens unread stories in this folder")
+                        .listRowBackground(OneFeedTheme.plaster)
+                        .listRowSeparatorTint(OneFeedTheme.sand)
                     }
                 }
             } header: {
                 GalleryLabel(text: folderSectionTitle)
             }
         }
-        .listStyle(.plain)
+        .        listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OneFeedTheme.plaster)
+        .listRowSeparatorTint(OneFeedTheme.sand)
         .oneFeedScrollEdge()
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
@@ -136,6 +140,8 @@ struct FoldersView: View {
         } label: {
             FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
+        .listRowBackground(OneFeedTheme.plaster)
+        .listRowSeparatorTint(OneFeedTheme.sand)
     }
 }
 

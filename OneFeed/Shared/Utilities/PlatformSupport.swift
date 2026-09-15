@@ -7,19 +7,85 @@ import UIKit
 import SwiftUI
 
 extension Color {
-    /// Warm gallery plaster / black-box wall. COS and museum sites treat the wall as a material.
+    /// Cream paper canvas. Light `#F8F4ED`, dark `#1F1B16`.
     static var oneFeedPlaster: Color {
+        oneFeedAdaptive(
+            light: (0.973, 0.957, 0.929),
+            dark: (0.122, 0.106, 0.086),
+            name: "OneFeedPlaster"
+        )
+    }
+
+    /// Elevated paper. Light `#FBF9F4`, dark `#2A2520`.
+    static var oneFeedPaper: Color {
+        oneFeedAdaptive(
+            light: (0.984, 0.976, 0.957),
+            dark: (0.165, 0.145, 0.125),
+            name: "OneFeedPaper"
+        )
+    }
+
+    /// Pressed / warm fill. Light `#F0EAE0`, dark `#2F2A24`.
+    static var oneFeedWarm1: Color {
+        oneFeedAdaptive(
+            light: (0.941, 0.918, 0.878),
+            dark: (0.184, 0.165, 0.141),
+            name: "OneFeedWarm1"
+        )
+    }
+
+    /// Warm ink. Light `#2D2520`, dark `#E8E0D2`. Never cool grey or `#000`.
+    static var oneFeedInk: Color {
+        oneFeedAdaptive(
+            light: (0.176, 0.145, 0.125),
+            dark: (0.910, 0.878, 0.824),
+            name: "OneFeedInk"
+        )
+    }
+
+    /// Secondary copy. Light `#5A4F44`, dark `#B8AFA3`.
+    static var oneFeedGraphite: Color {
+        oneFeedAdaptive(
+            light: (0.353, 0.310, 0.267),
+            dark: (0.722, 0.686, 0.639),
+            name: "OneFeedGraphite"
+        )
+    }
+
+    /// Tertiary / meta. Light `#8A7E72`, dark `#9C9084`.
+    static var oneFeedStone: Color {
+        oneFeedAdaptive(
+            light: (0.541, 0.494, 0.447),
+            dark: (0.612, 0.565, 0.518),
+            name: "OneFeedStone"
+        )
+    }
+
+    /// Hairlines. Light `#DDD2BD`, dark `#3A342C`.
+    static var oneFeedSand: Color {
+        oneFeedAdaptive(
+            light: (0.867, 0.824, 0.741),
+            dark: (0.227, 0.204, 0.173),
+            name: "OneFeedSand"
+        )
+    }
+
+    private static func oneFeedAdaptive(
+        light: (CGFloat, CGFloat, CGFloat),
+        dark: (CGFloat, CGFloat, CGFloat),
+        name: String
+    ) -> Color {
         #if os(macOS)
-        Color(nsColor: NSColor(name: "OneFeedPlaster", dynamicProvider: { appearance in
+        Color(nsColor: NSColor(name: name, dynamicProvider: { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(srgbRed: 0.09, green: 0.085, blue: 0.078, alpha: 1)
-                : NSColor(srgbRed: 0.965, green: 0.953, blue: 0.933, alpha: 1)
+                ? NSColor(srgbRed: dark.0, green: dark.1, blue: dark.2, alpha: 1)
+                : NSColor(srgbRed: light.0, green: light.1, blue: light.2, alpha: 1)
         }))
         #else
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.09, green: 0.085, blue: 0.078, alpha: 1)
-                : UIColor(red: 0.965, green: 0.953, blue: 0.933, alpha: 1)
+                ? UIColor(red: dark.0, green: dark.1, blue: dark.2, alpha: 1)
+                : UIColor(red: light.0, green: light.1, blue: light.2, alpha: 1)
         })
         #endif
     }

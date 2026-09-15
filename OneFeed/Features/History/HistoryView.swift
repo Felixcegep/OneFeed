@@ -19,6 +19,8 @@ struct HistoryView: View {
                         Section(group.label) {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 ArticleRow(article: article, status: article.state == .read ? "Read" : "Skipped")
+                                    .listRowBackground(OneFeedTheme.paper)
+                                    .listRowSeparatorTint(OneFeedTheme.sand)
                             }
                         }
                     }
@@ -28,6 +30,7 @@ struct HistoryView: View {
         }
         .navigationTitle("History")
         .oneFeedInlineTitle()
+        .background(OneFeedTheme.plaster)
         .task { viewModel.load(from: modelContext) }
     }
 }

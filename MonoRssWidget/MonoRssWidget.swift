@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import UIKit
 
 private struct CurrentArticleSnapshot: Codable {
     let id: UUID
@@ -34,6 +35,24 @@ private struct CurrentArticleProvider: TimelineProvider {
     }
 }
 
+private struct WidgetPaper {
+    static let cream = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.122, green: 0.106, blue: 0.086, alpha: 1)
+            : UIColor(red: 0.973, green: 0.957, blue: 0.929, alpha: 1)
+    })
+    static let ink = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.910, green: 0.878, blue: 0.824, alpha: 1)
+            : UIColor(red: 0.176, green: 0.145, blue: 0.125, alpha: 1)
+    })
+    static let stone = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.612, green: 0.565, blue: 0.518, alpha: 1)
+            : UIColor(red: 0.541, green: 0.494, blue: 0.447, alpha: 1)
+    })
+}
+
 private struct CurrentArticleWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: CurrentArticleEntry
@@ -43,32 +62,37 @@ private struct CurrentArticleWidgetView: View {
             if let article = entry.article {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("NEXT")
-                        .font(.caption2.weight(.semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .bold))
+                        .tracking(0.4)
+                        .textCase(.uppercase)
+                        .foregroundStyle(WidgetPaper.stone)
                     if family == .accessoryInline {
                         Text("Next · \(article.readingMinutes) min")
+                            .foregroundStyle(WidgetPaper.ink)
                     } else {
                         Text(article.title)
-                            .font(.headline)
+                            .font(.system(size: family == .systemSmall ? 15 : 17, weight: .regular, design: .serif))
+                            .foregroundStyle(WidgetPaper.ink)
                             .lineLimit(family == .systemSmall ? 3 : 4)
                         Spacer(minLength: 0)
                         Text("\(article.source) · \(article.readingMinutes) min")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(WidgetPaper.stone)
                             .lineLimit(1)
                     }
                 }
                 .widgetURL(URL(string: "onefeed://reader/\(article.id.uuidString)"))
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "checkmark.circle")
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(WidgetPaper.stone)
                     Text("You’re caught up.")
-                        .font(.headline)
+                        .font(.system(size: 17, weight: .regular, design: .serif))
+                        .foregroundStyle(WidgetPaper.ink)
                 }
             }
         }
-        .containerBackground(for: .widget) { Color(uiColor: .systemBackground) }
+        .containerBackground(for: .widget) { WidgetPaper.cream }
     }
 }
 

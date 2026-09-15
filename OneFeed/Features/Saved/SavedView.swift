@@ -30,7 +30,7 @@ struct SavedView: View {
                                     viewModel.restore(article)
                                 }
                             }
-                            .tint(.secondary)
+                            .tint(OneFeedTheme.stone)
                         }
                         .contextMenu {
                             Button("Return to Feed", systemImage: "arrow.uturn.backward") {

@@ -90,28 +90,29 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItem(placement: .oneFeedBottomBar) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
                             finish(.saved)
                         }
-                        .symbolEffect(.bounce, value: savePulse)
+                        .buttonStyle(DecisionActionStyle(expands: false))
                         .disabled(decision != nil)
                         .accessibilityHint("Keeps this in Saved")
                         Button("Skip", systemImage: "forward") {
                             finish(.skipped)
                         }
-                        .symbolEffect(.bounce, value: skipPulse)
+                        .buttonStyle(DecisionActionStyle(expands: false))
                         .disabled(decision != nil)
                         Spacer(minLength: 8)
                         Button("Done", systemImage: "checkmark") {
                             finish(.read)
                         }
-                        .symbolEffect(.bounce, value: donePulse)
+                        .buttonStyle(InkCapsuleStyle())
                         .disabled(decision != nil)
                         .accessibilityHint("Marks this article done")
                         Spacer(minLength: 8)
                         ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
                             Image(systemName: "square.and.arrow.up")
+                                .foregroundStyle(OneFeedTheme.ink)
                         }
                         .disabled(article.url == nil)
                         .accessibilityLabel("Share")
@@ -119,6 +120,7 @@ struct ReaderView: View {
                             isPresentingBrowser = true
                         } label: {
                             Image(systemName: "safari")
+                                .foregroundStyle(OneFeedTheme.ink)
                         }
                         .disabled(article.url == nil)
                         .accessibilityLabel("Open in browser")
@@ -368,23 +370,23 @@ struct ReaderView: View {
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+                Rectangle().fill(OneFeedTheme.sand).frame(height: 1)
             }
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .transition(.opacity)
         } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
             ScrollView {
                 Text(summary)
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(.primary)
+                    .font(OneFeedTheme.serifBody(16))
+                    .foregroundStyle(OneFeedTheme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 160)
             .padding(.horizontal, OneFeedTheme.pagePadding)
             .padding(.vertical, 16)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+                Rectangle().fill(OneFeedTheme.sand).frame(height: 1)
             }
-            .transition(.opacity.combined(with: .move(edge: .top)))
+            .transition(.opacity)
         }
     }
 }
@@ -404,7 +406,21 @@ private struct ReaderBarGlyph: View {
                 .font(.caption2.weight(.medium))
                 .lineLimit(1)
         }
-        .foregroundStyle(emphasized ? OneFeedTheme.accent : Color.primary)
+        .foregroundStyle(emphasized ? OneFeedTheme.plaster : OneFeedTheme.ink)
+        .padding(.horizontal, 10)
+        .padding(.vertical, emphasized ? 8 : 6)
+        .background {
+            if emphasized {
+                Capsule().fill(OneFeedTheme.ink)
+            } else {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(OneFeedTheme.paper)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(OneFeedTheme.sand, lineWidth: 1)
+                    }
+            }
+        }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
