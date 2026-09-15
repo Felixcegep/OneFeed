@@ -19,17 +19,24 @@ enum FeedBrowseDestination: Hashable {
 
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var articles: [Article]
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+        sort: \Article.publishedAt,
+        order: .reverse
+    ) private var openQuery: [Article]
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred }
+    ) private var savedQuery: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
 
-    private var unread: [Article] { FeedFolderGrouping.openArticles(from: articles) }
-    private var today: [Article] { FeedFolderGrouping.todayArticles(from: articles) }
-    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: articles) }
-    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: articles) }
+    private var unread: [Article] { FeedFolderGrouping.openArticles(from: openQuery) }
+    private var today: [Article] { FeedFolderGrouping.todayArticles(from: openQuery) }
+    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: savedQuery) }
+    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery) }
     private var folderSectionTitle: String {
         accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
             ? String(localized: "FreshRSS")
@@ -143,6 +150,24 @@ struct ArticleCollectionView: View {
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
 
+    init(destination: FeedBrowseDestination) {
+        self.destination = destination
+        switch destination {
+        case .saved:
+            _articles = Query(
+                filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred },
+                sort: \Article.completedAt,
+                order: .reverse
+            )
+        default:
+            _articles = Query(
+                filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+                sort: \Article.publishedAt,
+                order: .reverse
+            )
+        }
+    }
+
     private var items: [Article] {
         switch destination {
         case .today: FeedFolderGrouping.todayArticles(from: articles)
@@ -175,10 +200,8 @@ struct ArticleCollectionView: View {
                     }
                 }
                 .articleTimelineList()
-                .animation(OneFeedMotion.list, value: items.count)
             }
         }
-        .animation(OneFeedMotion.page, value: items.isEmpty)
         .navigationTitle(destination.title)
         .oneFeedInlineTitle()
         .oneFeedArticleCover(item: $selectedArticle) { article in

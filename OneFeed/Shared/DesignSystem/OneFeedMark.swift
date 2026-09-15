@@ -138,17 +138,18 @@ struct OneFeedToolbarRefresh: View {
     var action: () -> Void
 
     var body: some View {
-        Group {
-            if isRefreshing {
-                OneFeedMarkPulse(isActive: true, size: 22)
-                    .frame(width: 28, height: 28)
-                    .accessibilityLabel("Updating")
-                    .transition(.opacity)
-            } else {
-                Button("Refresh", systemImage: "arrow.clockwise", action: action)
-            }
+        ZStack {
+            Button("Refresh", systemImage: "arrow.clockwise", action: action)
+                .opacity(isRefreshing ? 0 : 1)
+                .disabled(isRefreshing)
+                .accessibilityHidden(isRefreshing)
+            OneFeedMarkPulse(isActive: isRefreshing, size: 22)
+                .opacity(isRefreshing ? 1 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(!isRefreshing)
+                .accessibilityLabel("Updating")
         }
-        .animation(OneFeedMotion.overlay, value: isRefreshing)
+        .frame(width: 28, height: 28)
     }
 }
 

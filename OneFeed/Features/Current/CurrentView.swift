@@ -38,11 +38,10 @@ struct CurrentView: View {
                     }
                 }
                 .articleTimelineList()
-                .animation(OneFeedMotion.list, value: stories.count)
+                .animation(viewModel.isRefreshing ? nil : OneFeedMotion.list, value: stories.count)
             }
         }
-        .animation(OneFeedMotion.page, value: stories.isEmpty)
-        .animation(OneFeedMotion.overlay, value: viewModel.isRefreshing)
+        .animation(viewModel.isRefreshing ? nil : OneFeedMotion.page, value: stories.isEmpty)
         .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
@@ -88,13 +87,20 @@ struct CurrentView: View {
                 celebrateClear = true
             }
         }
+        .onChange(of: celebrateClear) { _, celebrating in
+            guard celebrating else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(900))
+                celebrateClear = false
+            }
+        }
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
     }
 
     private var subtitle: String {
-        if viewModel.isRefreshing { return viewModel.progress.compactStatus }
+        if viewModel.isRefreshing { return viewModel.progress.primaryText }
         if stories.isEmpty { return "" }
         if viewModel.totalCount > 0 {
             return "\(stories.count) remaining"
@@ -131,7 +137,9 @@ struct CurrentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
         .overlay {
-            OneFeedParticleBurst(intensity: .large, isActive: celebrateClear && !viewModel.isRefreshing)
+            if celebrateClear && !viewModel.isRefreshing {
+                OneFeedParticleBurst(intensity: .large, isActive: true)
+            }
         }
         .sensoryFeedback(.success, trigger: celebrateClear)
     }

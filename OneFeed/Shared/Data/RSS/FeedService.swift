@@ -91,8 +91,9 @@ final class FeedService {
         )
         context.insert(feed)
         if let folder { FolderStore.remember(folder) }
-        var index = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
-        _ = try await insert(parsed.articles, into: feed, in: context, index: &index)
+        var index = ArticleIdentityIndex(articles: identityArticles(in: context))
+        _ = try await insert(parsed.articles, into: feed, in: context, index: &index, fetchDurations: false)
+        await enrichMissingYouTubeDurations(in: context)
         try context.save()
         LibraryChange.note(feed)
         return feed
@@ -105,7 +106,7 @@ final class FeedService {
             parser: parser,
             timeout: 12
         )
-        var index = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
+        var index = ArticleIdentityIndex(articles: identityArticles(in: context))
         _ = try await apply(loaded, to: feed, in: context, index: &index)
     }
 
@@ -114,7 +115,7 @@ final class FeedService {
         progress?.begin(phase: .sources, total: feeds.count)
         let requests = feeds.map { RemoteFeedRequest(id: $0.id, url: $0.feedURL, etag: $0.etag, lastModified: $0.lastModified) }
         let feedsByID = Dictionary(uniqueKeysWithValues: feeds.map { ($0.id, $0) })
-        var identityIndex = ArticleIdentityIndex(articles: (try? context.fetch(FetchDescriptor<Article>())) ?? [])
+        var identityIndex = ArticleIdentityIndex(articles: identityArticles(in: context))
         var succeeded = 0
         var insertedCount = 0
         var firstError: Error?
@@ -149,7 +150,6 @@ final class FeedService {
                 startOne()
                 guard let feed = feedsByID[outcome.id] else { continue }
                 progress?.startItem(title: feed.title)
-                let before = feed.articles.count
                 do {
                     if Task.isCancelled {
                         group.cancelAll()
@@ -158,7 +158,7 @@ final class FeedService {
                         continue
                     }
                     if let loaded = outcome.loaded {
-                        insertedCount += try await apply(
+                        let added = try await apply(
                             loaded,
                             to: feed,
                             in: context,
@@ -166,13 +166,14 @@ final class FeedService {
                             fetchDurations: false,
                             index: &identityIndex
                         )
+                        insertedCount += added
                         unsaved += 1
                         if unsaved >= 6 {
                             try context.save()
                             unsaved = 0
                         }
                         succeeded += 1
-                        progress?.finishItem(newArticles: max(0, feed.articles.count - before))
+                        progress?.finishItem(newArticles: added)
                     } else {
                         feed.lastFetchedAt = .now
                         unsaved += 1
@@ -264,7 +265,7 @@ final class FeedService {
         to feed: Feed,
         in context: ModelContext,
         persist: Bool = true,
-        fetchDurations: Bool = true,
+        fetchDurations: Bool = false,
         index: inout ArticleIdentityIndex
     ) async throws -> Int {
         var inserted = 0
@@ -315,14 +316,14 @@ final class FeedService {
         into feed: Feed,
         in context: ModelContext,
         index: inout ArticleIdentityIndex,
-        fetchDurations: Bool = true
+        fetchDurations: Bool = false
     ) async throws -> Int {
         let feedKind = ContentKind(rawValue: feed.contentKind) ?? .article
         let filterRules = FilterEngine.blockedWordRules(from: feed.blockedWords)
         let feedContext = FilterFeedContext(title: feed.title, url: feed.feedURL.absoluteString)
         var inserted = 0
 
-        let cutoff = ArticleRetentionService.ingestCutoff(isFirstPopulate: feed.articles.isEmpty)
+        let cutoff = ArticleRetentionService.ingestCutoff(isFirstPopulate: isEmptyFeed(feed, in: context))
         for parsed in parsedArticles {
             if let existing = index.existing(url: parsed.url, guid: parsed.guid, feedID: feed.id) {
                 if existing.feed == nil { existing.feed = feed }
@@ -526,6 +527,20 @@ final class FeedService {
             }
         }
         return nil
+    }
+
+    private func identityArticles(in context: ModelContext) -> [Article] {
+        var descriptor = FetchDescriptor<Article>()
+        descriptor.propertiesToFetch = [\.guid, \.url]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    private func isEmptyFeed(_ feed: Feed, in context: ModelContext) -> Bool {
+        let feedID = feed.id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.isEmpty ?? true
     }
 }
 

@@ -80,12 +80,17 @@ struct DecisionActionStyle: ButtonStyle {
 struct ArticleRow: View {
     let article: Article
     var status: String? = nil
+    @State private var imageFailed = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 16) {
-            ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.radius)
+            if let url = article.displayImageURL, !imageFailed {
+                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
+                    imageFailed = true
+                }
                 .frame(width: OneFeedTheme.thumbnailWidth, height: OneFeedTheme.thumbnailHeight)
                 .clipped()
+            }
 
             VStack(alignment: .leading, spacing: 7) {
                 GalleryLabel(text: article.feed?.title ?? "Source", pigment: true)
@@ -108,6 +113,9 @@ struct ArticleRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens this article")
+        .onChange(of: article.imageURL) { _, _ in
+            imageFailed = false
+        }
     }
 
     private var meta: String {
@@ -124,14 +132,17 @@ struct ArticleRow: View {
 /// Lookbook hero — full-bleed crop, then a wall label. The photograph is the work.
 struct FeaturedStory: View {
     let article: Article
+    @State private var imageFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            if article.imageURL != nil {
-                ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.radius)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: OneFeedTheme.featuredHeight)
-                    .clipped()
+            if let url = article.displayImageURL, !imageFailed {
+                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius, fadesIn: true) {
+                    imageFailed = true
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: OneFeedTheme.featuredHeight)
+                .clipped()
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -159,6 +170,9 @@ struct FeaturedStory: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens this article")
+        .onChange(of: article.imageURL) { _, _ in
+            imageFailed = false
+        }
     }
 
     private var byline: String {
@@ -169,27 +183,35 @@ struct FeaturedStory: View {
 }
 
 struct ArticleThumbnail: View {
-    let url: URL?
+    let url: URL
     var cornerRadius: CGFloat = 2
+    var fadesIn = false
+    var onUnavailable: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var revealed = false
+
+    init(url: URL, cornerRadius: CGFloat = 2, fadesIn: Bool = false, onUnavailable: (() -> Void)? = nil) {
+        self.url = url
+        self.cornerRadius = cornerRadius
+        self.fadesIn = fadesIn
+        self.onUnavailable = onUnavailable
+    }
 
     var body: some View {
         Color.clear
             .overlay {
-                if let url {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image.resizable().scaledToFill()
-                                .opacity(revealed ? 1 : 0)
-                                .onAppear { reveal() }
-                        default:
-                            placeholder
-                        }
+                AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                            .opacity((fadesIn && !revealed && !reduceMotion) ? 0 : 1)
+                            .onAppear { reveal() }
+                    case .failure:
+                        Color.clear
+                            .task { onUnavailable?() }
+                    default:
+                        Color.clear
                     }
-                } else {
-                    placeholder
                 }
             }
             .clipped()
@@ -201,16 +223,15 @@ struct ArticleThumbnail: View {
     }
 
     private func reveal() {
+        guard fadesIn else {
+            revealed = true
+            return
+        }
         if reduceMotion {
             revealed = true
         } else {
             withAnimation(OneFeedMotion.reveal) { revealed = true }
         }
-    }
-
-    private var placeholder: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.05))
     }
 }
 
@@ -331,7 +352,7 @@ struct FolderSwatch: View {
             Color(red: 0.62, green: 0.56, blue: 0.44),
             Color(red: 0.18, green: 0.17, blue: 0.16)
         ]
-        let index = abs(name.hashValue) % palette.count
+        let index = abs(name.hashValue & Int.max) % palette.count
         return palette[index]
     }
 }

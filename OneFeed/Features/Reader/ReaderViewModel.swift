@@ -37,6 +37,8 @@ final class ReaderViewModel {
 
     func enrichReadableHTML() async {
         guard article.contentKind == "article" else { return }
+        let existing = article.contentHTML ?? article.summary
+        guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
         isExtracting = true
         defer { isExtracting = false }
         if let html = await ArticleExtractionService().extractedHTML(for: article), html != article.contentHTML {
@@ -67,9 +69,21 @@ final class ReaderViewModel {
         }
     }
 
+    private var cachedDocument: (key: String, html: String)?
+
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
         let fallback = "<p>This source only provided metadata. Open the original article to continue reading.</p>"
-        let body = ReaderHTML.sanitizedBody(article.readableHTML ?? fallback)
+        let rawBody = article.readableHTML ?? fallback
+        #if canImport(UIKit)
+        let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
+        #else
+        let typeSize = "standard"
+        #endif
+        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)"
+        if let cachedDocument, cachedDocument.key == key {
+            return cachedDocument.html
+        }
+        let body = ReaderHTML.sanitizedBody(rawBody)
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
         case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
@@ -89,7 +103,7 @@ final class ReaderViewModel {
         let sourceSize: CGFloat = 12
         let horizontalPad = 48
         #endif
-        return """
+        let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
@@ -186,6 +200,8 @@ final class ReaderViewModel {
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.4em 0; }
         </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
         """
+        cachedDocument = (key, html)
+        return html
     }
 
     private func escape(_ text: String) -> String {

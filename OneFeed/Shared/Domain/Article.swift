@@ -81,6 +81,8 @@ final class Article {
         return value
     }
 
+    var displayImageURL: URL? { FeedImageURL.displayable(imageURL) }
+
     var displayExcerpt: String? {
         if let aiSummary {
             let plain = ContentClassifier.plainExcerpt(aiSummary, maxCharacters: 280)

@@ -61,9 +61,12 @@ final class ArticleExtractionService {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return existing }
             let pageURL = http.url ?? url
-            let slice = data.prefix(maxBytes)
-            let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
-            return extractor.extract(fromHTML: html, pageURL: pageURL) ?? existing
+            let slice = Data(data.prefix(maxBytes))
+            let extractor = self.extractor
+            return await Task.detached(priority: .utility) {
+                let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
+                return extractor.extract(fromHTML: html, pageURL: pageURL) ?? existing
+            }.value
         } catch {
             return existing
         }

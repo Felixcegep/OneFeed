@@ -62,10 +62,8 @@ struct SavedView: View {
                     }
                 }
                 .articleTimelineList()
-                .animation(OneFeedMotion.list, value: viewModel.articles.count)
             }
         }
-        .animation(OneFeedMotion.page, value: viewModel.articles.isEmpty)
         .navigationTitle("Saved")
         .oneFeedLargeTitle()
         .navigationSubtitle(viewModel.articles.isEmpty ? "" : "\(viewModel.articles.count)")

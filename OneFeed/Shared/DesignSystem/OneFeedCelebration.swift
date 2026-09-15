@@ -22,7 +22,7 @@ struct OneFeedParticleBurst: View {
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !isActive || reduceMotion || chips.isEmpty)) { timeline in
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion || chips.isEmpty)) { timeline in
                 Canvas { context, size in
                     let now = timeline.date.timeIntervalSinceReferenceDate
                     for chip in chips {
@@ -81,6 +81,10 @@ struct OneFeedParticleBurst: View {
                 spin: Double.random(in: -220...220),
                 color: palette[index % palette.count]
             )
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            chips = []
         }
     }
 

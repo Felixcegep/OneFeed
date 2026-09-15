@@ -13,7 +13,7 @@ final class BrowseRefresh {
     var presentedError: String?
 
     var statusText: String {
-        if isRefreshing { return progress.compactStatus }
+        if isRefreshing { return progress.primaryText }
         guard let lastRefreshedAt else { return "Pull to update" }
         return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
     }
@@ -38,6 +38,13 @@ final class BrowseRefresh {
             progress.finish()
             isRefreshing = false
         }
+        await BackgroundRefreshCoordinator.runExclusive {
+            await self.performRefreshWork(in: context)
+        }
+        lastRefreshedAt = .now
+    }
+
+    private func performRefreshWork(in context: ModelContext) async {
         var refreshError: Error?
         do { try await feedService.refreshAll(in: context, progress: progress) } catch { refreshError = error }
         let provider = SyncProvider.freshRSS.rawValue
@@ -53,7 +60,6 @@ final class BrowseRefresh {
         } else {
             BackgroundRefreshCoordinator.lastSuccessfulRefresh = .now
         }
-        lastRefreshedAt = .now
     }
 
     func adoptLatestFetch(from feeds: [Feed]) {

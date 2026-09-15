@@ -89,38 +89,40 @@ struct ReaderView: View {
                         readingOptionsMenu
                     }
                 }
-                ToolbarItemGroup(placement: .oneFeedBottomBar) {
-                    Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
-                        finish(.saved)
+                ToolbarItem(placement: .oneFeedBottomBar) {
+                    HStack(spacing: 12) {
+                        Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
+                            finish(.saved)
+                        }
+                        .symbolEffect(.bounce, value: savePulse)
+                        .disabled(decision != nil)
+                        .accessibilityHint("Keeps this in Saved")
+                        Button("Skip", systemImage: "forward") {
+                            finish(.skipped)
+                        }
+                        .symbolEffect(.bounce, value: skipPulse)
+                        .disabled(decision != nil)
+                        Spacer(minLength: 8)
+                        Button("Done", systemImage: "checkmark") {
+                            finish(.read)
+                        }
+                        .symbolEffect(.bounce, value: donePulse)
+                        .disabled(decision != nil)
+                        .accessibilityHint("Marks this article done")
+                        Spacer(minLength: 8)
+                        ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .disabled(article.url == nil)
+                        .accessibilityLabel("Share")
+                        Button {
+                            isPresentingBrowser = true
+                        } label: {
+                            Image(systemName: "safari")
+                        }
+                        .disabled(article.url == nil)
+                        .accessibilityLabel("Open in browser")
                     }
-                    .symbolEffect(.bounce, value: savePulse)
-                    .disabled(decision != nil)
-                    .accessibilityHint("Keeps this in Saved")
-                    Button("Skip", systemImage: "forward") {
-                        finish(.skipped)
-                    }
-                    .symbolEffect(.bounce, value: skipPulse)
-                    .disabled(decision != nil)
-                    ToolbarSpacer(.flexible)
-                    Button("Done", systemImage: "checkmark") {
-                        finish(.read)
-                    }
-                    .symbolEffect(.bounce, value: donePulse)
-                    .disabled(decision != nil)
-                    .accessibilityHint("Marks this article done")
-                    ToolbarSpacer(.flexible)
-                    ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
-                        Image(systemName: "square.and.arrow.up")
-                    }
-                    .disabled(article.url == nil)
-                    .accessibilityLabel("Share")
-                    Button {
-                        isPresentingBrowser = true
-                    } label: {
-                        Image(systemName: "safari")
-                    }
-                    .disabled(article.url == nil)
-                    .accessibilityLabel("Open in browser")
                 }
             }
             .oneFeedInlineTitle()
