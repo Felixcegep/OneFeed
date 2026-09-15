@@ -19,17 +19,24 @@ enum FeedBrowseDestination: Hashable {
 
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var articles: [Article]
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+        sort: \Article.publishedAt,
+        order: .reverse
+    ) private var openQuery: [Article]
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred }
+    ) private var savedQuery: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
 
-    private var unread: [Article] { FeedFolderGrouping.openArticles(from: articles) }
-    private var today: [Article] { FeedFolderGrouping.todayArticles(from: articles) }
-    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: articles) }
-    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: articles) }
+    private var unread: [Article] { FeedFolderGrouping.openArticles(from: openQuery) }
+    private var today: [Article] { FeedFolderGrouping.todayArticles(from: openQuery) }
+    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: savedQuery) }
+    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery) }
     private var folderSectionTitle: String {
         accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
             ? String(localized: "FreshRSS")
@@ -38,15 +45,19 @@ struct FoldersView: View {
 
     var body: some View {
         List {
-            Section("Smart Feeds") {
+            Section {
                 smartLink(.today, systemImage: "sun.max", count: today.count)
                 smartLink(.unread, systemImage: "circle", count: unread.count)
                 smartLink(.saved, systemImage: "star", count: saved.count)
+            } header: {
+                GalleryLabel(text: "Smart Feeds")
             }
-            Section(folderSectionTitle) {
+            Section {
                 if summaries.isEmpty {
                     Text("Folders appear here after you add sources.")
-                        .foregroundStyle(.secondary)
+                        .font(OneFeedTheme.sansUI(15, weight: .regular))
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .listRowBackground(OneFeedTheme.plaster)
                 } else {
                     ForEach(summaries) { summary in
                         NavigationLink {
@@ -60,24 +71,27 @@ struct FoldersView: View {
                         }
                         .accessibilityIdentifier("folder-\(summary.name)")
                         .accessibilityHint("Opens unread stories in this folder")
+                        .listRowBackground(OneFeedTheme.plaster)
+                        .listRowSeparatorTint(OneFeedTheme.sand)
                     }
                 }
+            } header: {
+                GalleryLabel(text: folderSectionTitle)
             }
         }
-        .oneFeedGroupedListStyle()
+        .        listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(OneFeedTheme.plaster)
+        .listRowSeparatorTint(OneFeedTheme.sand)
+        .oneFeedScrollEdge()
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
-                if refresh.isRefreshing {
-                    ProgressView()
-                        .accessibilityLabel("Refresh")
-                } else {
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await refresh.refresh(in: modelContext) }
-                    }
+                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                    Task { await refresh.refresh(in: modelContext) }
                 }
             }
             ToolbarItem(placement: .oneFeedTrailing) {
@@ -126,6 +140,8 @@ struct FoldersView: View {
         } label: {
             FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
+        .listRowBackground(OneFeedTheme.plaster)
+        .listRowSeparatorTint(OneFeedTheme.sand)
     }
 }
 
@@ -139,6 +155,24 @@ struct ArticleCollectionView: View {
     @Query private var articles: [Article]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
+
+    init(destination: FeedBrowseDestination) {
+        self.destination = destination
+        switch destination {
+        case .saved:
+            _articles = Query(
+                filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred },
+                sort: \Article.completedAt,
+                order: .reverse
+            )
+        default:
+            _articles = Query(
+                filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+                sort: \Article.publishedAt,
+                order: .reverse
+            )
+        }
+    }
 
     private var items: [Article] {
         switch destination {
@@ -166,7 +200,7 @@ struct ArticleCollectionView: View {
                         Button { selectedArticle = article } label: {
                             ArticleRow(article: article)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow()
                         .articleActions(for: article, in: modelContext)
                     }

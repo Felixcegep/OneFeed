@@ -8,10 +8,10 @@ struct SavedView: View {
     var body: some View {
         Group {
             if viewModel.articles.isEmpty {
-                ContentUnavailableView(
-                    "Nothing saved",
+                EmptyLibraryState(
+                    title: "Nothing kept.",
                     systemImage: "star",
-                    description: Text("Star an article and it will wait here.")
+                    description: "Star a piece and it waits here."
                 )
             } else {
                 List {
@@ -21,18 +21,22 @@ struct SavedView: View {
                         } label: {
                             ArticleRow(article: article)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow()
                         .accessibilityHint("Opens the saved article")
                         .swipeActions {
                             Button("Return to Feed", systemImage: "arrow.uturn.backward") {
-                                viewModel.restore(article)
+                                withAnimation(OneFeedMotion.list) {
+                                    viewModel.restore(article)
+                                }
                             }
-                            .tint(.secondary)
+                            .tint(OneFeedTheme.stone)
                         }
                         .contextMenu {
                             Button("Return to Feed", systemImage: "arrow.uturn.backward") {
-                                viewModel.restore(article)
+                                withAnimation(OneFeedMotion.list) {
+                                    viewModel.restore(article)
+                                }
                             }
                             Menu("Rate") {
                                 ForEach(1...5, id: \.self) { stars in
@@ -62,6 +66,8 @@ struct SavedView: View {
         }
         .navigationTitle("Saved")
         .oneFeedLargeTitle()
+        .navigationSubtitle(viewModel.articles.isEmpty ? "" : "\(viewModel.articles.count)")
+        .background(OneFeedTheme.plaster)
         .task { viewModel.configure(with: modelContext) }
         .oneFeedArticleCover(item: $viewModel.selectedArticle) { article in
             ReaderView(article: article) { state in

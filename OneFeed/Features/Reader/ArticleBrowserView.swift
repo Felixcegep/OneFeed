@@ -11,6 +11,7 @@ struct ArticleBrowserView: View {
         var configuration = WebPage.Configuration()
         configuration.loadsSubresources = true
         configuration.defaultNavigationPreferences.allowsContentJavaScript = true
+        configuration.websiteDataStore = .nonPersistent()
         _page = State(initialValue: WebPage(configuration: configuration))
     }
 

@@ -37,6 +37,8 @@ final class ReaderViewModel {
 
     func enrichReadableHTML() async {
         guard article.contentKind == "article" else { return }
+        let existing = article.contentHTML ?? article.summary
+        guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
         isExtracting = true
         defer { isExtracting = false }
         if let html = await ArticleExtractionService().extractedHTML(for: article), html != article.contentHTML {
@@ -67,60 +69,63 @@ final class ReaderViewModel {
         }
     }
 
+    private var cachedDocument: (key: String, html: String)?
+
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
         let fallback = "<p>This source only provided metadata. Open the original article to continue reading.</p>"
-        let body = ReaderHTML.sanitizedBody(article.readableHTML ?? fallback)
+        let rawBody = article.readableHTML ?? fallback
+        #if canImport(UIKit)
+        let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
+        #else
+        let typeSize = "standard"
+        #endif
+        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)"
+        if let cachedDocument, cachedDocument.key == key {
+            return cachedDocument.html
+        }
+        let body = ReaderHTML.sanitizedBody(rawBody)
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
         case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
         case .mono: "ui-monospace, 'SFMono-Regular', Menlo, monospace"
         }
         let bodySize = textSize.points
-        let headingSize = max(bodySize * 1.42, bodySize + 7)
-        let sectionSize = max(bodySize * 1.18, bodySize + 3)
+        let headingSize = max(bodySize * 1.28, bodySize + 5)
+        let sectionSize = max(bodySize * 1.12, bodySize + 2)
         #if canImport(UIKit)
-        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 32)
-        let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 14)
-        let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 12)
-        let horizontalPad = 22
+        let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 28)
+        let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 13)
+        let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 11)
+        let horizontalPad = 20
         #else
-        let titleSize: CGFloat = 34
-        let metaSize: CGFloat = 14
-        let sourceSize: CGFloat = 12
-        let horizontalPad = 40
+        let titleSize: CGFloat = 32
+        let metaSize: CGFloat = 13
+        let sourceSize: CGFloat = 11
+        let horizontalPad = 48
         #endif
-        return """
+        let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
           color-scheme: light dark;
-          --paper: #FFFFFF;
-          --ink: #1F1F1F;
-          --title: #1A1A1A;
-          --meta: #8A8A8A;
-          --rule: #ECECEC;
-          --link: #4A6FE3;
-          --quote: #D86B33;
-        }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --paper: #121212;
-            --ink: #EDEDED;
-            --title: #F2F2F2;
-            --meta: #A6A6A6;
-            --rule: #2E2E2E;
-            --link: #7B97EE;
-          }
+          --paper: light-dark(#FBF9F4, #1F1B16);
+          --ink: light-dark(#2D2520, #E8E0D2);
+          --title: light-dark(#2D2520, #E8E0D2);
+          --meta: light-dark(#8A7E72, #9C9084);
+          --rule: light-dark(#DDD2BD, #3A342C);
+          --link: #D97757;
+          --quote: #D97757;
         }
         html { overflow-x: hidden; }
         body {
           font-family: \(family);
           font-size: \(bodySize)px;
           font-optical-sizing: auto;
-          line-height: 1.72;
+          font-weight: 400;
+          line-height: 1.55;
           margin: 0 auto;
-          padding: 28px \(horizontalPad)px 160px;
-          max-width: 640px;
+          padding: 36px \(horizontalPad)px 180px;
+          max-width: 36em;
           color: var(--ink);
           background: var(--paper);
           overflow-x: hidden;
@@ -130,34 +135,34 @@ final class ReaderViewModel {
           -webkit-hyphens: auto;
         }
         .source {
-          font: 650 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
-          letter-spacing: 0.08em;
+          font: 700 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+          letter-spacing: 0.04em;
           text-transform: uppercase;
           color: var(--meta);
         }
         h1 {
           font-family: \(family);
           font-size: \(titleSize)px;
-          font-weight: 650;
+          font-weight: 500;
           line-height: 1.22;
-          letter-spacing: -0.02em;
+          letter-spacing: -0.012em;
           color: var(--title);
           margin: 14px 0 10px;
         }
         .meta {
-          font: \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: 400 \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
-          margin: 0 0 28px;
+          margin: 0 0 32px;
           padding-bottom: 20px;
           border-bottom: 1px solid var(--rule);
         }
         h2, h3 {
           font-family: \(family);
-          font-weight: 650;
+          font-weight: 500;
           line-height: 1.3;
-          letter-spacing: -0.015em;
+          letter-spacing: -0.01em;
           color: var(--title);
-          margin: 1.6em 0 0.55em;
+          margin: 1.6em 0 0.45em;
         }
         h2 { font-size: \(headingSize)px; }
         h3 { font-size: \(sectionSize)px; }
@@ -166,7 +171,7 @@ final class ReaderViewModel {
           max-width: 100%;
           height: auto;
           display: block;
-          margin: 1.4em 0;
+          margin: 1.6em 0;
           border-radius: 10px;
         }
         figcaption, cite {
@@ -175,24 +180,26 @@ final class ReaderViewModel {
           display: block;
           margin-top: 8px;
         }
-        a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+        a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
         pre, code { overflow-x: auto; max-width: 100%; }
         pre {
-          padding: 14px 16px;
+          padding: 16px 18px;
           border-radius: 10px;
-          background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+          background: color-mix(in srgb, var(--ink) 5%, transparent);
         }
         blockquote {
-          margin: 1.4em 0;
+          margin: 1.6em 0;
           padding: 2px 0 2px 16px;
-          border-left: 3px solid var(--quote);
+          border-left: 2px solid var(--quote);
           font-style: italic;
-          color: color-mix(in srgb, var(--ink) 88%, var(--meta));
+          color: color-mix(in srgb, var(--ink) 86%, var(--meta));
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
-        hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
+        hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
         </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
         """
+        cachedDocument = (key, html)
+        return html
     }
 
     private func escape(_ text: String) -> String {

@@ -92,7 +92,7 @@ struct CloudLibrarySettingsSection: View {
             LabeledContent("Last Sync", value: lastSyncAt.formatted(date: .abbreviated, time: .shortened))
         }
         if case .error(let message) = library.status {
-            Text(message).font(.footnote).foregroundStyle(.red)
+            Text(message).font(.footnote).foregroundStyle(OneFeedTheme.error)
         }
         Button {
             onSyncNow()

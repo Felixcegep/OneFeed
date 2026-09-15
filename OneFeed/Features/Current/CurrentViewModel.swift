@@ -147,6 +147,13 @@ final class CurrentViewModel {
             isRefreshing = false
             inFlightRefresh = nil
         }
+        await BackgroundRefreshCoordinator.runExclusive {
+            await self.performRefreshWork(in: context)
+        }
+        loadCurrent()
+    }
+
+    private func performRefreshWork(in context: ModelContext) async {
         var refreshError: Error?
         do { try await feedService.refreshAll(in: context, progress: progress) } catch { refreshError = error }
         let provider = SyncProvider.freshRSS.rawValue

@@ -12,8 +12,10 @@ enum ArticleActions {
         let queue = ArticleQueueService()
         let sync: any FreshRSSSyncing = FreshRSSSyncService()
         sync.enqueueMutation(for: article, transition: state, in: context)
-        do { try queue.complete(article, as: state, in: context) }
-        catch { }
+        withAnimation(OneFeedMotion.list) {
+            do { try queue.complete(article, as: state, in: context) }
+            catch { }
+        }
     }
 }
 
@@ -27,11 +29,11 @@ struct ArticleSwipeActions: ViewModifier {
                 Button("Done", systemImage: "checkmark") {
                     ArticleActions.apply(.read, to: article, in: context)
                 }
-                .tint(.green)
+                .tint(OneFeedTheme.sage)
                 Button("Skip", systemImage: "forward") {
                     ArticleActions.apply(.skipped, to: article, in: context)
                 }
-                .tint(.secondary)
+                .tint(OneFeedTheme.stone)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button("Save", systemImage: "star") {

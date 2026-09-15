@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		9A31A0C10000000000000001 /* MonoRssWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A31A0C10000000000000003 /* MonoRssWidget.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9A31A0C10000000000000001 /* MonoRssWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 9A31A0C10000000000000003 /* MonoRssWidget.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1FEEDREAD00000000000003 /* SwiftReadability in Frameworks */ = {isa = PBXBuildFile; productRef = A1FEEDREAD00000000000002 /* SwiftReadability */; };
 /* End PBXBuildFile section */
 
@@ -280,7 +280,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 4425FA5830439ECB0053CF66 /* Build configuration list for PBXProject "MonoRss" */;
+			buildConfigurationList = 4425FA5830439ECB0053CF66 /* Build configuration list for PBXProject "OneFeed" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -380,9 +380,7 @@
 		};
 		9A31A0C10000000000000009 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			platformFilters = (
-				ios,
-			);
+			platformFilter = ios;
 			target = 9A31A0C10000000000000006 /* MonoRssWidget */;
 			targetProxy = 9A31A0C10000000000000002 /* PBXContainerItemProxy */;
 		};
@@ -771,7 +769,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		4425FA5830439ECB0053CF66 /* Build configuration list for PBXProject "MonoRss" */ = {
+		4425FA5830439ECB0053CF66 /* Build configuration list for PBXProject "OneFeed" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				4425FA7E30439ECC0053CF66 /* Debug */,

@@ -214,6 +214,34 @@ struct FeedAndFreshRSSDomainTests {
         #expect(youtube.url == URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
     }
 
+    @Test func parserDropsTrackingAndBlankImages() throws {
+        let xml = """
+        <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>News</title>
+        <item>
+          <guid>blank-1</guid><title>No photo</title>
+          <description><![CDATA[<p>Text only. <img src="https://cdn.example.test/spacer.gif"></p>]]></description>
+        </item>
+        <item>
+          <guid>pixel-1</guid><title>Pixel</title>
+          <media:thumbnail url="https://cdn.example.test/track/1x1.png"/>
+          <description>Hello</description>
+        </item>
+        <item>
+          <guid>photo-1</guid><title>Photo</title>
+          <description><![CDATA[<p><img src="https://cdn.example.test/story.jpg"></p>]]></description>
+        </item>
+        </channel></rss>
+        """
+        let parsed = try FeedParser().parse(Data(xml.utf8))
+        let blank = try #require(parsed.articles.first { $0.guid == "blank-1" })
+        let pixel = try #require(parsed.articles.first { $0.guid == "pixel-1" })
+        let photo = try #require(parsed.articles.first { $0.guid == "photo-1" })
+        #expect(blank.imageURL == nil)
+        #expect(pixel.imageURL == nil)
+        #expect(photo.imageURL == URL(string: "https://cdn.example.test/story.jpg"))
+        #expect(FeedImageURL.displayable(URL(string: "data:image/gif;base64,AAAA")) == nil)
+    }
+
     @Test func parserReadsYouTubeAtomDuration() throws {
         let xml = """
         <feed xmlns="http://www.w3.org/2005/Atom" xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/">
@@ -518,8 +546,8 @@ struct FeedAndFreshRSSDomainTests {
         let html = ReaderViewModel(article: article).documentHTML(fontChoice: .serif, textSize: .standard)
         #expect(html.contains("overflow-x: hidden"))
         #expect(html.contains("New York"))
-        #expect(html.contains("1.68"))
-        #expect(html.contains("#4A6FE3"))
+        #expect(html.contains("1.55"))
+        #expect(html.contains("#D97757"))
         #expect(html.contains("Hello reader"))
         #expect(!html.contains("alert(1)"))
     }

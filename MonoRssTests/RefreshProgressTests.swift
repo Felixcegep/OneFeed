@@ -33,4 +33,16 @@ struct RefreshProgressTests {
         #expect(progress.fraction == 0.5)
         #expect(progress.compactStatus == "2 of 4 · 4 new")
     }
+
+    @Test func finishingPhaseKeepsTheBarFull() {
+        let progress = RefreshProgress()
+        progress.begin(phase: .sources, total: 2)
+        progress.finishItem()
+        progress.finishItem()
+        #expect(progress.fraction == 1)
+        progress.begin(phase: .finishing, total: 1)
+        #expect(progress.phase == .finishing)
+        #expect(progress.fraction == 1)
+        #expect(progress.completed == 1)
+    }
 }

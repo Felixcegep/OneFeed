@@ -19,6 +19,13 @@ enum ReaderHTML {
         result = replace(dangerousBlock, in: result, with: "")
         result = replace(dangerousEmpty, in: result, with: "")
         result = replace(eventHandler, in: result, with: "")
+        if result.range(of: "<img ", options: .caseInsensitive) != nil {
+            result = result.replacingOccurrences(
+                of: "<img ",
+                with: "<img loading=\"lazy\" decoding=\"async\" ",
+                options: .caseInsensitive
+            )
+        }
         return result
     }
 

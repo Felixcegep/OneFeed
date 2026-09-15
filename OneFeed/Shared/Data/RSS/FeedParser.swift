@@ -56,6 +56,24 @@ nonisolated struct ParsedArticle: Sendable {
     }
 }
 
+/// Drops tracking pixels, data URIs, and non-http images so rows never reserve a blank crop.
+nonisolated enum FeedImageURL {
+    static func displayable(_ url: URL?) -> URL? {
+        guard let url else { return nil }
+        let scheme = url.scheme?.lowercased() ?? ""
+        guard scheme == "http" || scheme == "https" else { return nil }
+        let path = url.path.lowercased()
+        if path.contains("1x1")
+            || path.contains("pixel.gif")
+            || path.contains("spacer.gif")
+            || path.contains("blank.gif")
+            || path.contains("transparent.gif") {
+            return nil
+        }
+        return url
+    }
+}
+
 nonisolated enum FeedParserError: LocalizedError {
     case invalidXML(String)
     case noFeed
@@ -195,8 +213,8 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
         let date = dateText.flatMap(Self.parseDate) ?? .now
         let content = values["content:encoded"] ?? values["encoded"] ?? values["content"]
         let summary = values["description"] ?? values["summary"]
-        let resolvedImage = imageURL
-            ?? values["image"].flatMap { URL(string: $0.trimmed) }
+        let resolvedImage = FeedImageURL.displayable(imageURL)
+            ?? FeedImageURL.displayable(values["image"].flatMap { URL(string: $0.trimmed) })
             ?? Self.firstImageURL(in: content ?? summary ?? "")
         let article = ParsedArticle(
             guid: guid,
@@ -230,7 +248,7 @@ nonisolated private final class XMLFeedDelegate: NSObject, XMLParserDelegate {
     private static func firstImageURL(in html: String) -> URL? {
         let pattern = #/<img[^>]+src=["']([^"']+)["']/#
         guard let match = html.firstMatch(of: pattern) else { return nil }
-        return URL(string: String(match.1))
+        return FeedImageURL.displayable(URL(string: String(match.1)))
     }
 
     private static func parseDate(_ value: String) -> Date? {

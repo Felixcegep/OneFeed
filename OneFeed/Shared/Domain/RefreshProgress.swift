@@ -37,10 +37,18 @@ final class RefreshProgress {
     }
 
     func begin(phase: RefreshPhase, total: Int, now: Date = .now) {
+        let keepBarFull = isActive && phase == .finishing
         self.phase = phase
+        currentTitle = nil
+        if keepBarFull {
+            self.total = max(1, total)
+            completed = self.total
+            estimatedFinish = now
+            lastAdvanceAt = now
+            return
+        }
         self.total = max(0, total)
         completed = 0
-        currentTitle = nil
         if phase == .sources {
             articlesFound = 0
         }

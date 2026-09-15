@@ -20,7 +20,7 @@ enum ReaderTextSize: String, CaseIterable, Identifiable {
     var id: Self { self }
     var label: String { self == .standard ? "Default" : rawValue.capitalized }
     var basePoints: CGFloat {
-        switch self { case .small: 17; case .standard: 19; case .large: 22 }
+        switch self { case .small: 15; case .standard: 16; case .large: 19 }
     }
     var points: CGFloat {
         #if canImport(UIKit)
