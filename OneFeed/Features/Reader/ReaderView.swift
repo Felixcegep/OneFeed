@@ -127,7 +127,7 @@ struct ReaderView: View {
             #endif
             .sensoryFeedback(.success, trigger: savePulse)
             .sensoryFeedback(.success, trigger: donePulse)
-            .sensoryFeedback(.alignment, trigger: skipPulse)
+            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.55), trigger: skipPulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -182,7 +182,7 @@ struct ReaderView: View {
         default: break
         }
         Task { @MainActor in
-            await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion)
+            await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
             onFinish(state)
         }
     }

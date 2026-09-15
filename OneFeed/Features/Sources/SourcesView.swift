@@ -334,6 +334,7 @@ struct AddSourceView: View {
                 if showSuccess {
                     ZStack {
                         OneFeedTheme.plaster.opacity(0.97)
+                        OneFeedParticleBurst(intensity: .medium, isActive: true)
                         VStack(spacing: 18) {
                             OneFeedMarkBurst(size: 56)
                             GalleryLabel(text: "Added")

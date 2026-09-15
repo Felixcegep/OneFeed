@@ -2,15 +2,15 @@ import SwiftUI
 
 /// Gallery pacing: springs for presses, slower fades for page changes. Interruptible.
 enum OneFeedMotion {
-    static let press = Animation.snappy(duration: 0.16)
+    static let press = Animation.bouncy(duration: 0.18)
     static let card = Animation.snappy(duration: 0.32)
     static let list = Animation.snappy(duration: 0.34)
-    static let overlay = Animation.smooth(duration: 0.36)
-    static let page = Animation.smooth(duration: 0.48)
-    static let decision = Animation.smooth(duration: 0.42)
-    static let reveal = Animation.smooth(duration: 0.5)
-    static let success = Animation.smooth(duration: 0.52)
-    static let dots = Animation.snappy(duration: 0.28)
+    static let overlay = Animation.smooth(duration: 0.32)
+    static let page = Animation.smooth(duration: 0.42)
+    static let decision = Animation.spring(duration: 0.48, bounce: 0.32)
+    static let reveal = Animation.smooth(duration: 0.45)
+    static let success = Animation.spring(duration: 0.46, bounce: 0.38)
+    static let dots = Animation.snappy(duration: 0.26)
 
     static func cardTransition(reduceMotion: Bool) -> AnyTransition {
         if reduceMotion { return .opacity }
@@ -20,9 +20,16 @@ enum OneFeedMotion {
         )
     }
 
-    static func holdBeforeDismiss(reduceMotion: Bool) async {
+    /// Duolingo / Doherty: skip is a whoosh (~300ms), done ~560ms, save ~680ms, never past 800ms.
+    static func holdBeforeDismiss(reduceMotion: Bool, for state: ArticleState = .read) async {
         if reduceMotion || ProcessInfo.processInfo.arguments.contains("-uiTesting") { return }
-        try? await Task.sleep(for: .milliseconds(520))
+        let milliseconds: Int = switch state {
+        case .skipped: 280
+        case .read: 560
+        case .saved: 680
+        default: 420
+        }
+        try? await Task.sleep(for: .milliseconds(milliseconds))
     }
 }
 
@@ -89,8 +96,8 @@ struct OneFeedMarkBurst: View {
     @State private var popped = false
 
     var body: some View {
-        OneFeedMark(size: size, arcProgress: popped ? 1 : 0.2, breathing: 1, dotScale: popped ? 1.06 : 0.7)
-            .scaleEffect(popped ? 1 : 0.86)
+        OneFeedMark(size: size, arcProgress: popped ? 1 : 0.12, breathing: 1, dotScale: popped ? 1.08 : 0.5)
+            .scaleEffect(popped ? 1 : 0.08)
             .opacity(popped ? 1 : 0)
             .onAppear {
                 if reduceMotion {
@@ -150,17 +157,21 @@ struct OneFeedDecisionCurtain: View {
     let state: ArticleState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visible = false
+    @State private var showCaption = false
 
     var body: some View {
         ZStack {
             OneFeedTheme.plaster.opacity(visible ? 0.97 : 0)
+            if shouldBurst {
+                OneFeedParticleBurst(intensity: burstIntensity, isActive: visible)
+            }
             VStack(spacing: 18) {
                 artwork
+                    .scaleEffect(visible ? 1 : 0.08)
                 GalleryLabel(text: caption)
-                    .opacity(visible ? 1 : 0)
+                    .opacity(showCaption ? 1 : 0)
+                    .offset(y: showCaption ? 0 : 8)
             }
-            .scaleEffect(visible ? 1 : 0.92)
-            .opacity(visible ? 1 : 0)
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .ignore)
@@ -168,10 +179,23 @@ struct OneFeedDecisionCurtain: View {
         .onAppear {
             if reduceMotion {
                 visible = true
-            } else {
-                withAnimation(OneFeedMotion.decision) { visible = true }
+                showCaption = true
+                return
+            }
+            withAnimation(OneFeedMotion.success) { visible = true }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(80))
+                withAnimation(OneFeedMotion.overlay) { showCaption = true }
             }
         }
+    }
+
+    private var shouldBurst: Bool {
+        !reduceMotion && (state == .saved || state == .read)
+    }
+
+    private var burstIntensity: OneFeedParticleBurst.Intensity {
+        state == .saved ? .medium : .small
     }
 
     @ViewBuilder
@@ -186,6 +210,7 @@ struct OneFeedDecisionCurtain: View {
         case .skipped:
             Image(systemName: "forward")
                 .font(.system(size: 32, weight: .medium))
+                .offset(x: visible ? 0 : -12)
                 .symbolEffect(.bounce, options: .nonRepeating, value: visible)
         default:
             OneFeedMarkBurst(size: 64)
@@ -196,7 +221,7 @@ struct OneFeedDecisionCurtain: View {
         switch state {
         case .saved: "Kept"
         case .read: "Done"
-        case .skipped: "Skipped"
+        case .skipped: "Next"
         default: ""
         }
     }

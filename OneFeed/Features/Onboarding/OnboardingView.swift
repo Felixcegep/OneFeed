@@ -9,6 +9,7 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             OneFeedTheme.plaster.ignoresSafeArea()
+            OneFeedParticleBurst(intensity: .large, isActive: starting)
             VStack(spacing: 0) {
                 Spacer(minLength: 48)
                 ZStack {
@@ -78,7 +79,7 @@ struct OnboardingView: View {
         if viewModel.isLastPage {
             starting = true
             Task { @MainActor in
-                await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion)
+                await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: .saved)
                 finish()
             }
             return

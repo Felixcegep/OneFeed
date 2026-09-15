@@ -50,9 +50,12 @@ struct PrimaryActionStyle: ButtonStyle {
             .tracking(1.4)
             .foregroundStyle(OneFeedTheme.plaster)
             .frame(maxWidth: .infinity, minHeight: 50)
-            .background(Color.primary.opacity(configuration.isPressed ? 0.72 : 1), in: Rectangle())
-            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
+            .background(Color.primary, in: Rectangle())
+            .shadow(color: Color.primary.opacity(configuration.isPressed ? 0 : 0.35), radius: 0, y: configuration.isPressed ? 0 : 5)
+            .offset(y: (reduceMotion || !configuration.isPressed) ? 0 : 5)
+            .padding(.bottom, 5)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
+            .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: configuration.isPressed)
     }
 }
 

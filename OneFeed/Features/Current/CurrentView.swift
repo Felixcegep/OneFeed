@@ -6,6 +6,7 @@ struct CurrentView: View {
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
     @State private var showingSources = false
+    @State private var celebrateClear = false
 
     private var stories: [Article] {
         viewModel.remainingArticles.filter(\.isStored)
@@ -82,6 +83,11 @@ struct CurrentView: View {
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
+        .onChange(of: stories.count) { oldCount, newCount in
+            if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
+                celebrateClear = true
+            }
+        }
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
@@ -103,8 +109,12 @@ struct CurrentView: View {
                     OneFeedMarkPulse(isActive: true, size: 48)
                     Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
                         .font(.system(.title2, design: .serif))
+                } else if celebrateClear {
+                    OneFeedMarkBurst(size: 52)
+                    Text("The room is still.")
+                        .font(.system(.title2, design: .serif))
                 } else {
-                    OneFeedMark(size: 48)
+                    OneFeedMark(size: 52)
                     Text("The room is still.")
                         .font(.system(.title2, design: .serif))
                 }
@@ -120,6 +130,10 @@ struct CurrentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
+        .overlay {
+            OneFeedParticleBurst(intensity: .large, isActive: celebrateClear && !viewModel.isRefreshing)
+        }
+        .sensoryFeedback(.success, trigger: celebrateClear)
     }
 
     private var caughtUpProgressCopy: String {
