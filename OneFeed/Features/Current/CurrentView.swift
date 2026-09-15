@@ -6,6 +6,7 @@ struct CurrentView: View {
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
     @State private var showingSources = false
+    @State private var celebrateClear = false
 
     private var stories: [Article] {
         viewModel.remainingArticles.filter(\.isStored)
@@ -21,27 +22,42 @@ struct CurrentView: View {
                         Button { readerArticle = featured } label: {
                             FeaturedStory(article: featured)
                         }
-                        .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                        .buttonStyle(DirectoryRowButtonStyle())
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
+                        .listRowBackground(OneFeedTheme.plaster)
                         .articleActions(for: featured, in: modelContext)
                     }
                     ForEach(Array(stories.dropFirst())) { article in
                         Button { readerArticle = article } label: {
                             ArticleRow(article: article)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow()
                         .articleActions(for: article, in: modelContext)
                     }
                 }
                 .articleTimelineList()
+                .animation(OneFeedMotion.list, value: stories.count)
             }
         }
+        .animation(OneFeedMotion.page, value: stories.isEmpty)
+        .animation(OneFeedMotion.overlay, value: viewModel.isRefreshing)
+        .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                    Task { await viewModel.refresh() }
+                }
+            }
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { showingSources = true }
+            }
+        }
         .task {
             viewModel.configure(with: modelContext)
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
@@ -67,6 +83,11 @@ struct CurrentView: View {
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
+        .onChange(of: stories.count) { oldCount, newCount in
+            if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
+                celebrateClear = true
+            }
+        }
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
@@ -83,17 +104,23 @@ struct CurrentView: View {
 
     private var caughtUp: some View {
         ContentUnavailableView {
-            if viewModel.isRefreshing {
-                Label {
-                    Text(viewModel.progress.remainingText.isEmpty ? "Updating…" : viewModel.progress.remainingText)
-                } icon: {
-                    ProgressView()
+            VStack(spacing: 22) {
+                if viewModel.isRefreshing {
+                    OneFeedMarkPulse(isActive: true, size: 48)
+                    Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
+                        .font(.system(.title2, design: .serif))
+                } else if celebrateClear {
+                    OneFeedMarkBurst(size: 52)
+                    Text("The room is still.")
+                        .font(.system(.title2, design: .serif))
+                } else {
+                    OneFeedMark(size: 52)
+                    Text("The room is still.")
+                        .font(.system(.title2, design: .serif))
                 }
-            } else {
-                Label("You're caught up.", systemImage: "checkmark.circle")
             }
         } description: {
-            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow gets a new stack.")
+            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow, a new hanging.")
         } actions: {
             Button(viewModel.isRefreshing ? viewModel.progress.countText : "Refresh") {
                 Task { await viewModel.refresh() }
@@ -101,6 +128,12 @@ struct CurrentView: View {
             .disabled(viewModel.isRefreshing)
             Button("Add a source") { showingSources = true }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OneFeedTheme.plaster)
+        .overlay {
+            OneFeedParticleBurst(intensity: .large, isActive: celebrateClear && !viewModel.isRefreshing)
+        }
+        .sensoryFeedback(.success, trigger: celebrateClear)
     }
 
     private var caughtUpProgressCopy: String {

@@ -28,6 +28,16 @@
 				<string>onefeed</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>felix.MonoRss.googledrive</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.179242458130-0tl30seb0imlrvvaa21grln0fj8bhg9p</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
@@ -134,7 +144,7 @@
 		<true/>
 	</dict>
 	<key>GoogleDriveClientID</key>
-	<string></string>
+	<string>179242458130-0tl30seb0imlrvvaa21grln0fj8bhg9p.apps.googleusercontent.com</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>OneFeed connects to your RSS server on the local network or Tailscale.</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>

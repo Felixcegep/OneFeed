@@ -8,10 +8,10 @@ struct HistoryView: View {
     var body: some View {
         Group {
             if viewModel.days.isEmpty {
-                ContentUnavailableView(
-                    "No history yet",
+                EmptyLibraryState(
+                    title: "No history yet",
                     systemImage: "clock",
-                    description: Text("Read and skipped articles appear here quietly.")
+                    description: "Read and skipped pieces appear here quietly."
                 )
             } else {
                 List {

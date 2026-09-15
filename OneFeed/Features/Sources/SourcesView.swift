@@ -9,16 +9,13 @@ struct SourcesView: View {
     var body: some View {
         Group {
             if viewModel.feeds.isEmpty && viewModel.folders.isEmpty {
-                ContentUnavailableView {
-                    Label("No sources", systemImage: "dot.radiowaves.left.and.right")
-                } description: {
-                    Text("Add feeds one by one, paste a list, or restore the full seeded library with folders.")
-                } actions: {
-                    Button("Add Sources") { presentAdd() }
-                        .buttonStyle(.borderedProminent)
-                    Button("Restore all seeded sources") { viewModel.importAllSeededSources() }
-                        .buttonStyle(.bordered)
-                }
+                EmptyLibraryState(
+                    title: "No sources",
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: "Add feeds one by one, paste a list, or restore the seeded library.",
+                    actionTitle: "Add Sources",
+                    action: { presentAdd() }
+                )
             } else {
                 List {
                     ForEach(viewModel.folders) { folder in
@@ -96,16 +93,14 @@ private struct FolderRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "folder")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
+            FolderSwatch(name: folder.name)
+                .frame(width: 16, alignment: .center)
+            VStack(alignment: .leading, spacing: 5) {
                 Text(folder.name)
-                    .font(.headline)
+                    .font(.body)
                 Text(sourceCount)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
             }
         }
         .padding(.vertical, 6)
@@ -157,14 +152,13 @@ private struct FolderFeedsView: View {
         }
         .overlay {
             if viewModel.feeds(in: folderID).isEmpty {
-                ContentUnavailableView {
-                    Label("No feeds", systemImage: "dot.radiowaves.left.and.right")
-                } description: {
-                    Text("Add sources directly into \(folderID.title).")
-                } actions: {
-                    Button("Add Sources") { onAddInFolder() }
-                        .buttonStyle(.borderedProminent)
-                }
+                EmptyLibraryState(
+                    title: "No feeds",
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: "Add sources directly into \(folderID.title).",
+                    actionTitle: "Add Sources",
+                    action: { onAddInFolder() }
+                )
             }
         }
     }
@@ -176,7 +170,7 @@ private struct SourceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(feed.title)
-                .font(.headline)
+                .font(.system(.body, design: .serif))
             HStack(spacing: 5) {
                 Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
                     .lineLimit(1)
@@ -338,10 +332,19 @@ struct AddSourceView: View {
             }
             .overlay {
                 if showSuccess {
-                    OneFeedMarkBurst(size: 48)
-                        .transition(.opacity)
+                    ZStack {
+                        OneFeedTheme.plaster.opacity(0.97)
+                        OneFeedParticleBurst(intensity: .medium, isActive: true)
+                        VStack(spacing: 18) {
+                            OneFeedMarkBurst(size: 56)
+                            GalleryLabel(text: "Added")
+                        }
+                    }
+                    .ignoresSafeArea()
+                    .transition(.opacity)
                 }
             }
+            .animation(OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
             .toolbar {

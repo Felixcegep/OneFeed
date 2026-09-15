@@ -17,12 +17,16 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
     @State private var viewModel: ReaderViewModel
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
     @State private var savePulse = 0
+    @State private var donePulse = 0
+    @State private var skipPulse = 0
+    @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
     @State private var showingAPIKeySheet = false
     @State private var geminiKey = ""
@@ -37,31 +41,93 @@ struct ReaderView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                #if os(macOS)
                 readerTopBar
+                #endif
                 youtubeSummaryBanner
                 articleCanvas
+                #if os(macOS)
+                readerBottomBar
+                #endif
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(OneFeedTheme.paper)
-            .overlay(alignment: .top) {
-                if viewModel.isExtracting {
-                    ProgressView()
-                        .padding(.top, 8)
-                        .transition(.opacity)
+            .overlay {
+                if let decision {
+                    OneFeedDecisionCurtain(state: decision)
                 }
             }
-            .overlay(alignment: .bottom) {
-                floatingActionBar
-            }
+            .animation(OneFeedMotion.decision, value: decision)
             .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
+            .animation(OneFeedMotion.overlay, value: viewModel.isSummarizing)
+            .animation(OneFeedMotion.page, value: mode)
+            #if os(macOS)
+            .toolbar(.hidden)
+            #endif
             .task {
                 await viewModel.enrichReadableHTML()
                 if viewModel.shouldOfferYouTubeSummary {
                     showingSummaryPrompt = true
                 }
             }
-            .toolbar(.hidden)
+            #if os(iOS)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedLeading) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                        .accessibilityHint("Closes the reader without changing this article")
+                }
+                ToolbarItem(placement: .principal) {
+                    if viewModel.article.url != nil {
+                        modePicker
+                    }
+                }
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    HStack(spacing: 10) {
+                        if viewModel.isExtracting {
+                            OneFeedMarkPulse(isActive: true, size: 18)
+                        }
+                        readingOptionsMenu
+                    }
+                }
+                ToolbarItemGroup(placement: .oneFeedBottomBar) {
+                    Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
+                        finish(.saved)
+                    }
+                    .symbolEffect(.bounce, value: savePulse)
+                    .disabled(decision != nil)
+                    .accessibilityHint("Keeps this in Saved")
+                    Button("Skip", systemImage: "forward") {
+                        finish(.skipped)
+                    }
+                    .symbolEffect(.bounce, value: skipPulse)
+                    .disabled(decision != nil)
+                    ToolbarSpacer(.flexible)
+                    Button("Done", systemImage: "checkmark") {
+                        finish(.read)
+                    }
+                    .symbolEffect(.bounce, value: donePulse)
+                    .disabled(decision != nil)
+                    .accessibilityHint("Marks this article done")
+                    ToolbarSpacer(.flexible)
+                    ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .disabled(article.url == nil)
+                    .accessibilityLabel("Share")
+                    Button {
+                        isPresentingBrowser = true
+                    } label: {
+                        Image(systemName: "safari")
+                    }
+                    .disabled(article.url == nil)
+                    .accessibilityLabel("Open in browser")
+                }
+            }
+            .oneFeedInlineTitle()
+            #endif
             .sensoryFeedback(.success, trigger: savePulse)
+            .sensoryFeedback(.success, trigger: donePulse)
+            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.55), trigger: skipPulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -106,6 +172,61 @@ struct ReaderView: View {
 
     private var article: Article { viewModel.article }
 
+    private func finish(_ state: ArticleState) {
+        guard decision == nil else { return }
+        decision = state
+        switch state {
+        case .saved: savePulse += 1
+        case .read: donePulse += 1
+        case .skipped: skipPulse += 1
+        default: break
+        }
+        Task { @MainActor in
+            await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
+            onFinish(state)
+        }
+    }
+
+    private var modePicker: some View {
+        Picker("View", selection: $mode) {
+            ForEach(ReaderDisplayMode.allCases) { option in
+                Text(option.title).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityLabel("Reading mode")
+    }
+
+    private var readingOptionsMenu: some View {
+        Menu {
+            Picker("Font", selection: $fontChoice) {
+                ForEach(ReaderFontChoice.allCases) { choice in
+                    Text(choice.label).tag(choice.rawValue)
+                }
+            }
+            Picker("Size", selection: $textSize) {
+                ForEach(ReaderTextSize.allCases) { size in
+                    Text(size.label).tag(size.rawValue)
+                }
+            }
+            if article.contentKind == "youtube" {
+                Divider()
+                Button("Summarize video", systemImage: "text.quote") {
+                    if GeminiAPIKeyStore.load() == nil {
+                        showingAPIKeySheet = true
+                    } else {
+                        Task { await viewModel.summarizeYouTube() }
+                    }
+                }
+                .disabled(viewModel.isSummarizing)
+            }
+        } label: {
+            Image(systemName: "textformat.size")
+        }
+        .accessibilityLabel("Reading options")
+    }
+
+    #if os(macOS)
     private var readerTopBar: some View {
         HStack(spacing: 12) {
             Button {
@@ -113,83 +234,90 @@ struct ReaderView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.body.weight(.semibold))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help("Close")
             .accessibilityLabel("Close")
             .accessibilityHint("Closes the reader without changing this article")
 
+            Spacer(minLength: 8)
+
             if viewModel.article.url != nil {
-                Picker("View", selection: $mode) {
-                    ForEach(ReaderDisplayMode.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
-                .accessibilityLabel("Reading mode")
-            } else {
-                Spacer(minLength: 0)
+                modePicker
+                    .frame(maxWidth: 240)
             }
 
             Spacer(minLength: 8)
 
-            Menu {
-                Picker("Font", selection: $fontChoice) {
-                    ForEach(ReaderFontChoice.allCases) { choice in
-                        Text(choice.label).tag(choice.rawValue)
-                    }
-                }
-                Picker("Size", selection: $textSize) {
-                    ForEach(ReaderTextSize.allCases) { size in
-                        Text(size.label).tag(size.rawValue)
-                    }
-                }
-                if article.contentKind == "youtube" {
-                    Divider()
-                    Button("Summarize video", systemImage: "text.quote") {
-                        if GeminiAPIKeyStore.load() == nil {
-                            showingAPIKeySheet = true
-                        } else {
-                            Task { await viewModel.summarizeYouTube() }
-                        }
-                    }
-                    .disabled(viewModel.isSummarizing)
-                }
-            } label: {
-                Image(systemName: "textformat.size")
-                    .font(.body.weight(.medium))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+            readingOptionsMenu
+                .menuStyle(.borderlessButton)
+                .frame(width: 28, height: 28)
+
+            if viewModel.isExtracting {
+                OneFeedMarkPulse(isActive: true, size: 18)
             }
-            #if os(macOS)
-            .menuStyle(.borderlessButton)
-            #endif
-            .accessibilityLabel("Reading options")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .overlay(alignment: .bottom) {
-            Divider().opacity(0.5)
-        }
+        .background(.bar)
     }
 
-    private var floatingActionBar: some View {
-        HStack(spacing: 2) {
-            decisionActions
-            Spacer(minLength: 10)
-            outboundActions
+    private var readerBottomBar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                readerBarButton("Save", systemImage: "star", help: "Keep this in Saved") {
+                    finish(.saved)
+                }
+                .disabled(decision != nil)
+                readerBarButton("Skip", systemImage: "forward", help: "Skip this article") {
+                    finish(.skipped)
+                }
+                .disabled(decision != nil)
+            }
+            .frame(maxWidth: .infinity)
+            readerBarButton("Done", systemImage: "checkmark", help: "Mark this article done", emphasized: true) {
+                finish(.read)
+            }
+            .disabled(decision != nil)
+            .frame(width: 88)
+            HStack(spacing: 0) {
+                ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                    ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.plain)
+                .disabled(article.url == nil)
+                .help("Share")
+                .accessibilityLabel("Share")
+                readerBarButton("Browser", systemImage: "safari", help: "Open in browser") {
+                    isPresentingBrowser = true
+                }
+                .disabled(article.url == nil)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private func readerBarButton(
+        _ title: String,
+        systemImage: String,
+        help: String,
+        emphasized: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ReaderBarGlyph(title: title, systemImage: systemImage, emphasized: emphasized)
         }
         .buttonStyle(.plain)
-        .labelStyle(.titleAndIcon)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22, style: .continuous))
-        .padding(.horizontal, 20)
-        .padding(.bottom, 16)
-        .padding(.top, 8)
+        .help(help)
+        .accessibilityLabel(title)
+        .accessibilityHint(help)
     }
+    #endif
 
     @ViewBuilder
     private var articleCanvas: some View {
@@ -205,52 +333,6 @@ struct ReaderView: View {
             )
             .id(dynamicTypeSize)
         }
-    }
-
-    @ViewBuilder
-    private var decisionActions: some View {
-        readerChip("Save", systemImage: "star") {
-            savePulse += 1
-            onFinish(.saved)
-        }
-        .accessibilityHint("Keeps this in Saved")
-        readerChip("Skip", systemImage: "forward") {
-            onFinish(.skipped)
-        }
-        readerChip("Done", systemImage: "checkmark.circle") {
-            onFinish(.read)
-        }
-        .accessibilityHint("Marks this article done")
-    }
-
-    @ViewBuilder
-    private var outboundActions: some View {
-        ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
-            readerChipLabel("Share", systemImage: "square.and.arrow.up")
-        }
-        .disabled(article.url == nil)
-        .accessibilityLabel("Share")
-        Button {
-            isPresentingBrowser = true
-        } label: {
-            readerChipLabel("Open browser", systemImage: "safari")
-        }
-        .disabled(article.url == nil)
-        .accessibilityLabel("Open in browser")
-    }
-
-    private func readerChip(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            readerChipLabel(title, systemImage: systemImage)
-        }
-    }
-
-    private func readerChipLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
     }
 
     private static func initialMode(for article: Article) -> ReaderDisplayMode {
@@ -276,28 +358,57 @@ struct ReaderView: View {
         if article.contentKind != "youtube" {
             EmptyView()
         } else if viewModel.isSummarizing {
-            HStack(spacing: 10) {
-                ProgressView()
-                Text("Summarizing…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                OneFeedMarkPulse(isActive: true, size: 18)
+                GalleryLabel(text: "Summarizing")
             }
             .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
         } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
             ScrollView {
                 Text(summary)
-                    .font(.body)
+                    .font(.system(.body, design: .serif))
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 160)
             .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 }
+
+#if os(macOS)
+private struct ReaderBarGlyph: View {
+    let title: String
+    let systemImage: String
+    var emphasized = false
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.medium))
+                .symbolRenderingMode(.hierarchical)
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(emphasized ? OneFeedTheme.accent : Color.primary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+#endif
 
 private struct WebsiteReaderPane: View {
     let url: URL
@@ -319,10 +430,12 @@ private struct WebsiteReaderPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if page.isLoading {
-                    ProgressView()
+                    OneFeedMarkPulse(isActive: true, size: 18)
                         .padding(.top, 8)
+                        .transition(.opacity)
                 }
             }
+            .animation(OneFeedMotion.overlay, value: page.isLoading)
             .task(id: url) { _ = page.load(URLRequest(url: url)) }
     }
 }

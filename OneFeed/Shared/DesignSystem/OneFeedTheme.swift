@@ -2,23 +2,43 @@ import SwiftUI
 import SwiftData
 
 enum OneFeedTheme {
-    /// Warm orange in the NetNewsWire family; used as the app tint, not as a brand copy.
-    static let accent = Color(red: 0.89, green: 0.38, blue: 0.16)
-    static let page = Color.oneFeedSystemBackground
-    static let paper = Color.oneFeedSystemBackground
-    static let grouped = Color.oneFeedGroupedBackground
+    /// House pigment — held in reserve, like Hermès orange or Acne cobalt. The mark and wall labels only.
+    static let accent = Color(red: 0.82, green: 0.33, blue: 0.14)
+    static let plaster = Color.oneFeedPlaster
+    static let page = Color.oneFeedPlaster
+    static let paper = Color.oneFeedPlaster
+    static let grouped = Color.oneFeedPlaster
     static let surface = Color.oneFeedSecondaryGroupedBackground
     static let secondarySurface = Color.oneFeedTertiaryFill
     static let primaryText = Color.primary
     static let secondaryText = Color.secondary
-    static let separator = Color.oneFeedSeparator
-    static let radius: CGFloat = 14
-    static let cardRadius: CGFloat = 16
-    static let pagePadding: CGFloat = 16
+    static let separator = Color.primary.opacity(0.12)
+    /// Photograph crop, not a card. COS / Acne use near-zero radius.
+    static let radius: CGFloat = 2
+    static let cardRadius: CGFloat = 2
+    static let pagePadding: CGFloat = 22
+    static let thumbnailWidth: CGFloat = 56
+    static let thumbnailHeight: CGFloat = 74
     static let thumbnailSize: CGFloat = 72
-    static let readerCorner: CGFloat = 22
-    static let readerWidth: CGFloat = 720
-    static let readerHeight: CGFloat = 640
+    static let featuredHeight: CGFloat = 248
+    static let readerCorner: CGFloat = 4
+    static let readerWidth: CGFloat = 760
+    static let readerHeight: CGFloat = 720
+}
+
+/// Museum wall label: tiny, tracked, uppercase.
+struct GalleryLabel: View {
+    let text: String
+    var pigment = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .tracking(1.8)
+            .textCase(.uppercase)
+            .foregroundStyle(pigment ? OneFeedTheme.accent : Color.secondary)
+            .lineLimit(1)
+    }
 }
 
 struct PrimaryActionStyle: ButtonStyle {
@@ -26,12 +46,16 @@ struct PrimaryActionStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
-            .foregroundStyle(.white)
+            .font(.subheadline.weight(.medium))
+            .tracking(1.4)
+            .foregroundStyle(OneFeedTheme.plaster)
             .frame(maxWidth: .infinity, minHeight: 50)
-            .background(OneFeedTheme.accent.opacity(configuration.isPressed ? 0.78 : 1), in: .rect(cornerRadius: OneFeedTheme.radius))
-            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
+            .background(Color.primary, in: Rectangle())
+            .shadow(color: Color.primary.opacity(configuration.isPressed ? 0 : 0.35), radius: 0, y: configuration.isPressed ? 0 : 5)
+            .offset(y: (reduceMotion || !configuration.isPressed) ? 0 : 5)
+            .padding(.bottom, 5)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
+            .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: configuration.isPressed)
     }
 }
 
@@ -41,12 +65,14 @@ struct DecisionActionStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.medium))
+            .tracking(0.6)
             .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(OneFeedTheme.secondarySurface)
-            .clipShape(.rect(cornerRadius: 14))
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .background(Color.clear)
+            .overlay {
+                Rectangle().strokeBorder(Color.primary.opacity(0.22), lineWidth: 1)
+            }
+            .opacity(configuration.isPressed ? 0.55 : 1)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
@@ -56,82 +82,79 @@ struct ArticleRow: View {
     var status: String? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
+        HStack(alignment: .top, spacing: 16) {
+            ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.radius)
+                .frame(width: OneFeedTheme.thumbnailWidth, height: OneFeedTheme.thumbnailHeight)
+                .clipped()
+
+            VStack(alignment: .leading, spacing: 7) {
+                GalleryLabel(text: article.feed?.title ?? "Source", pigment: true)
                 Text(article.title)
-                    .font(.headline)
+                    .font(.system(.title3, design: .serif))
                     .foregroundStyle(.primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(meta)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-
-            if article.imageURL != nil {
-                ArticleThumbnail(url: article.imageURL, cornerRadius: 8)
-                    .frame(width: OneFeedTheme.thumbnailSize, height: OneFeedTheme.thumbnailSize)
-                    .clipped()
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens this article")
     }
 
     private var meta: String {
-        var parts: [String] = [article.feed?.title ?? "Unknown Source"]
+        var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
         parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
         if let status { parts.append(status) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "  ·  ")
     }
 }
 
-/// Apple News–style lead story for Today.
+/// Lookbook hero — full-bleed crop, then a wall label. The photograph is the work.
 struct FeaturedStory: View {
     let article: Article
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 18) {
             if article.imageURL != nil {
-                ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.cardRadius)
+                ArticleThumbnail(url: article.imageURL, cornerRadius: OneFeedTheme.radius)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 210)
+                    .frame(height: OneFeedTheme.featuredHeight)
                     .clipped()
             }
-            Text(article.feed?.title ?? "Source")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(OneFeedTheme.accent)
-                .lineLimit(1)
-            Text(article.title)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.primary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            if let excerpt = article.displayExcerpt {
-                Text(excerpt)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
+
+            VStack(alignment: .leading, spacing: 10) {
+                GalleryLabel(text: article.feed?.title ?? "Source", pigment: true)
+                Text(article.title)
+                    .font(.system(.title, design: .serif))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                if let excerpt = article.displayExcerpt {
+                    Text(excerpt)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                GalleryLabel(text: byline)
             }
-            Text(byline)
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
+            .padding(.horizontal, OneFeedTheme.pagePadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
-        .padding(.vertical, 10)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
@@ -139,15 +162,17 @@ struct FeaturedStory: View {
     }
 
     private var byline: String {
-        var parts = [article.publishedAt.formatted(.relative(presentation: .named))]
+        var parts = [article.publishedAt.formatted(.dateTime.month(.abbreviated).day().year())]
         if let duration = article.timedDurationPhrase { parts.append(duration) }
-        return parts.joined(separator: " · ")
+        return parts.joined(separator: "  ·  ")
     }
 }
 
 struct ArticleThumbnail: View {
     let url: URL?
-    var cornerRadius: CGFloat = 8
+    var cornerRadius: CGFloat = 2
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealed = false
 
     var body: some View {
         Color.clear
@@ -157,6 +182,8 @@ struct ArticleThumbnail: View {
                         switch phase {
                         case .success(let image):
                             image.resizable().scaledToFill()
+                                .opacity(revealed ? 1 : 0)
+                                .onAppear { reveal() }
                         default:
                             placeholder
                         }
@@ -167,17 +194,23 @@ struct ArticleThumbnail: View {
             }
             .clipped()
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .onChange(of: url) { _, _ in
+                revealed = false
+            }
             .accessibilityHidden(true)
+    }
+
+    private func reveal() {
+        if reduceMotion {
+            revealed = true
+        } else {
+            withAnimation(OneFeedMotion.reveal) { revealed = true }
+        }
     }
 
     private var placeholder: some View {
         Rectangle()
-            .fill(OneFeedTheme.secondarySurface)
-            .overlay {
-                Image(systemName: "photo")
-                    .font(.title3)
-                    .foregroundStyle(.tertiary)
-            }
+            .fill(Color.primary.opacity(0.05))
     }
 }
 
@@ -187,14 +220,10 @@ struct OneFeedSectionLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .tracking(1.2)
-                .textCase(.uppercase)
-                .foregroundStyle(.secondary)
+            GalleryLabel(text: title)
             Spacer(minLength: 8)
             Image(systemName: "chevron.down")
-                .font(.caption.weight(.semibold))
+                .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(expanded ? 0 : -90))
         }
@@ -208,10 +237,9 @@ struct OneFeedGroupCard<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(OneFeedTheme.surface, in: .rect(cornerRadius: OneFeedTheme.cardRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                Rectangle()
+                    .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
             }
     }
 }
@@ -226,12 +254,13 @@ struct FeedDirectoryRow: View {
         HStack(spacing: 14) {
             leading
             Text(title)
-                .font(.headline)
+                .font(.body)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
             Spacer(minLength: 8)
             UnreadCount(count)
         }
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -240,12 +269,12 @@ struct FeedDirectoryRow: View {
     private var leading: some View {
         if let swatchName {
             FolderSwatch(name: swatchName)
-                .frame(width: 28, alignment: .center)
+                .frame(width: 16, alignment: .center)
         } else if let systemImage {
             Image(systemName: systemImage)
-                .font(.body.weight(.medium))
+                .font(.body.weight(.regular))
                 .foregroundStyle(.secondary)
-                .frame(width: 28)
+                .frame(width: 16)
                 .accessibilityHidden(true)
         }
     }
@@ -256,8 +285,8 @@ struct DirectoryRowButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
+            .opacity(configuration.isPressed ? 0.62 : 1)
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.985)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
@@ -272,8 +301,11 @@ struct UnreadCount: View {
     var body: some View {
         if count > 0 {
             Text("\(count)")
-                .font(.body.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .regular).monospacedDigit())
+                .tracking(0.8)
+                .foregroundStyle(.tertiary)
+                .contentTransition(.numericText())
+                .animation(OneFeedMotion.list, value: count)
                 .accessibilityLabel("\(count) unread")
         }
     }
@@ -283,20 +315,21 @@ struct FolderSwatch: View {
     let name: String
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(tint.gradient)
-            .frame(width: 10, height: 10)
+        Rectangle()
+            .fill(tint)
+            .frame(width: 2, height: 16)
             .accessibilityHidden(true)
     }
 
+    /// Muted textile samples — ochre, oxblood, forest, slate, sand, ink.
     private var tint: Color {
         let palette: [Color] = [
-            Color(red: 0.91, green: 0.45, blue: 0.27),
-            Color(red: 0.27, green: 0.51, blue: 0.86),
-            Color(red: 0.31, green: 0.68, blue: 0.47),
-            Color(red: 0.62, green: 0.42, blue: 0.78),
-            Color(red: 0.95, green: 0.64, blue: 0.22),
-            Color(red: 0.22, green: 0.64, blue: 0.70)
+            Color(red: 0.72, green: 0.48, blue: 0.28),
+            Color(red: 0.45, green: 0.16, blue: 0.16),
+            Color(red: 0.22, green: 0.36, blue: 0.28),
+            Color(red: 0.28, green: 0.32, blue: 0.38),
+            Color(red: 0.62, green: 0.56, blue: 0.44),
+            Color(red: 0.18, green: 0.17, blue: 0.16)
         ]
         let index = abs(name.hashValue) % palette.count
         return palette[index]
@@ -328,12 +361,16 @@ struct ArticleRatingControl: View {
                 ForEach(1...5, id: \.self) { star in
                     Button {
                         guard article.isStored else { return }
-                        article.setRating(article.rating == star ? 0 : star)
-                        try? article.modelContext?.save()
+                        withAnimation(OneFeedMotion.press) {
+                            article.setRating(article.rating == star ? 0 : star)
+                            try? article.modelContext?.save()
+                        }
                     } label: {
                         Image(systemName: star <= article.rating ? "star.fill" : "star")
                             .font(.body)
                             .foregroundStyle(star <= article.rating ? Color.primary : Color.secondary.opacity(0.38))
+                            .contentTransition(.symbolEffect(.replace))
+                            .symbolEffect(.bounce, value: article.rating)
                             .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -356,10 +393,16 @@ struct EmptyLibraryState: View {
     var action: (() -> Void)? = nil
 
     var body: some View {
+        let _ = systemImage
         ContentUnavailableView {
-            Label(title, systemImage: systemImage)
+            VStack(spacing: 22) {
+                OneFeedMark(size: 40)
+                Text(title)
+                    .font(.system(.title2, design: .serif))
+            }
         } description: {
             Text(description)
+                .font(.body)
         } actions: {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
@@ -372,15 +415,20 @@ extension View {
     @ViewBuilder
     func articleListRow() -> some View {
         #if os(iOS)
-        listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-            .listRowSeparatorTint(Color.primary.opacity(0.08))
+        listRowInsets(EdgeInsets(top: 14, leading: 22, bottom: 14, trailing: 22))
+            .listRowSeparatorTint(Color.primary.opacity(0.1))
+            .listRowBackground(OneFeedTheme.plaster)
         #else
-        listRowInsets(EdgeInsets(top: 12, leading: 18, bottom: 12, trailing: 18))
+        listRowInsets(EdgeInsets(top: 16, leading: 24, bottom: 16, trailing: 24))
+            .listRowBackground(OneFeedTheme.plaster)
         #endif
     }
 
     func articleTimelineList() -> some View {
         listStyle(.plain)
-            .contentMargins(.bottom, 12, for: .scrollContent)
+            .scrollContentBackground(.hidden)
+            .background(OneFeedTheme.plaster)
+            .contentMargins(.bottom, 28, for: .scrollContent)
+            .oneFeedScrollEdge()
     }
 }
