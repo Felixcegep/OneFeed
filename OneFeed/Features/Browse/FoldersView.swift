@@ -50,7 +50,7 @@ struct FoldersView: View {
                 smartLink(.unread, systemImage: "circle", count: unread.count)
                 smartLink(.saved, systemImage: "star", count: saved.count)
             } header: {
-                GalleryLabel(text: "Smart Feeds")
+                GallerySectionHeader(text: "Smart Feeds")
             }
             Section {
                 if summaries.isEmpty {
@@ -76,16 +76,17 @@ struct FoldersView: View {
                     }
                 }
             } header: {
-                GalleryLabel(text: folderSectionTitle)
+                GallerySectionHeader(text: folderSectionTitle)
             }
         }
-        .        listStyle(.plain)
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(OneFeedTheme.plaster)
         .listRowSeparatorTint(OneFeedTheme.sand)
         .oneFeedScrollEdge()
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {

@@ -46,6 +46,7 @@ struct CurrentView: View {
         .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .toolbar {

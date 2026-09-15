@@ -66,6 +66,7 @@ struct SavedView: View {
         }
         .navigationTitle("Saved")
         .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
         .navigationSubtitle(viewModel.articles.isEmpty ? "" : "\(viewModel.articles.count)")
         .background(OneFeedTheme.plaster)
         .task { viewModel.configure(with: modelContext) }

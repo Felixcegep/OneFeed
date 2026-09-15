@@ -227,7 +227,18 @@ extension View {
     }
 
     func oneFeedScrollEdge() -> some View {
-        scrollEdgeEffectStyle(.soft, for: .top)
+        scrollEdgeEffectStyle(.hard, for: .top)
+    }
+
+    /// Opaque plaster behind large titles so cream list rows cannot show through.
+    @ViewBuilder
+    func oneFeedPaperToolbar() -> some View {
+        #if os(iOS)
+        toolbarBackground(OneFeedTheme.plaster, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+        #else
+        self
+        #endif
     }
 
     @ViewBuilder
