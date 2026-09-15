@@ -76,14 +76,14 @@ extension Color {
         name: String
     ) -> Color {
         #if os(macOS)
-        Color(nsColor: NSColor(name: name, dynamicProvider: { appearance in
+        return Color(nsColor: NSColor(name: name, dynamicProvider: { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
                 ? NSColor(srgbRed: dark.0, green: dark.1, blue: dark.2, alpha: 1)
                 : NSColor(srgbRed: light.0, green: light.1, blue: light.2, alpha: 1)
         }))
         #else
-        let _ = name
-        Color(uiColor: UIColor { traits in
+        _ = name
+        return Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(red: dark.0, green: dark.1, blue: dark.2, alpha: 1)
                 : UIColor(red: light.0, green: light.1, blue: light.2, alpha: 1)
