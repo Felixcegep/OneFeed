@@ -16,9 +16,9 @@ enum OneFeedTheme {
     static let cardRadius: CGFloat = 16
     static let pagePadding: CGFloat = 16
     static let thumbnailSize: CGFloat = 72
-    static let readerCorner: CGFloat = 22
-    static let readerWidth: CGFloat = 720
-    static let readerHeight: CGFloat = 640
+    static let readerCorner: CGFloat = 18
+    static let readerWidth: CGFloat = 760
+    static let readerHeight: CGFloat = 720
 }
 
 struct PrimaryActionStyle: ButtonStyle {
