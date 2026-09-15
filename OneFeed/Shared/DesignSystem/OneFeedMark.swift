@@ -1,20 +1,28 @@
 import SwiftUI
 
-/// Gallery pacing: slow fades, almost no bounce — like lights coming up on a hanging.
+/// Gallery pacing: springs for presses, slower fades for page changes. Interruptible.
 enum OneFeedMotion {
-    static let press = Animation.smooth(duration: 0.2)
-    static let card = Animation.smooth(duration: 0.48)
-    static let overlay = Animation.smooth(duration: 0.4)
-    static let page = Animation.smooth(duration: 0.56)
-    static let success = Animation.smooth(duration: 0.72)
-    static let dots = Animation.smooth(duration: 0.42)
+    static let press = Animation.snappy(duration: 0.16)
+    static let card = Animation.snappy(duration: 0.32)
+    static let list = Animation.snappy(duration: 0.34)
+    static let overlay = Animation.smooth(duration: 0.36)
+    static let page = Animation.smooth(duration: 0.48)
+    static let decision = Animation.smooth(duration: 0.42)
+    static let reveal = Animation.smooth(duration: 0.5)
+    static let success = Animation.smooth(duration: 0.52)
+    static let dots = Animation.snappy(duration: 0.28)
 
     static func cardTransition(reduceMotion: Bool) -> AnyTransition {
         if reduceMotion { return .opacity }
         return .asymmetric(
             insertion: .opacity.combined(with: .offset(y: 8)),
-            removal: .opacity
+            removal: .opacity.combined(with: .offset(x: 12))
         )
+    }
+
+    static func holdBeforeDismiss(reduceMotion: Bool) async {
+        if reduceMotion || ProcessInfo.processInfo.arguments.contains("-uiTesting") { return }
+        try? await Task.sleep(for: .milliseconds(520))
     }
 }
 
@@ -81,7 +89,8 @@ struct OneFeedMarkBurst: View {
     @State private var popped = false
 
     var body: some View {
-        OneFeedMark(size: size, arcProgress: popped ? 1 : 0.2, breathing: 1, dotScale: popped ? 1 : 0.7)
+        OneFeedMark(size: size, arcProgress: popped ? 1 : 0.2, breathing: 1, dotScale: popped ? 1.06 : 0.7)
+            .scaleEffect(popped ? 1 : 0.86)
             .opacity(popped ? 1 : 0)
             .onAppear {
                 if reduceMotion {
@@ -122,12 +131,73 @@ struct OneFeedToolbarRefresh: View {
     var action: () -> Void
 
     var body: some View {
-        if isRefreshing {
-            OneFeedMarkPulse(isActive: true, size: 22)
-                .frame(width: 28, height: 28)
-                .accessibilityLabel("Updating")
-        } else {
-            Button("Refresh", systemImage: "arrow.clockwise", action: action)
+        Group {
+            if isRefreshing {
+                OneFeedMarkPulse(isActive: true, size: 22)
+                    .frame(width: 28, height: 28)
+                    .accessibilityLabel("Updating")
+                    .transition(.opacity)
+            } else {
+                Button("Refresh", systemImage: "arrow.clockwise", action: action)
+            }
+        }
+        .animation(OneFeedMotion.overlay, value: isRefreshing)
+    }
+}
+
+/// Plaster curtain for Save / Skip / Done — covers the piece, not a glass chip on the text.
+struct OneFeedDecisionCurtain: View {
+    let state: ArticleState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
+
+    var body: some View {
+        ZStack {
+            OneFeedTheme.plaster.opacity(visible ? 0.97 : 0)
+            VStack(spacing: 18) {
+                artwork
+                GalleryLabel(text: caption)
+                    .opacity(visible ? 1 : 0)
+            }
+            .scaleEffect(visible ? 1 : 0.92)
+            .opacity(visible ? 1 : 0)
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(caption)
+        .onAppear {
+            if reduceMotion {
+                visible = true
+            } else {
+                withAnimation(OneFeedMotion.decision) { visible = true }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        switch state {
+        case .saved:
+            OneFeedMarkBurst(size: 64)
+        case .read:
+            Image(systemName: "checkmark")
+                .font(.system(size: 34, weight: .medium))
+                .symbolEffect(.bounce, options: .nonRepeating, value: visible)
+        case .skipped:
+            Image(systemName: "forward")
+                .font(.system(size: 32, weight: .medium))
+                .symbolEffect(.bounce, options: .nonRepeating, value: visible)
+        default:
+            OneFeedMarkBurst(size: 64)
+        }
+    }
+
+    private var caption: String {
+        switch state {
+        case .saved: "Kept"
+        case .read: "Done"
+        case .skipped: "Skipped"
+        default: ""
         }
     }
 }

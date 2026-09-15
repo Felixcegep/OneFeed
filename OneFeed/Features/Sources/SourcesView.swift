@@ -332,10 +332,18 @@ struct AddSourceView: View {
             }
             .overlay {
                 if showSuccess {
-                    OneFeedMarkBurst(size: 48)
-                        .transition(.opacity)
+                    ZStack {
+                        OneFeedTheme.plaster.opacity(0.97)
+                        VStack(spacing: 18) {
+                            OneFeedMarkBurst(size: 56)
+                            GalleryLabel(text: "Added")
+                        }
+                    }
+                    .ignoresSafeArea()
+                    .transition(.opacity)
                 }
             }
+            .animation(OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
             .toolbar {

@@ -169,14 +169,16 @@ struct ArticleCollectionView: View {
                         Button { selectedArticle = article } label: {
                             ArticleRow(article: article)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow()
                         .articleActions(for: article, in: modelContext)
                     }
                 }
                 .articleTimelineList()
+                .animation(OneFeedMotion.list, value: items.count)
             }
         }
+        .animation(OneFeedMotion.page, value: items.isEmpty)
         .navigationTitle(destination.title)
         .oneFeedInlineTitle()
         .oneFeedArticleCover(item: $selectedArticle) { article in

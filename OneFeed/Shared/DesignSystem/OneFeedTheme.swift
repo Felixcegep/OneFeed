@@ -17,10 +17,10 @@ enum OneFeedTheme {
     static let radius: CGFloat = 2
     static let cardRadius: CGFloat = 2
     static let pagePadding: CGFloat = 22
-    static let thumbnailWidth: CGFloat = 64
-    static let thumbnailHeight: CGFloat = 86
+    static let thumbnailWidth: CGFloat = 56
+    static let thumbnailHeight: CGFloat = 74
     static let thumbnailSize: CGFloat = 72
-    static let featuredHeight: CGFloat = 340
+    static let featuredHeight: CGFloat = 248
     static let readerCorner: CGFloat = 4
     static let readerWidth: CGFloat = 760
     static let readerHeight: CGFloat = 720
@@ -51,7 +51,7 @@ struct PrimaryActionStyle: ButtonStyle {
             .foregroundStyle(OneFeedTheme.plaster)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(Color.primary.opacity(configuration.isPressed ? 0.72 : 1), in: Rectangle())
-            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
@@ -142,7 +142,7 @@ struct FeaturedStory: View {
                     Text(excerpt)
                         .font(.body)
                         .foregroundStyle(.secondary)
-                        .lineLimit(3)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 GalleryLabel(text: byline)
@@ -168,6 +168,8 @@ struct FeaturedStory: View {
 struct ArticleThumbnail: View {
     let url: URL?
     var cornerRadius: CGFloat = 2
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealed = false
 
     var body: some View {
         Color.clear
@@ -177,6 +179,8 @@ struct ArticleThumbnail: View {
                         switch phase {
                         case .success(let image):
                             image.resizable().scaledToFill()
+                                .opacity(revealed ? 1 : 0)
+                                .onAppear { reveal() }
                         default:
                             placeholder
                         }
@@ -187,7 +191,18 @@ struct ArticleThumbnail: View {
             }
             .clipped()
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
+            .onChange(of: url) { _, _ in
+                revealed = false
+            }
             .accessibilityHidden(true)
+    }
+
+    private func reveal() {
+        if reduceMotion {
+            revealed = true
+        } else {
+            withAnimation(OneFeedMotion.reveal) { revealed = true }
+        }
     }
 
     private var placeholder: some View {
@@ -267,7 +282,8 @@ struct DirectoryRowButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.55 : 1)
+            .opacity(configuration.isPressed ? 0.62 : 1)
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.985)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
@@ -286,6 +302,7 @@ struct UnreadCount: View {
                 .tracking(0.8)
                 .foregroundStyle(.tertiary)
                 .contentTransition(.numericText())
+                .animation(OneFeedMotion.list, value: count)
                 .accessibilityLabel("\(count) unread")
         }
     }
@@ -341,12 +358,16 @@ struct ArticleRatingControl: View {
                 ForEach(1...5, id: \.self) { star in
                     Button {
                         guard article.isStored else { return }
-                        article.setRating(article.rating == star ? 0 : star)
-                        try? article.modelContext?.save()
+                        withAnimation(OneFeedMotion.press) {
+                            article.setRating(article.rating == star ? 0 : star)
+                            try? article.modelContext?.save()
+                        }
                     } label: {
                         Image(systemName: star <= article.rating ? "star.fill" : "star")
                             .font(.body)
                             .foregroundStyle(star <= article.rating ? Color.primary : Color.secondary.opacity(0.38))
+                            .contentTransition(.symbolEffect(.replace))
+                            .symbolEffect(.bounce, value: article.rating)
                             .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }

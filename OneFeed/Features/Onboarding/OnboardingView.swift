@@ -4,19 +4,28 @@ struct OnboardingView: View {
     let finish: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel = OnboardingViewModel()
+    @State private var starting = false
 
     var body: some View {
         ZStack {
             OneFeedTheme.plaster.ignoresSafeArea()
             VStack(spacing: 0) {
                 Spacer(minLength: 48)
-                OneFeedMarkPulse(isActive: viewModel.page == 0, size: 88)
-                    .padding(.bottom, 36)
+                ZStack {
+                    if starting {
+                        OneFeedMarkBurst(size: 88)
+                    } else {
+                        OneFeedMarkPulse(isActive: viewModel.page == 0, size: 88)
+                    }
+                }
+                .frame(height: 88)
+                .padding(.bottom, 36)
                 VStack(spacing: 16) {
                     Text(title)
                         .font(.system(size: 34, weight: .regular, design: .serif))
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.8)
+                        .contentTransition(.opacity)
                         .accessibilityAddTraits(.isHeader)
                     if !subtitle.isEmpty {
                         Text(subtitle)
@@ -24,6 +33,7 @@ struct OnboardingView: View {
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 12)
+                            .contentTransition(.opacity)
                     }
                 }
                 .id(viewModel.page)
@@ -42,32 +52,41 @@ struct OnboardingView: View {
                 .accessibilityLabel("Page \(viewModel.page + 1) of 3")
                 .padding(.bottom, 28)
                 Button(viewModel.isLastPage ? "Start reading" : "Continue") {
-                    if viewModel.isLastPage {
-                        finish()
-                    } else if reduceMotion {
-                        viewModel.advance()
-                    } else {
-                        withAnimation(OneFeedMotion.page) { viewModel.advance() }
-                    }
+                    advance()
                 }
                 .buttonStyle(PrimaryActionStyle())
+                .disabled(starting)
                 if viewModel.page == 1 {
                     Button("I’ll connect FreshRSS later") {
-                        if reduceMotion {
-                            viewModel.advance()
-                        } else {
-                            withAnimation(OneFeedMotion.page) { viewModel.advance() }
-                        }
+                        advance()
                     }
                     .font(.footnote)
                     .tracking(0.4)
                     .foregroundStyle(.secondary)
                     .frame(minHeight: 44)
                     .padding(.top, 8)
+                    .transition(.opacity)
                 }
             }
             .padding(.horizontal, 28)
             .padding(.bottom, 28)
+            .animation(reduceMotion ? nil : OneFeedMotion.page, value: viewModel.page)
+        }
+    }
+
+    private func advance() {
+        if viewModel.isLastPage {
+            starting = true
+            Task { @MainActor in
+                await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion)
+                finish()
+            }
+            return
+        }
+        if reduceMotion {
+            viewModel.advance()
+        } else {
+            withAnimation(OneFeedMotion.page) { viewModel.advance() }
         }
     }
 

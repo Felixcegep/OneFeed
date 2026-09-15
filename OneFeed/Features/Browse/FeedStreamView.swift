@@ -97,7 +97,7 @@ struct FeedStreamView: View {
                                     Button { selectedArticle = article } label: {
                                         ArticleRow(article: article)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(DirectoryRowButtonStyle())
                                     .articleActions(for: article, in: modelContext)
                                 }
                             }
@@ -117,11 +117,8 @@ struct FeedStreamView: View {
         .oneFeedSearchable($search, prompt: "Search articles")
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
-                if refresh.isRefreshing {
-                    Text(refresh.progress.countText)
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(refresh.progress.accessibilityText())
+                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                    Task { await refresh.refresh(in: modelContext) }
                 }
             }
             ToolbarItem(placement: .oneFeedTrailing) {

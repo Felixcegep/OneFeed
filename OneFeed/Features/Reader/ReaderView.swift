@@ -17,12 +17,16 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
     @State private var viewModel: ReaderViewModel
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
     @State private var savePulse = 0
+    @State private var donePulse = 0
+    @State private var skipPulse = 0
+    @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
     @State private var showingAPIKeySheet = false
     @State private var geminiKey = ""
@@ -48,10 +52,18 @@ struct ReaderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(OneFeedTheme.paper)
+            .overlay {
+                if let decision {
+                    OneFeedDecisionCurtain(state: decision)
+                }
+            }
+            .animation(OneFeedMotion.decision, value: decision)
+            .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
+            .animation(OneFeedMotion.overlay, value: viewModel.isSummarizing)
+            .animation(OneFeedMotion.page, value: mode)
             #if os(macOS)
             .toolbar(.hidden)
             #endif
-            .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
             .task {
                 await viewModel.enrichReadableHTML()
                 if viewModel.shouldOfferYouTubeSummary {
@@ -78,18 +90,23 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .oneFeedBottomBar) {
-                    Button("Save", systemImage: "star") {
-                        savePulse += 1
-                        onFinish(.saved)
+                    Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
+                        finish(.saved)
                     }
+                    .symbolEffect(.bounce, value: savePulse)
+                    .disabled(decision != nil)
                     .accessibilityHint("Keeps this in Saved")
                     Button("Skip", systemImage: "forward") {
-                        onFinish(.skipped)
+                        finish(.skipped)
                     }
+                    .symbolEffect(.bounce, value: skipPulse)
+                    .disabled(decision != nil)
                     ToolbarSpacer(.flexible)
                     Button("Done", systemImage: "checkmark") {
-                        onFinish(.read)
+                        finish(.read)
                     }
+                    .symbolEffect(.bounce, value: donePulse)
+                    .disabled(decision != nil)
                     .accessibilityHint("Marks this article done")
                     ToolbarSpacer(.flexible)
                     ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
@@ -109,6 +126,8 @@ struct ReaderView: View {
             .oneFeedInlineTitle()
             #endif
             .sensoryFeedback(.success, trigger: savePulse)
+            .sensoryFeedback(.success, trigger: donePulse)
+            .sensoryFeedback(.alignment, trigger: skipPulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -152,6 +171,21 @@ struct ReaderView: View {
     }
 
     private var article: Article { viewModel.article }
+
+    private func finish(_ state: ArticleState) {
+        guard decision == nil else { return }
+        decision = state
+        switch state {
+        case .saved: savePulse += 1
+        case .read: donePulse += 1
+        case .skipped: skipPulse += 1
+        default: break
+        }
+        Task { @MainActor in
+            await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion)
+            onFinish(state)
+        }
+    }
 
     private var modePicker: some View {
         Picker("View", selection: $mode) {
@@ -234,17 +268,19 @@ struct ReaderView: View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
                 readerBarButton("Save", systemImage: "star", help: "Keep this in Saved") {
-                    savePulse += 1
-                    onFinish(.saved)
+                    finish(.saved)
                 }
+                .disabled(decision != nil)
                 readerBarButton("Skip", systemImage: "forward", help: "Skip this article") {
-                    onFinish(.skipped)
+                    finish(.skipped)
                 }
+                .disabled(decision != nil)
             }
             .frame(maxWidth: .infinity)
             readerBarButton("Done", systemImage: "checkmark", help: "Mark this article done", emphasized: true) {
-                onFinish(.read)
+                finish(.read)
             }
+            .disabled(decision != nil)
             .frame(width: 88)
             HStack(spacing: 0) {
                 ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
@@ -332,6 +368,7 @@ struct ReaderView: View {
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
             }
+            .transition(.opacity.combined(with: .move(edge: .top)))
         } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
             ScrollView {
                 Text(summary)
@@ -345,6 +382,8 @@ struct ReaderView: View {
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
             }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 }
 
@@ -391,10 +430,12 @@ private struct WebsiteReaderPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .top) {
                 if page.isLoading {
-                    ProgressView()
+                    OneFeedMarkPulse(isActive: true, size: 18)
                         .padding(.top, 8)
+                        .transition(.opacity)
                 }
             }
+            .animation(OneFeedMotion.overlay, value: page.isLoading)
             .task(id: url) { _ = page.load(URLRequest(url: url)) }
     }
 }

@@ -12,8 +12,10 @@ enum ArticleActions {
         let queue = ArticleQueueService()
         let sync: any FreshRSSSyncing = FreshRSSSyncService()
         sync.enqueueMutation(for: article, transition: state, in: context)
-        do { try queue.complete(article, as: state, in: context) }
-        catch { }
+        withAnimation(OneFeedMotion.list) {
+            do { try queue.complete(article, as: state, in: context) }
+            catch { }
+        }
     }
 }
 

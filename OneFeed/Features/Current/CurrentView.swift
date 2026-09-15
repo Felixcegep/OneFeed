@@ -21,7 +21,7 @@ struct CurrentView: View {
                         Button { readerArticle = featured } label: {
                             FeaturedStory(article: featured)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
                         .listRowBackground(OneFeedTheme.plaster)
@@ -31,14 +31,17 @@ struct CurrentView: View {
                         Button { readerArticle = article } label: {
                             ArticleRow(article: article)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow()
                         .articleActions(for: article, in: modelContext)
                     }
                 }
                 .articleTimelineList()
+                .animation(OneFeedMotion.list, value: stories.count)
             }
         }
+        .animation(OneFeedMotion.page, value: stories.isEmpty)
+        .animation(OneFeedMotion.overlay, value: viewModel.isRefreshing)
         .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
