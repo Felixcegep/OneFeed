@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct AppRootView: View {
     @Environment(\.modelContext) private var modelContext
@@ -9,7 +10,7 @@ struct AppRootView: View {
 
     var body: some View {
         root
-            .tint(OneFeedTheme.accent)
+            .tint(Color.primary)
             .onOpenURL(perform: handleIncomingURL)
             .sheet(isPresented: $isPresentingSubscribe, onDismiss: { subscribeAddress = nil }) {
                 AddSourceView(initialAddress: subscribeAddress)
@@ -40,7 +41,7 @@ struct AppRootView: View {
                     CurrentView()
                 }
             }
-            Tab("Feed", systemImage: "list.bullet", value: .feed) {
+            Tab("Feed", systemImage: "square.grid.2x2", value: .feed) {
                 NavigationStack {
                     FoldersView()
                 }
@@ -75,7 +76,7 @@ private struct MacRootView: View {
             List(selection: $selectedTab) {
                 Section {
                     Label("Today", systemImage: "sun.max").tag(AppTab.today)
-                    Label("Feed", systemImage: "list.bullet").tag(AppTab.feed)
+                    Label("Feed", systemImage: "square.grid.2x2").tag(AppTab.feed)
                     Label("Saved", systemImage: "star").tag(AppTab.saved)
                 }
                 Section {
@@ -84,6 +85,11 @@ private struct MacRootView: View {
             }
             .listStyle(.sidebar)
             .navigationTitle("OneFeed")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                OneFeedBrandLockup(markSize: 28, showsTagline: true)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 20)
+            }
             .navigationSplitViewColumnWidth(min: 196, ideal: 216, max: 260)
         } detail: {
             NavigationStack {
@@ -94,7 +100,7 @@ private struct MacRootView: View {
                 case .settings: SettingsView()
                 }
             }
-            .background(OneFeedTheme.page)
+            .background(OneFeedTheme.plaster)
         }
         .navigationSplitViewStyle(.balanced)
     }

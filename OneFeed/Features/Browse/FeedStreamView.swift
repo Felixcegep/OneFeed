@@ -89,12 +89,8 @@ struct FeedStreamView: View {
                         } else {
                             ForEach(dayGroups) { group in
                                 if dayGroups.count > 1 {
-                                    Text(group.title)
-                                        .font(.subheadline.weight(.semibold))
-                                        .tracking(1.2)
-                                        .textCase(.uppercase)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.top, 6)
+                                    GalleryLabel(text: group.title)
+                                        .padding(.top, 10)
                                         .accessibilityAddTraits(.isHeader)
                                 }
                                 ForEach(group.articles.filter(\.isStored)) { article in
@@ -115,7 +111,7 @@ struct FeedStreamView: View {
                 .clipped()
             }
         }
-        .background(OneFeedTheme.grouped.ignoresSafeArea())
+        .background(OneFeedTheme.plaster.ignoresSafeArea())
         .navigationTitle("Feed")
         .refreshProgressBanner(refresh.progress)
         .oneFeedSearchable($search, prompt: "Search articles")

@@ -38,14 +38,17 @@ struct FoldersView: View {
 
     var body: some View {
         List {
-            Section("Smart Feeds") {
+            Section {
                 smartLink(.today, systemImage: "sun.max", count: today.count)
                 smartLink(.unread, systemImage: "circle", count: unread.count)
                 smartLink(.saved, systemImage: "star", count: saved.count)
+            } header: {
+                GalleryLabel(text: "Smart Feeds")
             }
-            Section(folderSectionTitle) {
+            Section {
                 if summaries.isEmpty {
                     Text("Folders appear here after you add sources.")
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(summaries) { summary in
@@ -62,22 +65,22 @@ struct FoldersView: View {
                         .accessibilityHint("Opens unread stories in this folder")
                     }
                 }
+            } header: {
+                GalleryLabel(text: folderSectionTitle)
             }
         }
-        .oneFeedGroupedListStyle()
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(OneFeedTheme.plaster)
+        .oneFeedScrollEdge()
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
-                if refresh.isRefreshing {
-                    ProgressView()
-                        .accessibilityLabel("Refresh")
-                } else {
-                    Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await refresh.refresh(in: modelContext) }
-                    }
+                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                    Task { await refresh.refresh(in: modelContext) }
                 }
             }
             ToolbarItem(placement: .oneFeedTrailing) {

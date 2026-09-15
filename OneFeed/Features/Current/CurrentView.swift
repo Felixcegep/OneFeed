@@ -22,8 +22,9 @@ struct CurrentView: View {
                             FeaturedStory(article: featured)
                         }
                         .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 12, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
                         .listRowSeparator(.hidden)
+                        .listRowBackground(OneFeedTheme.plaster)
                         .articleActions(for: featured, in: modelContext)
                     }
                     ForEach(Array(stories.dropFirst())) { article in
@@ -38,10 +39,21 @@ struct CurrentView: View {
                 .articleTimelineList()
             }
         }
+        .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                    Task { await viewModel.refresh() }
+                }
+            }
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { showingSources = true }
+            }
+        }
         .task {
             viewModel.configure(with: modelContext)
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
@@ -83,17 +95,19 @@ struct CurrentView: View {
 
     private var caughtUp: some View {
         ContentUnavailableView {
-            if viewModel.isRefreshing {
-                Label {
-                    Text(viewModel.progress.remainingText.isEmpty ? "Updating…" : viewModel.progress.remainingText)
-                } icon: {
-                    ProgressView()
+            VStack(spacing: 22) {
+                if viewModel.isRefreshing {
+                    OneFeedMarkPulse(isActive: true, size: 48)
+                    Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
+                        .font(.system(.title2, design: .serif))
+                } else {
+                    OneFeedMark(size: 48)
+                    Text("The room is still.")
+                        .font(.system(.title2, design: .serif))
                 }
-            } else {
-                Label("You're caught up.", systemImage: "checkmark.circle")
             }
         } description: {
-            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow gets a new stack.")
+            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow, a new hanging.")
         } actions: {
             Button(viewModel.isRefreshing ? viewModel.progress.countText : "Refresh") {
                 Task { await viewModel.refresh() }
@@ -101,6 +115,8 @@ struct CurrentView: View {
             .disabled(viewModel.isRefreshing)
             Button("Add a source") { showingSources = true }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OneFeedTheme.plaster)
     }
 
     private var caughtUpProgressCopy: String {

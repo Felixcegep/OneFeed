@@ -112,13 +112,18 @@ struct SettingsView: View {
             } footer: {
                 Text("Restores Must read, Builders, topic folders, À scanner, and Papers — then fetches them. OPML import keeps folder names.")
             }
-            Section("About") {
-                LabeledContent("OneFeed", value: "1.0")
-                Text("A reader for sources you chose.").foregroundStyle(.secondary)
+            Section {
+                OneFeedBrandLockup(markSize: 52, showsTagline: true)
+                    .padding(.vertical, 18)
+                LabeledContent("Edition", value: "1.0")
+            } header: {
+                GalleryLabel(text: "About")
             }
         }
         .navigationTitle("Settings")
         .oneFeedInlineTitle()
+        .scrollContentBackground(.hidden)
+        .background(OneFeedTheme.plaster)
         .refreshProgressBanner(viewModel.progress)
         .task {
             viewModel.configure(with: modelContext)

@@ -48,13 +48,6 @@ struct ReaderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(OneFeedTheme.paper)
-            .overlay(alignment: .top) {
-                if viewModel.isExtracting {
-                    ProgressView()
-                        .padding(.top, 8)
-                        .transition(.opacity)
-                }
-            }
             #if os(macOS)
             .toolbar(.hidden)
             #endif
@@ -77,7 +70,12 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItem(placement: .oneFeedTrailing) {
-                    readingOptionsMenu
+                    HStack(spacing: 10) {
+                        if viewModel.isExtracting {
+                            OneFeedMarkPulse(isActive: true, size: 18)
+                        }
+                        readingOptionsMenu
+                    }
                 }
                 ToolbarItemGroup(placement: .oneFeedBottomBar) {
                     Button("Save", systemImage: "star") {
@@ -88,10 +86,12 @@ struct ReaderView: View {
                     Button("Skip", systemImage: "forward") {
                         onFinish(.skipped)
                     }
-                    Button("Done", systemImage: "checkmark.circle") {
+                    ToolbarSpacer(.flexible)
+                    Button("Done", systemImage: "checkmark") {
                         onFinish(.read)
                     }
                     .accessibilityHint("Marks this article done")
+                    ToolbarSpacer(.flexible)
                     ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
                         Image(systemName: "square.and.arrow.up")
                     }
@@ -220,6 +220,10 @@ struct ReaderView: View {
             readingOptionsMenu
                 .menuStyle(.borderlessButton)
                 .frame(width: 28, height: 28)
+
+            if viewModel.isExtracting {
+                OneFeedMarkPulse(isActive: true, size: 18)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -228,30 +232,37 @@ struct ReaderView: View {
 
     private var readerBottomBar: some View {
         HStack(spacing: 0) {
-            readerBarButton("Save", systemImage: "star", help: "Keep this in Saved") {
-                savePulse += 1
-                onFinish(.saved)
+            HStack(spacing: 0) {
+                readerBarButton("Save", systemImage: "star", help: "Keep this in Saved") {
+                    savePulse += 1
+                    onFinish(.saved)
+                }
+                readerBarButton("Skip", systemImage: "forward", help: "Skip this article") {
+                    onFinish(.skipped)
+                }
             }
-            readerBarButton("Skip", systemImage: "forward", help: "Skip this article") {
-                onFinish(.skipped)
-            }
-            readerBarButton("Done", systemImage: "checkmark.circle", help: "Mark this article done", emphasized: true) {
+            .frame(maxWidth: .infinity)
+            readerBarButton("Done", systemImage: "checkmark", help: "Mark this article done", emphasized: true) {
                 onFinish(.read)
             }
-            ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
-                ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
+            .frame(width: 88)
+            HStack(spacing: 0) {
+                ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                    ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.plain)
+                .disabled(article.url == nil)
+                .help("Share")
+                .accessibilityLabel("Share")
+                readerBarButton("Browser", systemImage: "safari", help: "Open in browser") {
+                    isPresentingBrowser = true
+                }
+                .disabled(article.url == nil)
             }
-            .buttonStyle(.plain)
-            .disabled(article.url == nil)
-            .help("Share")
-            .accessibilityLabel("Share")
-            readerBarButton("Browser", systemImage: "safari", help: "Open in browser") {
-                isPresentingBrowser = true
-            }
-            .disabled(article.url == nil)
+            .frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .background(.bar)
     }
 
@@ -311,26 +322,29 @@ struct ReaderView: View {
         if article.contentKind != "youtube" {
             EmptyView()
         } else if viewModel.isSummarizing {
-            HStack(spacing: 10) {
-                ProgressView()
-                Text("Summarizing…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                OneFeedMarkPulse(isActive: true, size: 18)
+                GalleryLabel(text: "Summarizing")
             }
             .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+            }
         } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
             ScrollView {
                 Text(summary)
-                    .font(.body)
+                    .font(.system(.body, design: .serif))
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 160)
             .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 12)
-        }
+            .padding(.vertical, 16)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 1)
+            }
     }
 }
 

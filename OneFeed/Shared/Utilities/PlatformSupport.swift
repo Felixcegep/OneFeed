@@ -1,9 +1,29 @@
 #if os(macOS)
 import AppKit
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
 import SwiftUI
 
 extension Color {
+    /// Warm gallery plaster / black-box wall. COS and museum sites treat the wall as a material.
+    static var oneFeedPlaster: Color {
+        #if os(macOS)
+        Color(nsColor: NSColor(name: "OneFeedPlaster", dynamicProvider: { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(srgbRed: 0.09, green: 0.085, blue: 0.078, alpha: 1)
+                : NSColor(srgbRed: 0.965, green: 0.953, blue: 0.933, alpha: 1)
+        }))
+        #else
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.09, green: 0.085, blue: 0.078, alpha: 1)
+                : UIColor(red: 0.965, green: 0.953, blue: 0.933, alpha: 1)
+        })
+        #endif
+    }
+
     static var oneFeedSystemBackground: Color {
         #if os(macOS)
         Color(nsColor: .windowBackgroundColor)
@@ -130,9 +150,17 @@ extension View {
     func oneFeedGroupedListStyle() -> some View {
         #if os(macOS)
         listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(OneFeedTheme.plaster)
         #else
         listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(OneFeedTheme.plaster)
         #endif
+    }
+
+    func oneFeedScrollEdge() -> some View {
+        scrollEdgeEffectStyle(.soft, for: .top)
     }
 
     @ViewBuilder

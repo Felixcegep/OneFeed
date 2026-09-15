@@ -9,9 +9,7 @@ struct RefreshProgressBanner: View {
             ProgressView(value: progress.fraction)
                 .progressViewStyle(.linear)
                 .tint(OneFeedTheme.accent)
-                .frame(height: 2)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
+                .frame(height: 1)
                 .accessibilityLabel(progress.accessibilityText())
                 .accessibilityAddTraits(.updatesFrequently)
         }

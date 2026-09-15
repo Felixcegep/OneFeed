@@ -82,45 +82,36 @@ final class ReaderViewModel {
         let titleSize = UIFontMetrics(forTextStyle: .title1).scaledValue(for: 32)
         let metaSize = UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 14)
         let sourceSize = UIFontMetrics(forTextStyle: .caption1).scaledValue(for: 12)
-        let horizontalPad = 22
+        let horizontalPad = 28
         #else
         let titleSize: CGFloat = 34
         let metaSize: CGFloat = 14
         let sourceSize: CGFloat = 12
-        let horizontalPad = 40
+        let horizontalPad = 48
         #endif
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
           color-scheme: light dark;
-          --paper: #FFFFFF;
-          --ink: #1F1F1F;
-          --title: #1A1A1A;
-          --meta: #8A8A8A;
-          --rule: #ECECEC;
-          --link: #4A6FE3;
-          --quote: #D86B33;
-        }
-        @media (prefers-color-scheme: dark) {
-          :root {
-            --paper: #121212;
-            --ink: #EDEDED;
-            --title: #F2F2F2;
-            --meta: #A6A6A6;
-            --rule: #2E2E2E;
-            --link: #7B97EE;
-          }
+          --paper: transparent;
+          --ink: light-dark(#1A1916, #F3F0EA);
+          --title: light-dark(#141311, #F7F4EE);
+          --meta: light-dark(#6F6A62, #A39E95);
+          --rule: light-dark(#E4DFD6, #2A2824);
+          --link: light-dark(#C14A1C, #E07A4A);
+          --quote: light-dark(#C14A1C, #E07A4A);
         }
         html { overflow-x: hidden; }
         body {
           font-family: \(family);
           font-size: \(bodySize)px;
           font-optical-sizing: auto;
-          line-height: 1.72;
+          font-weight: 400;
+          line-height: 1.78;
           margin: 0 auto;
-          padding: 28px \(horizontalPad)px 160px;
-          max-width: 640px;
+          padding: 40px \(horizontalPad)px 180px;
+          max-width: 36em;
           color: var(--ink);
           background: var(--paper);
           overflow-x: hidden;
@@ -130,67 +121,69 @@ final class ReaderViewModel {
           -webkit-hyphens: auto;
         }
         .source {
-          font: 650 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
-          letter-spacing: 0.08em;
+          font: 500 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+          letter-spacing: 0.18em;
           text-transform: uppercase;
-          color: var(--meta);
+          color: var(--quote);
         }
         h1 {
           font-family: \(family);
           font-size: \(titleSize)px;
-          font-weight: 650;
-          line-height: 1.22;
-          letter-spacing: -0.02em;
+          font-weight: 500;
+          line-height: 1.18;
+          letter-spacing: -0.018em;
           color: var(--title);
-          margin: 14px 0 10px;
+          margin: 18px 0 12px;
         }
         .meta {
-          font: \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: 400 \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+          letter-spacing: 0.04em;
           color: var(--meta);
-          margin: 0 0 28px;
-          padding-bottom: 20px;
+          margin: 0 0 36px;
+          padding-bottom: 24px;
           border-bottom: 1px solid var(--rule);
         }
         h2, h3 {
           font-family: \(family);
-          font-weight: 650;
-          line-height: 1.3;
-          letter-spacing: -0.015em;
+          font-weight: 500;
+          line-height: 1.28;
+          letter-spacing: -0.012em;
           color: var(--title);
-          margin: 1.6em 0 0.55em;
+          margin: 1.8em 0 0.5em;
         }
         h2 { font-size: \(headingSize)px; }
         h3 { font-size: \(sectionSize)px; }
-        p { margin: 0 0 1.05em; }
+        p { margin: 0 0 1.15em; }
         img, video, iframe, figure {
           max-width: 100%;
           height: auto;
           display: block;
-          margin: 1.4em 0;
-          border-radius: 10px;
+          margin: 1.8em 0;
+          border-radius: 2px;
         }
         figcaption, cite {
           font: 400 \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          letter-spacing: 0.04em;
           color: var(--meta);
           display: block;
           margin-top: 8px;
         }
-        a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+        a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
         pre, code { overflow-x: auto; max-width: 100%; }
         pre {
-          padding: 14px 16px;
-          border-radius: 10px;
-          background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+          padding: 16px 18px;
+          border-radius: 2px;
+          background: color-mix(in srgb, var(--ink) 5%, transparent);
         }
         blockquote {
-          margin: 1.4em 0;
-          padding: 2px 0 2px 16px;
-          border-left: 3px solid var(--quote);
+          margin: 1.8em 0;
+          padding: 2px 0 2px 18px;
+          border-left: 1px solid var(--quote);
           font-style: italic;
-          color: color-mix(in srgb, var(--ink) 88%, var(--meta));
+          color: color-mix(in srgb, var(--ink) 86%, var(--meta));
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
-        hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
+        hr { border: 0; border-top: 1px solid var(--rule); margin: 2.4em 0; }
         </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
         """
     }
