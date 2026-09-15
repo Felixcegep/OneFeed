@@ -92,7 +92,13 @@ private struct CurrentArticleWidgetView: View {
                 }
             }
         }
-        .containerBackground(for: .widget) { WidgetPaper.cream }
+        .containerBackground(for: .widget) {
+            if family == .accessoryInline || family == .accessoryRectangular {
+                AccessoryWidgetBackground()
+            } else {
+                WidgetPaper.cream
+            }
+        }
     }
 }
 

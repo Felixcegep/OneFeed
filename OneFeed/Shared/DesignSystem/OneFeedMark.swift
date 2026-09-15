@@ -79,7 +79,7 @@ struct OneFeedMarkPulse: View {
         let period = 1.2
         let cycle = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
         let wave = 0.5 - 0.5 * cos(2 * Double.pi * (cycle / period))
-        return 1.0 + (0.15 * wave)
+        return CGFloat(1.0 + 0.15 * wave)
     }
 }
 
