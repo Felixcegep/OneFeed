@@ -71,6 +71,18 @@ struct GalleryLabel: View {
     }
 }
 
+/// Sticky list header with plaster behind the type so rows cannot show through.
+struct GallerySectionHeader: View {
+    let text: String
+
+    var body: some View {
+        GalleryLabel(text: text)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 6)
+            .background(OneFeedTheme.plaster)
+    }
+}
+
 /// Ink fill, cream type, capsule. Press scales to 0.97 — no offset shadow.
 struct PrimaryActionStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
