@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 /// Drops old unread/unkept articles so the on-device library stays small.
-/// Saved (starred) items and anything in today's stack are never purged.
+/// Items in Queue and anything in today's stack are never purged.
 @MainActor
 struct ArticleRetentionService {
     nonisolated static let defaultRetentionDays = 7

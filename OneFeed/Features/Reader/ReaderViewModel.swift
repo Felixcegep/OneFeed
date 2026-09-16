@@ -41,8 +41,11 @@ final class ReaderViewModel {
         guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
         isExtracting = true
         defer { isExtracting = false }
-        if let html = await ArticleExtractionService().extractedHTML(for: article), html != article.contentHTML {
-            article.contentHTML = html
+        if let html = await ArticleExtractionService().extractedHTML(for: article) {
+            if html != article.contentHTML {
+                article.contentHTML = html
+            }
+            article.refreshEstimatedReadingMinutes()
             try? article.modelContext?.save()
         }
     }
@@ -103,17 +106,21 @@ final class ReaderViewModel {
         let sourceSize: CGFloat = 11
         let horizontalPad = 48
         #endif
+        let metaBits = [
+            article.publishedAt.formatted(date: .long, time: .omitted),
+            article.durationPhrase,
+        ].filter { !$0.isEmpty }
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
           color-scheme: light dark;
-          --paper: light-dark(#FBF9F4, #1F1B16);
+          --paper: light-dark(#FBF9F4, #2A2520);
           --ink: light-dark(#2D2520, #E8E0D2);
           --title: light-dark(#2D2520, #E8E0D2);
-          --meta: light-dark(#8A7E72, #9C9084);
+          --meta: light-dark(#5A4F44, #B8AFA3);
           --rule: light-dark(#DDD2BD, #3A342C);
-          --link: #D97757;
+          --link: light-dark(#A04B32, #E89B7A);
           --quote: #D97757;
         }
         html { overflow-x: hidden; }
@@ -124,7 +131,7 @@ final class ReaderViewModel {
           font-weight: 400;
           line-height: 1.55;
           margin: 0 auto;
-          padding: 36px \(horizontalPad)px 180px;
+          padding: 36px \(horizontalPad)px 48px;
           max-width: 36em;
           color: var(--ink);
           background: var(--paper);
@@ -196,7 +203,7 @@ final class ReaderViewModel {
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
-        </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(article.publishedAt.formatted(date: .long, time: .omitted)) · \(article.durationPhrase)</div>\(body)</body></html>
+        </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div>\(body)</body></html>
         """
         cachedDocument = (key, html)
         return html

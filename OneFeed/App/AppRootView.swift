@@ -25,6 +25,12 @@ struct AppRootView: View {
                 isPresentingSubscribe = true
                 selectedTab = .feed
             }
+            .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.openFeed)) { _ in
+                selectedTab = .feed
+            }
+            .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.openToday)) { _ in
+                selectedTab = .today
+            }
             .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.refresh)) { _ in
                 Task { await BackgroundRefreshCoordinator.refresh(in: modelContext) }
             }
@@ -36,9 +42,9 @@ struct AppRootView: View {
         MacRootView(selectedTab: $selectedTab)
         #else
         TabView(selection: $selectedTab) {
-            Tab("Today", systemImage: "sun.max", value: .today) {
+            Tab("Queue", systemImage: "square.stack", value: .queue) {
                 NavigationStack {
-                    CurrentView()
+                    SavedView()
                 }
             }
             Tab("Feed", systemImage: "square.grid.2x2", value: .feed) {
@@ -46,9 +52,14 @@ struct AppRootView: View {
                     FoldersView()
                 }
             }
-            Tab("Saved", systemImage: "star", value: .saved) {
+            Tab("Today", systemImage: "sun.max", value: .today) {
                 NavigationStack {
-                    SavedView()
+                    CurrentView()
+                }
+            }
+            Tab("Settings", systemImage: "gearshape", value: .settings) {
+                NavigationStack {
+                    SettingsView()
                 }
             }
         }
@@ -64,7 +75,7 @@ struct AppRootView: View {
 }
 
 enum AppTab: Hashable {
-    case today, feed, saved, settings
+    case queue, feed, today, settings
 }
 
 #if os(macOS)
@@ -75,9 +86,9 @@ private struct MacRootView: View {
         NavigationSplitView {
             List(selection: $selectedTab) {
                 Section {
-                    Label("Today", systemImage: "sun.max").tag(AppTab.today)
+                    Label("Queue", systemImage: "square.stack").tag(AppTab.queue)
                     Label("Feed", systemImage: "square.grid.2x2").tag(AppTab.feed)
-                    Label("Saved", systemImage: "star").tag(AppTab.saved)
+                    Label("Today", systemImage: "sun.max").tag(AppTab.today)
                 }
                 Section {
                     Label("Settings", systemImage: "gearshape").tag(AppTab.settings)
@@ -94,9 +105,9 @@ private struct MacRootView: View {
         } detail: {
             NavigationStack {
                 switch selectedTab {
-                case .today: CurrentView()
+                case .queue: SavedView()
                 case .feed: FoldersView()
-                case .saved: SavedView()
+                case .today: CurrentView()
                 case .settings: SettingsView()
                 }
             }

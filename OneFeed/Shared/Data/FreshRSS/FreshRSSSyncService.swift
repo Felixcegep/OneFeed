@@ -237,11 +237,23 @@ final class FreshRSSSyncService {
         article.author = snapshot.author
         article.publishedAt = snapshot.publishedAt ?? article.publishedAt
         article.summary = snapshot.summary
-        article.contentHTML = snapshot.contentHTML
+        if let remoteHTML = snapshot.contentHTML {
+            let existingHTML = article.contentHTML ?? ""
+            if remoteHTML.count >= existingHTML.count {
+                article.contentHTML = remoteHTML
+            }
+        }
         if let minutes = snapshot.consumeMinutes, minutes > 0 {
-            article.estimatedReadingMinutes = minutes
+            article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, minutes)
         } else {
-            article.estimatedReadingMinutes = Self.readingMinutes(for: snapshot.contentHTML ?? snapshot.summary)
+            article.refreshEstimatedReadingMinutes()
+            let remoteMinutes = max(
+                1,
+                ContentClassifier.readingMinutes(
+                    words: ContentClassifier.wordCount(in: snapshot.contentHTML ?? snapshot.summary ?? "")
+                )
+            )
+            article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, remoteMinutes)
         }
         article.remoteID = snapshot.remoteID
         article.isRemoteStarred = snapshot.isStarred
@@ -286,10 +298,6 @@ final class FreshRSSSyncService {
         }
     }
 
-    private static func readingMinutes(for html: String?) -> Int {
-        let plain = (html ?? "").replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-        return max(1, Int(ceil(Double(plain.split(whereSeparator: \.isWhitespace).count) / 220)))
-    }
 }
 
 extension FreshRSSSyncService: FreshRSSSyncing {}

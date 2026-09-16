@@ -5,6 +5,8 @@ struct SourcesView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = SourcesViewModel()
     @State private var addPreferredFolder: String?
+    @State private var pickingFolder: FolderIconTarget?
+    @State private var iconTick = 0
 
     var body: some View {
         Group {
@@ -17,23 +19,37 @@ struct SourcesView: View {
                     action: { presentAdd() }
                 )
             } else {
+                let _ = iconTick
                 List {
-                    ForEach(viewModel.folders) { folder in
-                        NavigationLink {
-                            FolderFeedsView(
-                                folderID: folder.folderID,
-                                viewModel: viewModel,
-                                onAddInFolder: {
-                                    addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
-                                    viewModel.isPresentingAddSource = true
+                    Section {
+                        ForEach(viewModel.folders) { folder in
+                            HStack(spacing: 4) {
+                                FolderEmojiButton(name: folder.name) {
+                                    pickingFolder = FolderIconTarget(name: folder.name)
                                 }
-                            )
-                        } label: {
-                            FolderRow(folder: folder)
+                                NavigationLink {
+                                    FolderFeedsView(
+                                        folderID: folder.folderID,
+                                        viewModel: viewModel,
+                                        onAddInFolder: {
+                                            addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
+                                            viewModel.isPresentingAddSource = true
+                                        }
+                                    )
+                                } label: {
+                                    FolderRow(folder: folder)
+                                }
+                            }
+                            .accessibilityIdentifier("folder-\(folder.name)")
+                            .oneFeedDirectoryRow()
+                            .contextMenu {
+                                Button("Change icon", systemImage: "face.smiling") {
+                                    pickingFolder = FolderIconTarget(name: folder.name)
+                                }
+                            }
                         }
-                        .accessibilityIdentifier("folder-\(folder.name)")
-                        .listRowBackground(OneFeedTheme.paper)
-                        .listRowSeparatorTint(OneFeedTheme.sand)
+                    } header: {
+                        GallerySectionHeader(text: "Folders")
                     }
                 }
                 .oneFeedGroupedListStyle()
@@ -67,6 +83,11 @@ struct SourcesView: View {
         }) {
             AddSourceView(preferredFolder: addPreferredFolder)
         }
+        .sheet(item: $pickingFolder) { target in
+            FolderEmojiPicker(folderName: target.name) { _ in
+                iconTick += 1
+            }
+        }
         .alert("New Folder", isPresented: $viewModel.isPresentingNewFolder) {
             TextField("Must read, Builders…", text: $viewModel.newFolderName)
             Button("Cancel", role: .cancel) {}
@@ -94,18 +115,15 @@ private struct FolderRow: View {
     let folder: FeedFolderGroup
 
     var body: some View {
-        HStack(spacing: 14) {
-            FolderSwatch(name: folder.name)
-                .frame(width: 16, alignment: .center)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(folder.name)
-                    .font(OneFeedTheme.sansUI(15, weight: .medium))
-                    .foregroundStyle(OneFeedTheme.ink)
-                Text(sourceCount)
-                    .font(OneFeedTheme.sansUI(12, weight: .regular))
-                    .foregroundStyle(OneFeedTheme.stone)
-            }
+        VStack(alignment: .leading, spacing: 5) {
+            Text(folder.name)
+                .font(.body.weight(.medium))
+                .foregroundStyle(OneFeedTheme.ink)
+            Text(sourceCount)
+                .font(.caption)
+                .foregroundStyle(OneFeedTheme.graphite)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens feeds in this folder")
@@ -128,34 +146,7 @@ private struct FolderFeedsView: View {
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
-        List {
-            ForEach(viewModel.feeds(in: folderID)) { feed in
-                NavigationLink {
-                    SourceDetailView(feed: feed, context: modelContext)
-                } label: {
-                    SourceRow(feed: feed)
-                }
-                .listRowBackground(OneFeedTheme.paper)
-                .listRowSeparatorTint(OneFeedTheme.sand)
-                .contextMenu {
-                    Menu("Move to Folder") {
-                        Button("Unfiled") { viewModel.move(feed, to: nil) }
-                        ForEach(viewModel.folderNames, id: \.self) { name in
-                            Button(name) { viewModel.move(feed, to: name) }
-                        }
-                    }
-                }
-            }
-        }
-        .oneFeedGroupedListStyle()
-        .navigationTitle(folderID.title)
-        .oneFeedInlineTitle()
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Add", systemImage: "plus") { onAddInFolder() }
-            }
-        }
-        .overlay {
+        Group {
             if viewModel.feeds(in: folderID).isEmpty {
                 EmptyLibraryState(
                     title: "No feeds",
@@ -164,6 +155,34 @@ private struct FolderFeedsView: View {
                     actionTitle: "Add Sources",
                     action: { onAddInFolder() }
                 )
+            } else {
+                List {
+                    ForEach(viewModel.feeds(in: folderID)) { feed in
+                        NavigationLink {
+                            SourceDetailView(feed: feed, context: modelContext)
+                        } label: {
+                            SourceRow(feed: feed)
+                        }
+                        .listRowBackground(OneFeedTheme.paper)
+                        .listRowSeparatorTint(OneFeedTheme.sand)
+                        .contextMenu {
+                            Menu("Move to Folder") {
+                                Button("Unfiled") { viewModel.move(feed, to: nil) }
+                                ForEach(viewModel.folderNames, id: \.self) { name in
+                                    Button(name) { viewModel.move(feed, to: name) }
+                                }
+                            }
+                        }
+                    }
+                }
+                .oneFeedGroupedListStyle()
+            }
+        }
+        .navigationTitle(folderID.title)
+        .oneFeedInlineTitle()
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add", systemImage: "plus") { onAddInFolder() }
             }
         }
     }
@@ -175,25 +194,41 @@ private struct SourceRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(feed.title)
-                .font(OneFeedTheme.sansUI(15, weight: .medium))
+                .font(.headline)
                 .foregroundStyle(OneFeedTheme.ink)
-            HStack(spacing: 5) {
-                Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
-                    .lineLimit(1)
-                if !feed.isEnabled {
-                    Text("·")
-                    Text("Paused")
-                } else if feed.remoteID != nil {
-                    Text("·")
-                    Text("Synced")
+            ViewThatFits(in: .horizontal) {
+                sourceDetails
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !feed.isEnabled {
+                        Text("Paused")
+                    } else if feed.remoteID != nil {
+                        Text("Synced")
+                    }
                 }
             }
-            .font(OneFeedTheme.sansUI(12, weight: .regular))
+            .font(.caption)
             .foregroundStyle(OneFeedTheme.graphite)
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityHint(feed.isEnabled ? "Opens source details" : "Paused. Opens source details")
+    }
+
+    private var sourceDetails: some View {
+        HStack(spacing: 5) {
+            Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
+                .lineLimit(1)
+            if !feed.isEnabled {
+                Text("·")
+                Text("Paused")
+            } else if feed.remoteID != nil {
+                Text("·")
+                Text("Synced")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -210,9 +245,10 @@ private struct SourceDetailView: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Website", value: viewModel.feed.websiteURL?.host() ?? "—")
-                LabeledContent("Feed", value: viewModel.feed.feedURL.absoluteString)
+                StackedLabeledValue(title: "Website", value: viewModel.feed.websiteURL?.host() ?? "—")
+                StackedLabeledValue(title: "Feed", value: viewModel.feed.feedURL.absoluteString)
             }
+            .listRowBackground(OneFeedTheme.paper)
             Section {
                 Picker("Folder", selection: $viewModel.folderSelection) {
                     Text("Unfiled").tag("")

@@ -129,6 +129,7 @@ enum ArticleIdentity {
         if keeper.url == nil { keeper.url = duplicate.url }
         if (keeper.contentHTML ?? "").count < (duplicate.contentHTML ?? "").count {
             keeper.contentHTML = duplicate.contentHTML
+            keeper.refreshEstimatedReadingMinutes()
         }
         if (keeper.summary ?? "").count < (duplicate.summary ?? "").count {
             keeper.summary = duplicate.summary

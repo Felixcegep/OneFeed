@@ -15,6 +15,8 @@ private struct FeedDayGroup: Identifiable {
     let articles: [Article]
     var id: Kind { kind }
 
+    var storedArticles: [Article] { articles.filter(\.isStored) }
+
     var title: String {
         switch kind {
         case .today: "Today"
@@ -88,17 +90,32 @@ struct FeedStreamView: View {
                             .frame(maxWidth: .infinity, minHeight: 240)
                         } else {
                             ForEach(dayGroups) { group in
-                                if dayGroups.count > 1 {
-                                    GalleryLabel(text: group.title)
-                                        .padding(.top, 10)
-                                        .accessibilityAddTraits(.isHeader)
-                                }
-                                ForEach(group.articles.filter(\.isStored)) { article in
-                                    Button { selectedArticle = article } label: {
-                                        ArticleRow(article: article)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    if dayGroups.count > 1 {
+                                        Text(group.title)
+                                            .font(OneFeedTheme.sansUI(13, weight: .semibold))
+                                            .foregroundStyle(OneFeedTheme.graphite)
+                                            .padding(.horizontal, 4)
+                                            .accessibilityAddTraits(.isHeader)
                                     }
-                                    .buttonStyle(DirectoryRowButtonStyle())
-                                    .articleActions(for: article, in: modelContext)
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(group.storedArticles.enumerated()), id: \.element.id) { index, article in
+                                            Button { selectedArticle = article } label: {
+                                                ArticleRow(article: article)
+                                            }
+                                            .buttonStyle(DirectoryRowButtonStyle())
+                                            .articleActions(for: article, in: modelContext)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            if index < group.storedArticles.count - 1 {
+                                                Rectangle()
+                                                    .fill(OneFeedTheme.plaster)
+                                                    .frame(height: 8)
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 6)
+                                    .background(OneFeedTheme.paper, in: RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous))
                                 }
                             }
                         }
@@ -113,18 +130,17 @@ struct FeedStreamView: View {
         }
         .background(OneFeedTheme.plaster.ignoresSafeArea())
         .navigationTitle("Feed")
+        .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .refreshProgressBanner(refresh.progress)
         .oneFeedSearchable($search, prompt: "Search articles")
         .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
+            ToolbarItemGroup(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
                     Task { await refresh.refresh(in: modelContext) }
                 }
-            }
-            ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
-            }
-            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
                         toolbarDestination = .sources
@@ -182,7 +198,11 @@ struct FeedStreamView: View {
                         selectedFolder = nil
                     }
                     ForEach(folderSummaries) { summary in
-                        chip(summary.name, selected: selectedFolder == summary.folderID) {
+                        chip(
+                            summary.name,
+                            emoji: FolderEmoji.glyph(for: summary.name),
+                            selected: selectedFolder == summary.folderID
+                        ) {
                             selectedFolder = summary.folderID
                         }
                     }
@@ -195,17 +215,23 @@ struct FeedStreamView: View {
         }
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(_ title: String, emoji: String? = nil, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
-                .font(OneFeedTheme.sansUI(15, weight: .medium))
-                .padding(.horizontal, 14)
-                .frame(minHeight: 44)
-                .background(selected ? OneFeedTheme.ink : OneFeedTheme.paper, in: Capsule())
-                .overlay {
-                    Capsule().strokeBorder(selected ? Color.clear : OneFeedTheme.sand, lineWidth: 1)
+            HStack(spacing: 6) {
+                if let emoji {
+                    Text(emoji)
+                        .font(.system(size: 16))
                 }
-                .foregroundStyle(selected ? OneFeedTheme.plaster : OneFeedTheme.ink)
+                Text(title)
+                    .font(OneFeedTheme.sansUI(15, weight: .medium))
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 44)
+            .background(selected ? OneFeedTheme.ink : OneFeedTheme.paper, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(selected ? Color.clear : OneFeedTheme.sand, lineWidth: 1)
+            }
+            .foregroundStyle(selected ? OneFeedTheme.plaster : OneFeedTheme.ink)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

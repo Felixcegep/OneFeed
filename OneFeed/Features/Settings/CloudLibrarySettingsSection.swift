@@ -58,12 +58,12 @@ struct CloudLibrarySettingsSection: View {
 
     @ViewBuilder
     private func driveLinked(_ record: CloudFileLinkRecord) -> some View {
-        LabeledContent("Location", value: record.locationKind.title)
-        LabeledContent("File", value: record.displayName)
+        StackedLabeledValue(title: "Location", value: record.locationKind.title)
+        StackedLabeledValue(title: "File", value: record.displayName)
         if let email = record.googleDriveAccountEmail, email.isEmpty == false {
-            LabeledContent("Account", value: email)
+            StackedLabeledValue(title: "Account", value: email)
         }
-        LabeledContent("Status", value: statusText)
+        StackedLabeledValue(title: "Status", value: statusText)
         Picker("Sync", selection: Binding(
             get: { record.syncMode },
             set: onSyncModeChange
@@ -87,9 +87,9 @@ struct CloudLibrarySettingsSection: View {
 
     @ViewBuilder
     private var folderLinked: some View {
-        LabeledContent("Location", value: library.folderDisplayName ?? "Folder")
+        StackedLabeledValue(title: "Location", value: library.folderDisplayName ?? "Folder")
         if let lastSyncAt = library.lastSyncAt {
-            LabeledContent("Last Sync", value: lastSyncAt.formatted(date: .abbreviated, time: .shortened))
+            StackedLabeledValue(title: "Last Sync", value: lastSyncAt.formatted(date: .abbreviated, time: .shortened))
         }
         if case .error(let message) = library.status {
             Text(message).font(.footnote).foregroundStyle(OneFeedTheme.error)

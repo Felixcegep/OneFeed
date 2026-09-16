@@ -36,13 +36,13 @@ struct ArticleSwipeActions: ViewModifier {
                 .tint(OneFeedTheme.stone)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                Button("Save", systemImage: "star") {
+                Button("Queue", systemImage: "square.stack") {
                     ArticleActions.apply(.saved, to: article, in: context)
                 }
                 .tint(OneFeedTheme.accent)
             }
             .contextMenu {
-                Button("Save", systemImage: "star") {
+                Button("Add to Queue", systemImage: "square.stack") {
                     ArticleActions.apply(.saved, to: article, in: context)
                 }
                 Button("Done", systemImage: "checkmark") {

@@ -3,6 +3,7 @@ import SwiftData
 
 struct CurrentView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
     @State private var showingSources = false
@@ -19,26 +20,35 @@ struct CurrentView: View {
             } else {
                 List {
                     if let featured = stories.first {
-                        Button { readerArticle = featured } label: {
-                            FeaturedStory(article: featured)
+                        Section {
+                            Button { readerArticle = featured } label: {
+                                FeaturedStory(article: featured)
+                            }
+                            .buttonStyle(ArticleCardButtonStyle())
+                            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .articleActions(for: featured, in: modelContext)
+                        } header: {
+                            GallerySectionHeader(text: "Now")
                         }
-                        .buttonStyle(DirectoryRowButtonStyle())
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 12, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(OneFeedTheme.plaster)
-                        .listRowSeparatorTint(OneFeedTheme.sand)
-                        .articleActions(for: featured, in: modelContext)
                     }
-                    ForEach(Array(stories.dropFirst())) { article in
-                        Button { readerArticle = article } label: {
-                            ArticleRow(article: article)
+                    if stories.count > 1 {
+                        Section {
+                            ForEach(Array(stories.dropFirst())) { article in
+                                Button { readerArticle = article } label: {
+                                    ArticleRow(article: article)
+                                }
+                                .buttonStyle(DirectoryRowButtonStyle())
+                                .articleListRow()
+                                .articleActions(for: article, in: modelContext)
+                            }
+                        } header: {
+                            GallerySectionHeader(text: "Also today")
                         }
-                        .buttonStyle(DirectoryRowButtonStyle())
-                        .articleListRow()
-                        .articleActions(for: article, in: modelContext)
                     }
                 }
-                .articleTimelineList()
+                .oneFeedGroupedListStyle()
                 .animation(viewModel.isRefreshing ? nil : OneFeedMotion.overlay, value: stories.count)
             }
         }
@@ -47,15 +57,14 @@ struct CurrentView: View {
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
+            ToolbarItemGroup(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
                     Task { await viewModel.refresh() }
                 }
-            }
-            ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingSources = true }
             }
         }
@@ -124,26 +133,39 @@ struct CurrentView: View {
                     Text("The room is still.")
                         .font(OneFeedTheme.serifDisplay(32))
                         .foregroundStyle(OneFeedTheme.ink)
+                } else if feeds.isEmpty {
+                    OneFeedMark(size: 52)
+                    Text("Add a source")
+                        .font(OneFeedTheme.serifDisplay(32))
+                        .foregroundStyle(OneFeedTheme.ink)
                 } else {
                     OneFeedMark(size: 52)
-                    Text("The room is still.")
+                    Text("You’re caught up")
                         .font(OneFeedTheme.serifDisplay(32))
                         .foregroundStyle(OneFeedTheme.ink)
                 }
             }
         } description: {
-            Text(viewModel.isRefreshing ? caughtUpProgressCopy : "Tomorrow, a new hanging.")
+            Text(viewModel.isRefreshing ? caughtUpProgressCopy : feeds.isEmpty ? "Today fills after you subscribe." : "Tomorrow, a new hanging.")
                 .font(OneFeedTheme.sansUI(16, weight: .regular))
                 .foregroundStyle(OneFeedTheme.graphite)
         } actions: {
-            Button(viewModel.isRefreshing ? viewModel.progress.countText : "Refresh") {
-                Task { await viewModel.refresh() }
+            Button(viewModel.isRefreshing ? viewModel.progress.countText : feeds.isEmpty ? "Add a source" : "Refresh") {
+                if feeds.isEmpty {
+                    showingSources = true
+                } else {
+                    Task { await viewModel.refresh() }
+                }
             }
             .buttonStyle(PrimaryActionStyle())
             .disabled(viewModel.isRefreshing)
-            Button("Add a source") { showingSources = true }
-                .font(OneFeedTheme.sansUI(15, weight: .regular))
-                .foregroundStyle(OneFeedTheme.graphite)
+            if !feeds.isEmpty {
+                Button("Add a source") { showingSources = true }
+                    .font(OneFeedTheme.sansUI(15, weight: .regular))
+                    .foregroundStyle(OneFeedTheme.graphite)
+                    .frame(minHeight: 44)
+                    .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)

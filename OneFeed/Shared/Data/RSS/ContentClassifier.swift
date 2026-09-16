@@ -79,7 +79,7 @@ nonisolated enum ContentClassifier: Sendable {
 
     static func readingMinutes(words: Int) -> Int {
         guard words > 0 else { return 0 }
-        return max(1, Int((Double(words) / Double(wordsPerMinute)).rounded()))
+        return max(1, Int(ceil(Double(words) / Double(wordsPerMinute))))
     }
 
     static func consumeMinutes(entryType: ContentKind, words: Int, durationSeconds: Int?) -> Int {

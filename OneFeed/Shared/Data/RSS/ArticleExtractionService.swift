@@ -2,7 +2,8 @@ import Foundation
 import SwiftData
 
 /// RSS bodies with at least this many words are treated as a full article (AUTO).
-nonisolated let autoExtractMinWords = 80
+/// ~2 minutes at 220 wpm — below that, most feeds are still a teaser.
+nonisolated let autoExtractMinWords = 400
 
 enum ExtractMode: String, Codable, Sendable, CaseIterable {
     case off
@@ -82,8 +83,11 @@ final class ArticleExtractionService {
             .prefix(1 + extraQueued)
             .compactMap(\.article)
         for article in targets {
-            if let html = await extractedHTML(for: article), html != article.contentHTML {
-                article.contentHTML = html
+            if let html = await extractedHTML(for: article) {
+                if html != article.contentHTML {
+                    article.contentHTML = html
+                }
+                article.refreshEstimatedReadingMinutes()
             }
         }
         try? context.save()

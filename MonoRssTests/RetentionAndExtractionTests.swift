@@ -63,9 +63,11 @@ struct RetentionAndExtractionTests {
 
     @Test func automaticExtractSkipsSubstantialRSS() {
         let policy = ArticleExtractionPolicy()
-        let long = Array(repeating: "word", count: 90).joined(separator: " ")
+        let long = Array(repeating: "word", count: 420).joined(separator: " ")
         #expect(policy.shouldFetchPage(rssHTML: "<p>\(long)</p>", kind: "article") == false)
-        #expect(policy.shouldFetchPage(rssHTML: "<p>Short</p>", kind: "article") == true)
+        #expect(policy.shouldFetchPage(rssHTML: "<p>Short excerpt of a longer essay.</p>", kind: "article") == true)
+        let medium = Array(repeating: "word", count: 90).joined(separator: " ")
+        #expect(policy.shouldFetchPage(rssHTML: "<p>\(medium)</p>", kind: "article") == true)
         #expect(policy.shouldFetchPage(rssHTML: "<p>Short</p>", kind: "youtube") == false)
         var off = ArticleExtractionPolicy()
         off.mode = .off
@@ -140,8 +142,11 @@ struct RetentionAndExtractionTests {
             URL(string: "https://source.test/2")!,
             URL(string: "https://source.test/3")!,
         ])
-        #expect(articles[0].contentHTML == "<p>Extracted https://source.test/1</p>")
+        #expect(articles[0].contentHTML?.contains("Extracted https://source.test/1") == true)
+        #expect(articles[0].estimatedReadingMinutes == 3)
+        #expect(articles[0].timedDurationPhrase == "3 min read")
         #expect(articles[3].contentHTML == "<p>Short</p>")
+        #expect(articles[3].timedDurationPhrase == nil)
     }
 }
 
@@ -150,7 +155,8 @@ private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {
 
     func extract(fromHTML html: String, pageURL: URL) -> String? {
         urls.append(pageURL)
-        return "<p>Extracted \(pageURL.absoluteString)</p>"
+        let body = Array(repeating: "word", count: 500).joined(separator: " ")
+        return "<p>Extracted \(pageURL.absoluteString) \(body)</p>"
     }
 }
 

@@ -223,22 +223,31 @@ extension View {
         listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(OneFeedTheme.plaster)
+            .listSectionSpacing(22)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: 96)
+            }
+        #endif
+    }
+
+    func oneFeedFloatingTabClearance() -> some View {
+        #if os(iOS)
+        safeAreaPadding(.bottom, 88)
+        #else
+        self
         #endif
     }
 
     func oneFeedScrollEdge() -> some View {
+        // Hard edge keeps cream lists readable under Liquid Glass without an opaque
+        // toolbarBackground — which paints over large titles on iOS 26+.
         scrollEdgeEffectStyle(.hard, for: .top)
     }
 
-    /// Opaque plaster behind large titles so cream list rows cannot show through.
-    @ViewBuilder
+    /// Kept for call-site consistency. On iOS 26+, Liquid Glass owns the bar —
+    /// opaque `toolbarBackground` paints over large titles while still reserving space.
     func oneFeedPaperToolbar() -> some View {
-        #if os(iOS)
-        toolbarBackground(OneFeedTheme.plaster, for: .navigationBar)
-            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
-        #else
         self
-        #endif
     }
 
     @ViewBuilder
@@ -292,4 +301,6 @@ extension View {
 enum OneFeedNotify {
     static let subscribe = Notification.Name("onefeed.subscribe")
     static let refresh = Notification.Name("onefeed.refresh")
+    static let openFeed = Notification.Name("onefeed.openFeed")
+    static let openToday = Notification.Name("onefeed.openToday")
 }

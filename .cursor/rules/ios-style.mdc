@@ -1,0 +1,29 @@
+---
+description: Style OneFeed from app screenshots plus the SwiftUI on screen, using the listed iOS design skills.
+globs: OneFeed/**/*.swift
+alwaysApply: true
+---
+
+# OneFeed iOS style
+
+When changing layout, chrome, or visual hierarchy:
+
+1. **Look at a real screenshot first.** Use the simulator shot the user attached, or files in `UITestScreenshots/`. Do not restyle from memory or from a generic “iOS app” look.
+2. **Read the SwiftUI that produced that screen** (`FoldersView`, `SavedView`, `CurrentView`, `SourcesView`, `OneFeedTheme`) and change those views. Do not invent a parallel design system.
+3. **Keep OneFeed’s materials.** Plaster canvas, paper groups, warm ink, serif for reading. Do not paste another app’s Inter/white/gray canvas on top.
+
+## Skills to open before restyling
+
+- `ios-product-design` — hierarchy, native containers, empty/loading states
+- `apple-design` (`~/.codex/skills/apple-design`) — motion, materials, interruptible gestures
+- `swiftui-skills` — Apple-authored SwiftUI patterns; do not invent APIs
+- `ios-design-md` — concrete tokens from Notion (emoji page icons) and Things 3 (section spacing). Map onto OneFeed colors; never copy logos or typefaces
+- `ui-radar` — real comparable screens when a pattern is unclear
+- `emil-design-eng` — polish only after the layout reads
+
+## Product rules this screenshot taught
+
+- Folders use a **user-picked emoji**, not a colored vertical bar.
+- Tap the emoji to change it (Notion). Tap the rest of the row to open the folder.
+- Sections are **paper groups on plaster**, not a full-bleed list with sand hairlines. Space between sections must be larger than space between rows.
+- Section titles are readable graphite, not 11pt uppercase stone that disappears on cream.

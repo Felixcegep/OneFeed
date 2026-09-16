@@ -24,9 +24,9 @@ final class HistoryViewModel {
         let groups = Dictionary(grouping: articles) { calendar.startOfDay(for: $0.completedAt ?? $0.publishedAt) }
         days = groups.keys.sorted(by: >).map { day in
             let label: String
-            if calendar.isDateInToday(day) { label = "TODAY" }
-            else if calendar.isDateInYesterday(day) { label = "YESTERDAY" }
-            else { label = day.formatted(.dateTime.month(.abbreviated).day()).uppercased() }
+            if calendar.isDateInToday(day) { label = "Today" }
+            else if calendar.isDateInYesterday(day) { label = "Yesterday" }
+            else { label = day.formatted(.dateTime.month(.abbreviated).day()) }
             return HistoryDay(day: day, label: label, articles: groups[day] ?? [])
         }
     }

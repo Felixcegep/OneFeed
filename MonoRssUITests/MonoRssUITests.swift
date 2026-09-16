@@ -13,8 +13,18 @@ final class MonoRssUITests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.tabBars.buttons["Queue"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Feed"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Settings"].exists)
         XCTAssertFalse(app.tabBars.buttons["Library"].exists)
         XCTAssertFalse(app.tabBars.buttons["Next"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Saved"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Later"].exists)
+
+        app.tabBars.buttons["Queue"].tap()
+        XCTAssertTrue(app.navigationBars["Queue"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.navigationBars["Queue"].buttons["Add"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["Why SQLite is so reliable"].waitForExistence(timeout: 2))
 
         app.tabBars.buttons["Feed"].tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
@@ -34,42 +44,48 @@ final class MonoRssUITests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureAllMVPscreens() throws {
+    func testCaptureAllScreens() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-inMemoryStore"]
         app.launch()
 
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 5))
         capture("01-Today", app: app)
-
-        app.tabBars.buttons["Feed"].tap()
-        XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Development"].waitForExistence(timeout: 2) || app.buttons["Development"].exists)
-        XCTAssertTrue(app.staticTexts["Security"].exists || app.buttons["Security"].exists)
-        capture("02-Feed", app: app)
-
-        let securityFolder = app.descendants(matching: .any)["folder-Security"]
-        XCTAssertTrue(securityFolder.waitForExistence(timeout: 2))
-        securityFolder.tap()
-        XCTAssertTrue(app.navigationBars["Security"].waitForExistence(timeout: 2))
-        capture("04-Folder-Articles", app: app)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-
-        app.tabBars.buttons["Today"].tap()
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
-        capture("05-Today", app: app)
 
         app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].tap()
         XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
-        capture("06-Reader", app: app)
+        capture("02-Reader", app: app)
         app.buttons["Close"].tap()
 
-        app.tabBars.buttons["Saved"].tap()
-        XCTAssertTrue(app.navigationBars["Saved"].waitForExistence(timeout: 3))
-        capture("07-Saved", app: app)
+        app.tabBars.buttons["Queue"].tap()
+        XCTAssertTrue(app.navigationBars["Queue"].waitForExistence(timeout: 3))
+        capture("03-Queue", app: app)
+
+        app.navigationBars["Queue"].buttons["Add"].tap()
+        XCTAssertTrue(app.navigationBars["Add to Queue"].waitForExistence(timeout: 2))
+        capture("04-AddToQueue", app: app)
+        app.navigationBars["Add to Queue"].buttons["Cancel"].tap()
 
         app.tabBars.buttons["Feed"].tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
+        capture("05-Feed", app: app)
+
+        app.staticTexts["All Unread"].tap()
+        XCTAssertTrue(app.navigationBars["All Unread"].waitForExistence(timeout: 3))
+        capture("06-AllUnread", app: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        // The row identifier is inherited by its icon and navigation buttons.
+        // Target the folder destination, not the separate icon-edit action.
+        let securityFolder = app.buttons.matching(
+            NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@", "folder-Security", "Security")
+        ).firstMatch
+        XCTAssertTrue(securityFolder.waitForExistence(timeout: 2))
+        securityFolder.tap()
+        XCTAssertTrue(app.navigationBars["Security"].waitForExistence(timeout: 2))
+        capture("07-Folder-Articles", app: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
         app.navigationBars["Feed"].buttons["More"].tap()
         XCTAssertTrue(app.buttons["Sources"].waitForExistence(timeout: 2))
         app.buttons["Sources"].tap()
@@ -78,18 +94,72 @@ final class MonoRssUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         app.navigationBars["Feed"].buttons["More"].tap()
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 2))
-        app.buttons["Settings"].tap()
+        XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 2))
+        app.buttons["History"].tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+        capture("09-History", app: app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+
+        app.tabBars.buttons["Settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
-        capture("09-Settings", app: app)
+        capture("10-Settings", app: app)
 
         XCTAssertFalse(app.tabBars.buttons["Library"].exists)
     }
 
+    @MainActor
+    func testCaptureEmptyQueueAndOnboarding() throws {
+        let empty = XCUIApplication()
+        empty.launchArguments = ["-uiTesting", "-inMemoryStore", "-uiTestingEmptyQueue"]
+        empty.launch()
+        XCTAssertTrue(empty.tabBars.buttons["Queue"].waitForExistence(timeout: 5))
+        empty.tabBars.buttons["Queue"].tap()
+        XCTAssertTrue(empty.navigationBars["Queue"].waitForExistence(timeout: 3))
+        XCTAssertTrue(empty.buttons["Open Today"].waitForExistence(timeout: 2))
+        capture("11-Queue-Empty", app: empty)
+        empty.terminate()
+
+        let onboarding = XCUIApplication()
+        onboarding.launchArguments = ["-uiTesting", "-inMemoryStore", "-uiTestingOnboarding"]
+        onboarding.launch()
+        XCTAssertTrue(onboarding.buttons["Continue"].waitForExistence(timeout: 5))
+        capture("12-Onboarding", app: onboarding)
+    }
+
+    @MainActor
+    func testCaptureLongLayouts() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-inMemoryStore", "-uiTestingLayoutStress"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 5))
+        app.staticTexts["VMs Won’t Contain Cyber-Capable Agents"].tap()
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 3))
+        capture("13-Reader-Rich", app: app)
+        app.webViews.firstMatch.swipeUp()
+        capture("14-Reader-Scrolled", app: app)
+        app.buttons["Close"].tap()
+
+        app.tabBars.buttons["Queue"].tap()
+        XCTAssertTrue(app.navigationBars["Queue"].waitForExistence(timeout: 3))
+        capture("15-Queue-Multiple", app: app)
+        let last = app.staticTexts["Last saved layout example"]
+        for _ in 0..<24 {
+            if last.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(last.isHittable, "The last saved article must be reachable above the tab bar")
+        capture("16-Queue-Bottom", app: app)
+    }
+
     private func capture(_ name: String, app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        let folder = URL(fileURLWithPath: "/tmp/onefeed-uitest-screenshots")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? screenshot.pngRepresentation.write(to: folder.appendingPathComponent("\(name).png"))
     }
 }

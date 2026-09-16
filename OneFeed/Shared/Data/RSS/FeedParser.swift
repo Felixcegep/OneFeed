@@ -49,10 +49,7 @@ nonisolated struct ParsedArticle: Sendable {
     }
 
     var estimatedReadingMinutes: Int {
-        let source = contentHTML ?? summary ?? ""
-        let plain = source.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-        let words = plain.split(whereSeparator: \.isWhitespace).count
-        return max(1, Int(ceil(Double(words) / 220.0)))
+        max(1, ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")))
     }
 }
 

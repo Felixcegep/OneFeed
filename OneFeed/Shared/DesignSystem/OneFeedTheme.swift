@@ -56,43 +56,74 @@ enum OneFeedTheme {
     }
 }
 
-/// Section headers only: 11pt bold, slight tracking, stone. Not a row title.
+/// Editorial labels: compact, scalable, and readable against paper or plaster.
 struct GalleryLabel: View {
     let text: String
     var pigment = false
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold))
+            .font(.caption.weight(.semibold))
             .tracking(0.4)
             .textCase(.uppercase)
-            .foregroundStyle(pigment ? OneFeedTheme.accent : OneFeedTheme.stone)
-            .lineLimit(1)
+            .foregroundStyle(pigment ? OneFeedTheme.accent : OneFeedTheme.graphite)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// Sticky list header with plaster behind the type so rows cannot show through.
+/// Section title. Native section spacing supplies the separation between groups.
 struct GallerySectionHeader: View {
     let text: String
 
     var body: some View {
-        GalleryLabel(text: text)
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(OneFeedTheme.ink)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 6)
-            .background(OneFeedTheme.plaster)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .textCase(nil)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Side-by-side at standard sizes; stacked when Dynamic Type needs the full width.
+struct StackedLabeledValue: View {
+    let title: String
+    let value: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                Text(value)
+                    .foregroundStyle(OneFeedTheme.graphite)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .combine)
+        } else {
+            LabeledContent(title, value: value)
+        }
     }
 }
 
 /// Ink fill, cream type, capsule. Press scales to 0.97 — no offset shadow.
 struct PrimaryActionStyle: ButtonStyle {
+    var expands = true
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(OneFeedTheme.sansUI(16, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(OneFeedTheme.plaster)
-            .frame(maxWidth: .infinity, minHeight: 50)
-            .background(OneFeedTheme.ink, in: Capsule())
+            .padding(.horizontal, expands ? 0 : 22)
+            .frame(maxWidth: expands ? .infinity : nil, minHeight: 50)
+            .background(OneFeedTheme.ink.opacity(isEnabled ? 1 : 0.35), in: Capsule())
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
             .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.55), trigger: configuration.isPressed)
@@ -122,7 +153,7 @@ struct DecisionActionStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(OneFeedTheme.sansUI(15, weight: .medium))
+            .font(.body.weight(.medium))
             .foregroundStyle(OneFeedTheme.ink)
             .padding(.horizontal, expands ? 0 : 14)
             .frame(maxWidth: expands ? .infinity : nil, minHeight: 44)
@@ -142,32 +173,45 @@ struct DecisionActionStyle: ButtonStyle {
 struct ArticleRow: View {
     let article: Article
     var status: String? = nil
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            if let url = article.displayImageURL, !imageFailed {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(article.title)
+                    .font(.headline)
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let source = article.feed?.title, !source.isEmpty {
+                    Text(source)
+                        .font(.subheadline)
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(meta)
+                    .font(.caption)
+                    .foregroundStyle(OneFeedTheme.graphite)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let status {
+                    Text(status)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
                 ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
                     imageFailed = true
                 }
-                .frame(width: OneFeedTheme.thumbnailWidth, height: OneFeedTheme.thumbnailHeight)
+                .frame(width: 64, height: 64)
                 .clipped()
             }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(article.title)
-                    .font(OneFeedTheme.sansUI(15, weight: .medium))
-                    .foregroundStyle(OneFeedTheme.ink)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(meta)
-                    .font(OneFeedTheme.sansUI(12, weight: .regular))
-                    .foregroundStyle(OneFeedTheme.stone)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .padding(.vertical, 4)
@@ -181,12 +225,10 @@ struct ArticleRow: View {
 
     private var meta: String {
         var parts: [String] = []
-        if let source = article.feed?.title, !source.isEmpty { parts.append(source) }
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
         parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
-        if let status { parts.append(status) }
         return parts.joined(separator: "  ·  ")
     }
 }
@@ -194,11 +236,12 @@ struct ArticleRow: View {
 /// Photograph on paper, then authored serif. The crop is the work.
 struct FeaturedStory: View {
     let article: Article
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let url = article.displayImageURL, !imageFailed {
+            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
                 ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, fadesIn: true) {
                     imageFailed = true
                 }
@@ -210,27 +253,28 @@ struct FeaturedStory: View {
             VStack(alignment: .leading, spacing: 10) {
                 GalleryLabel(text: article.feed?.title ?? "Source")
                 Text(article.title)
-                    .font(OneFeedTheme.serifDisplay(24))
+                    .font(.system(.title2, design: .serif))
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if let excerpt = article.displayExcerpt {
                     Text(excerpt)
-                        .font(OneFeedTheme.serifBody(16))
+                        .font(.system(.body, design: .serif))
                         .foregroundStyle(OneFeedTheme.graphite)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                GalleryLabel(text: byline)
+                Text(byline)
+                    .font(.caption)
+                    .foregroundStyle(OneFeedTheme.graphite)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, OneFeedTheme.pagePadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
-        .padding(.vertical, 6)
+        .padding(.vertical, 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens this article")
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
@@ -331,37 +375,61 @@ struct OneFeedGroupCard<Content: View>: View {
 struct FeedDirectoryRow: View {
     let title: String
     var systemImage: String? = nil
-    var swatchName: String? = nil
+    var emoji: String? = nil
     var count: Int = 0
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             leading
             Text(title)
-                .font(OneFeedTheme.sansUI(15, weight: .medium))
+                .font(.body.weight(.medium))
                 .foregroundStyle(OneFeedTheme.ink)
                 .multilineTextAlignment(.leading)
-            Spacer(minLength: 8)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
             UnreadCount(count)
         }
-        .frame(minHeight: 44)
-        .padding(.vertical, 4)
+        .frame(minHeight: 48)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
     private var leading: some View {
-        if let swatchName {
-            FolderSwatch(name: swatchName)
-                .frame(width: 16, alignment: .center)
+        if let emoji {
+            Text(emoji)
+                .font(.system(size: 28))
+                .frame(width: 36, height: 36)
+                .accessibilityHidden(true)
         } else if let systemImage {
             Image(systemName: systemImage)
-                .font(.body.weight(.regular))
+                .font(.body.weight(.medium))
                 .foregroundStyle(OneFeedTheme.graphite)
-                .frame(width: 16)
+                .frame(width: 36, height: 36)
+                .background(OneFeedTheme.warm1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// A paper card keeps its outline and pressed feedback inside the same shape.
+struct ArticleCardButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
+        configuration.label
+            .background(configuration.isPressed ? OneFeedTheme.warm1 : OneFeedTheme.paper, in: shape)
+            .clipShape(shape)
+            .overlay {
+                shape.strokeBorder(OneFeedTheme.sand, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+            .contentShape(shape)
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
+            .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -386,36 +454,12 @@ struct UnreadCount: View {
     var body: some View {
         if count > 0 {
             Text("\(count)")
-                .font(.system(size: 13, weight: .regular).monospacedDigit())
-                .foregroundStyle(OneFeedTheme.stone)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(OneFeedTheme.ink)
                 .contentTransition(.numericText())
                 .animation(OneFeedMotion.overlay, value: count)
                 .accessibilityLabel("\(count) unread")
         }
-    }
-}
-
-struct FolderSwatch: View {
-    let name: String
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-            .fill(tint)
-            .frame(width: 3, height: 16)
-            .accessibilityHidden(true)
-    }
-
-    private var tint: Color {
-        let palette: [Color] = [
-            Color(red: 0.851, green: 0.467, blue: 0.341),
-            Color(red: 0.722, green: 0.478, blue: 0.310),
-            Color(red: 0.420, green: 0.490, blue: 0.369),
-            Color(red: 0.353, green: 0.310, blue: 0.267),
-            Color(red: 0.541, green: 0.494, blue: 0.447),
-            Color(red: 0.176, green: 0.145, blue: 0.125)
-        ]
-        let index = abs(name.hashValue & Int.max) % palette.count
-        return palette[index]
     }
 }
 
@@ -453,7 +497,7 @@ struct ArticleRatingControl: View {
                             .font(.body)
                             .foregroundStyle(star <= article.rating ? OneFeedTheme.ink : OneFeedTheme.sand)
                             .contentTransition(.symbolEffect(.replace))
-                            .frame(width: 36, height: 44)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -473,25 +517,91 @@ struct EmptyLibraryState: View {
     let description: String
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
+    var secondaryTitle: String? = nil
+    var secondaryAction: (() -> Void)? = nil
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        let _ = systemImage
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 34, weight: .light))
+                            .foregroundStyle(OneFeedTheme.accent)
+                            .accessibilityHidden(true)
+                            .padding(.top, 12)
+                        Text(title)
+                            .font(.system(.title, design: .serif))
+                            .foregroundStyle(OneFeedTheme.ink)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let actionTitle, let action {
+                            Button(actionTitle, action: action)
+                                .buttonStyle(PrimaryActionStyle())
+                                .padding(.top, 4)
+                        }
+                        if let secondaryTitle, let secondaryAction {
+                            Button(secondaryTitle, action: secondaryAction)
+                                .font(.body)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(OneFeedTheme.graphite)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        Text(description)
+                            .font(.body)
+                            .foregroundStyle(OneFeedTheme.graphite)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 8)
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 96)
+                    .frame(maxWidth: .infinity)
+                }
+                .scrollBounceBehavior(.basedOnSize)
+            } else {
+                emptyContent
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OneFeedTheme.plaster)
+    }
+
+    private var emptyContent: some View {
         ContentUnavailableView {
-            VStack(spacing: 20) {
-                OneFeedMark(size: 40)
+            VStack(spacing: 16) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(OneFeedTheme.accent)
+                    .accessibilityHidden(true)
                 Text(title)
-                    .font(OneFeedTheme.serifDisplay(32))
+                    .font(.system(.title, design: .serif))
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         } description: {
             Text(description)
-                .font(OneFeedTheme.sansUI(16, weight: .regular))
+                .font(.body)
                 .foregroundStyle(OneFeedTheme.graphite)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         } actions: {
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(PrimaryActionStyle())
+            VStack(spacing: 12) {
+                if let actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .buttonStyle(PrimaryActionStyle(expands: false))
+                }
+                if let secondaryTitle, let secondaryAction {
+                    Button(secondaryTitle, action: secondaryAction)
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
             }
         }
     }
@@ -500,21 +610,24 @@ struct EmptyLibraryState: View {
 extension View {
     @ViewBuilder
     func articleListRow() -> some View {
-        #if os(iOS)
-        listRowInsets(EdgeInsets(top: 10, leading: 20, bottom: 10, trailing: 20))
-            .listRowSeparatorTint(OneFeedTheme.sand)
-            .listRowBackground(OneFeedTheme.plaster)
-        #else
-        listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
-            .listRowBackground(OneFeedTheme.plaster)
-        #endif
+        listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            .listRowSeparator(.visible, edges: .bottom)
+            .listRowSeparatorTint(OneFeedTheme.sand, edges: .bottom)
+            .listRowBackground(OneFeedTheme.paper)
+    }
+
+    func oneFeedDirectoryRow() -> some View {
+        listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            .listRowSeparator(.hidden)
+            .listRowBackground(OneFeedTheme.paper)
     }
 
     func articleTimelineList() -> some View {
         listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(OneFeedTheme.plaster)
-            .contentMargins(.bottom, 28, for: .scrollContent)
+            // Clear the floating tab bar so the last row is never trapped under it.
+            .contentMargins(.bottom, 88, for: .scrollContent)
             .oneFeedScrollEdge()
     }
 

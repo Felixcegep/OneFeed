@@ -23,7 +23,7 @@ enum WidgetSnapshotStore {
                 id: article.id,
                 title: article.title,
                 source: article.feed?.title ?? "OneFeed",
-                readingMinutes: article.estimatedReadingMinutes,
+                readingMinutes: article.resolvedReadingMinutes,
                 publishedAt: article.publishedAt
             )
             defaults?.set(try? JSONEncoder().encode(snapshot), forKey: key)

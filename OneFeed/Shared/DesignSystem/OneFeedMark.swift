@@ -144,7 +144,8 @@ struct OneFeedToolbarRefresh: View {
                 .accessibilityHidden(!isRefreshing)
                 .accessibilityLabel("Updating")
         }
-        .frame(width: 28, height: 28)
+        .frame(minWidth: 44, minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 
@@ -209,7 +210,7 @@ struct OneFeedDecisionCurtain: View {
 
     private var caption: String {
         switch state {
-        case .saved: "Kept"
+        case .saved: "Queued"
         case .read: "Done"
         case .skipped: "Next"
         default: ""

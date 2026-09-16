@@ -296,6 +296,8 @@ struct FeedAndFreshRSSDomainTests {
         )
         #expect(article.kind == .article)
         #expect(article.estimatedMinutes == 2)
+        #expect(ContentClassifier.readingMinutes(words: 221) == 2)
+        #expect(ContentClassifier.readingMinutes(words: 50) == 1)
     }
 
     @Test func skipShortYouTubeDetectsShortsPathAndHashTag() {
@@ -475,6 +477,37 @@ struct FeedAndFreshRSSDomainTests {
         #expect(known.durationPhrase == "31 min")
     }
 
+    @Test func articleDurationPhraseOmitsTeaserOneMinuteAndHealsFromHTML() {
+        let teaser = Article(
+            guid: "short",
+            title: "Brief",
+            summary: "A short RSS blurb.",
+            contentHTML: "<p>A short RSS blurb.</p>",
+            estimatedReadingMinutes: 1
+        )
+        #expect(teaser.timedDurationPhrase == nil)
+        #expect(teaser.durationPhrase.isEmpty)
+
+        let extracted = Article(
+            guid: "long",
+            title: "Essay",
+            contentHTML: "<p>" + String(repeating: "word ", count: 440) + "</p>",
+            estimatedReadingMinutes: 1
+        )
+        #expect(extracted.resolvedReadingMinutes == 2)
+        #expect(extracted.timedDurationPhrase == "2 min read")
+        extracted.refreshEstimatedReadingMinutes()
+        #expect(extracted.estimatedReadingMinutes == 2)
+
+        let server = Article(
+            guid: "fresh",
+            title: "Essay",
+            summary: "Teaser only.",
+            estimatedReadingMinutes: 11
+        )
+        #expect(server.timedDurationPhrase == "11 min read")
+    }
+
     @Test func articleRatingClampsAndClears() {
         let article = Article(guid: "rated", title: "Essay")
         article.setRating(8)
@@ -547,7 +580,8 @@ struct FeedAndFreshRSSDomainTests {
         #expect(html.contains("overflow-x: hidden"))
         #expect(html.contains("New York"))
         #expect(html.contains("1.55"))
-        #expect(html.contains("#D97757"))
+        #expect(html.contains("--link: light-dark(#A04B32, #E89B7A)"))
+        #expect(html.contains("#2A2520"))
         #expect(html.contains("Hello reader"))
         #expect(!html.contains("alert(1)"))
     }

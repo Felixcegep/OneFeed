@@ -129,7 +129,7 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(articles.first?.feed?.id == local.id)
     }
 
-    @Test func finishingSavedArticleKeepsFavoriteAndMarksRead() throws {
+        @Test func finishingLaterArticleLeavesTheQueueAndMarksRead() throws {
         let context = try context()
         let article = Article(guid: "saved", title: "Saved", state: .saved, remoteID: "remote-saved", isRemoteStarred: true)
         context.insert(article)
@@ -142,7 +142,7 @@ struct SwiftDataFreshRSSSyncTests {
         let mutations = try context.fetch(FetchDescriptor<PendingSyncMutation>(sortBy: [SortDescriptor(\.createdAt)]))
         #expect(mutations.map(\.kind) == [.markRead])
         viewModel.reload()
-        #expect(viewModel.articles.contains(where: { $0.guid == "saved" }))
+        #expect(!viewModel.articles.contains(where: { $0.guid == "saved" }))
     }
 
     @Test func appRegistersOneFeedURLSchemeAndAllowsCleartextHTTP() {

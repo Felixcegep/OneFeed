@@ -51,7 +51,7 @@ enum FeedFolderGrouping {
     static func savedArticles(from articles: [Article]) -> [Article] {
         ArticleIdentity.collapsingDuplicates(
             articles
-                .filter { $0.state == .saved || $0.isRemoteStarred }
+                .filter { $0.state == .saved }
                 .sorted { ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt) }
         )
     }

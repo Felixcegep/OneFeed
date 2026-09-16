@@ -11,7 +11,7 @@ enum FeedBrowseDestination: Hashable {
         switch self {
         case .today: String(localized: "Today")
         case .unread: String(localized: "All Unread")
-        case .saved: String(localized: "Saved")
+        case .saved: String(localized: "Queue")
         case .folder(let id): id.title
         }
     }
@@ -24,18 +24,16 @@ struct FoldersView: View {
         sort: \Article.publishedAt,
         order: .reverse
     ) private var openQuery: [Article]
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred }
-    ) private var savedQuery: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
+    @State private var pickingFolder: FolderIconTarget?
+    @State private var iconTick = 0
 
     private var unread: [Article] { FeedFolderGrouping.openArticles(from: openQuery) }
     private var today: [Article] { FeedFolderGrouping.todayArticles(from: openQuery) }
-    private var saved: [Article] { FeedFolderGrouping.savedArticles(from: savedQuery) }
     private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery) }
     private var folderSectionTitle: String {
         accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
@@ -44,11 +42,11 @@ struct FoldersView: View {
     }
 
     var body: some View {
+        let _ = iconTick
         List {
             Section {
+                smartLink(.unread, systemImage: "tray", count: unread.count)
                 smartLink(.today, systemImage: "sun.max", count: today.count)
-                smartLink(.unread, systemImage: "circle", count: unread.count)
-                smartLink(.saved, systemImage: "star", count: saved.count)
             } header: {
                 GallerySectionHeader(text: "Smart Feeds")
             }
@@ -57,54 +55,31 @@ struct FoldersView: View {
                     Text("Folders appear here after you add sources.")
                         .font(OneFeedTheme.sansUI(15, weight: .regular))
                         .foregroundStyle(OneFeedTheme.graphite)
-                        .listRowBackground(OneFeedTheme.plaster)
+                        .oneFeedDirectoryRow()
                 } else {
                     ForEach(summaries) { summary in
-                        NavigationLink {
-                            ArticleCollectionView(destination: .folder(summary.folderID))
-                        } label: {
-                            FeedDirectoryRow(
-                                title: summary.name,
-                                swatchName: summary.name,
-                                count: summary.unreadCount
-                            )
-                        }
-                        .accessibilityIdentifier("folder-\(summary.name)")
-                        .accessibilityHint("Opens unread stories in this folder")
-                        .listRowBackground(OneFeedTheme.plaster)
-                        .listRowSeparatorTint(OneFeedTheme.sand)
+                        folderRow(summary)
                     }
                 }
             } header: {
                 GallerySectionHeader(text: folderSectionTitle)
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .background(OneFeedTheme.plaster)
-        .listRowSeparatorTint(OneFeedTheme.sand)
-        .oneFeedScrollEdge()
+        .oneFeedGroupedListStyle()
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
+            ToolbarItemGroup(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
                     Task { await refresh.refresh(in: modelContext) }
                 }
-            }
-            ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
-            }
-            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
                         toolbarDestination = .sources
-                    }
-                    Button("Settings", systemImage: "gearshape") {
-                        toolbarDestination = .settings
                     }
                     Button("History", systemImage: "clock") {
                         toolbarDestination = .history
@@ -118,13 +93,17 @@ struct FoldersView: View {
         .navigationDestination(item: $toolbarDestination) { destination in
             switch destination {
             case .sources: SourcesView()
-            case .settings: SettingsView()
             case .history: HistoryView()
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
         .task { refresh.adoptLatestFetch(from: feeds) }
         .sheet(isPresented: $showingAddSource) { AddSourceView() }
+        .sheet(item: $pickingFolder) { target in
+            FolderEmojiPicker(folderName: target.name) { _ in
+                iconTick += 1
+            }
+        }
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { refresh.presentedError != nil },
             set: { if !$0 { refresh.presentedError = nil } }
@@ -141,13 +120,36 @@ struct FoldersView: View {
         } label: {
             FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
         }
-        .listRowBackground(OneFeedTheme.plaster)
-        .listRowSeparatorTint(OneFeedTheme.sand)
+        .oneFeedDirectoryRow()
+    }
+
+    private func folderRow(_ summary: FolderSummary) -> some View {
+        HStack(spacing: 4) {
+            FolderEmojiButton(name: summary.name) {
+                pickingFolder = FolderIconTarget(name: summary.name)
+            }
+            NavigationLink {
+                ArticleCollectionView(destination: .folder(summary.folderID))
+            } label: {
+                FeedDirectoryRow(
+                    title: summary.name,
+                    count: summary.unreadCount
+                )
+            }
+        }
+        .accessibilityIdentifier("folder-\(summary.name)")
+        .accessibilityElement(children: .contain)
+        .oneFeedDirectoryRow()
+        .contextMenu {
+            Button("Change icon", systemImage: "face.smiling") {
+                pickingFolder = FolderIconTarget(name: summary.name)
+            }
+        }
     }
 }
 
 private enum FeedToolbarDestination: Hashable, Identifiable {
-    case sources, settings, history
+    case sources, history
     var id: Self { self }
 }
 
@@ -162,7 +164,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .saved:
             _articles = Query(
-                filter: #Predicate<Article> { $0.stateRawValue == "saved" || $0.isRemoteStarred },
+                filter: #Predicate<Article> { $0.stateRawValue == "saved" },
                 sort: \Article.completedAt,
                 order: .reverse
             )
@@ -206,11 +208,13 @@ struct ArticleCollectionView: View {
                         .articleActions(for: article, in: modelContext)
                     }
                 }
-                .articleTimelineList()
+                .oneFeedGroupedListStyle()
             }
         }
         .navigationTitle(destination.title)
-        .oneFeedInlineTitle()
+        .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
+        .background(OneFeedTheme.plaster)
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
@@ -226,7 +230,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .today: "Nothing today"
         case .unread: "You're caught up"
-        case .saved: "Nothing saved"
+        case .saved: "Nothing in Queue"
         case .folder: "Caught up"
         }
     }
@@ -235,7 +239,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .today: "sun.max"
         case .unread: "checkmark.circle"
-        case .saved: "star"
+        case .saved: "square.stack"
         case .folder: "checkmark.circle"
         }
     }
@@ -244,7 +248,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .today: "Stories published today will collect here."
         case .unread: "New stories from your sources will land here."
-        case .saved: "Save an article and it will wait here."
+        case .saved: "Add a link, or pick a story from Feed."
         case .folder: "No unread stories in this folder."
         }
     }

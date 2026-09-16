@@ -44,7 +44,11 @@ struct OneFeedApp: App {
                 }
             }
             if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
-                UserDefaults.standard.set(true, forKey: AppPreferenceKey.completedOnboarding)
+                if ProcessInfo.processInfo.arguments.contains("-uiTestingOnboarding") {
+                    UserDefaults.standard.set(false, forKey: AppPreferenceKey.completedOnboarding)
+                } else {
+                    UserDefaults.standard.set(true, forKey: AppPreferenceKey.completedOnboarding)
+                }
                 let context = ModelContext(container)
                 let feedA = Feed(title: "Trail of Bits", websiteURL: URL(string: "https://example.com"), feedURL: URL(string: "https://example.com/feed")!, folderName: "Security")
                 let feedB = Feed(title: "Swift.org", websiteURL: URL(string: "https://swift.org"), feedURL: URL(string: "https://swift.org/atom.xml")!, folderName: "Development")
@@ -55,15 +59,46 @@ struct OneFeedApp: App {
                 context.insert(deckArticle1)
                 context.insert(deckArticle2)
                 context.insert(deckArticle3)
+                if ProcessInfo.processInfo.arguments.contains("-uiTestingLayoutStress") {
+                    deckArticle1.contentHTML = """
+                    <h2>A reader built for attention</h2>
+                    <p>This offline layout fixture checks paragraphs, links, tables and code without fetching a website.</p>
+                    <blockquote>Readable content should fit the viewport at every text size.</blockquote>
+                    <pre><code>let deliberatelyLongIdentifierForHorizontalScrolling = \"A long code sample that must scroll inside its own block, never move the whole reader sideways.\"</code></pre>
+                    <table><tr><th>Feature</th><th>Expected presentation</th></tr><tr><td>Long text</td><td>Wraps within the reading column</td></tr></table>
+                    <p><a href="https://example.com">An example link with a visible underline</a></p>
+                    """ + String(repeating: "<p>A calm reading experience leaves room for the words. This paragraph provides enough content to inspect scrolling, line length and the fixed reader controls.</p>", count: 18)
+                    for index in 1...12 {
+                        let title = index == 12 ? "Last saved layout example" : (index == 2 ? "A deliberately long article title about how our perception of time changes when we slow down and read one story at a time" : "Saved layout example \(index)")
+                        let sample = Article(guid: "ui-layout-\(index)", title: title, publishedAt: .now.addingTimeInterval(-Double(index) * 86400), estimatedReadingMinutes: index, state: .saved, feed: index.isMultiple(of: 2) ? feedA : feedB)
+                        sample.completedAt = .now.addingTimeInterval(-Double(index + 2) * 3600)
+                        context.insert(sample)
+                    }
+                }
                 let todayDeck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
                 context.insert(todayDeck)
                 for (index, article) in [deckArticle1, deckArticle2, deckArticle3].enumerated() {
                     let status: ArticleState = index == 0 ? .current : .queued
                     context.insert(DailyDeckItem(position: index + 1, status: status, article: article, deck: todayDeck))
                 }
-                let saved = Article(guid: "ui-saved", title: "Why SQLite is so reliable", publishedAt: .now.addingTimeInterval(-86400), summary: "A saved article for later.", estimatedReadingMinutes: 8, state: .saved, feed: feedA)
-                saved.completedAt = .now.addingTimeInterval(-1800)
-                context.insert(saved)
+                if !ProcessInfo.processInfo.arguments.contains("-uiTestingEmptyQueue") {
+                    let saved = Article(guid: "ui-saved", title: "Why SQLite is so reliable", publishedAt: .now.addingTimeInterval(-86400), summary: "A saved article for later.", estimatedReadingMinutes: 8, state: .saved, feed: feedA)
+                    saved.completedAt = .now.addingTimeInterval(-1800)
+                    context.insert(saved)
+                    let laterVideo = Article(
+                        guid: "ui-later-video",
+                        title: "A talk to watch later",
+                        url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+                        publishedAt: .now.addingTimeInterval(-3600),
+                        estimatedReadingMinutes: 12,
+                        state: .saved,
+                        contentKind: "youtube",
+                        durationSeconds: 720,
+                        feed: feedB
+                    )
+                    laterVideo.completedAt = .now.addingTimeInterval(-600)
+                    context.insert(laterVideo)
+                }
                 let read = Article(guid: "ui-read", title: "Understanding Linux Namespaces", publishedAt: .now.addingTimeInterval(-172800), estimatedReadingMinutes: 9, state: .read, feed: feedB)
                 read.completedAt = .now.addingTimeInterval(-600)
                 context.insert(read)

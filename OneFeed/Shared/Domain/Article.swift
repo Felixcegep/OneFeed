@@ -55,8 +55,17 @@ final class Article {
         }
     }
 
+    /// Minutes from stored HTML, never below a server-provided estimate.
+    var resolvedReadingMinutes: Int {
+        let computed = ContentClassifier.readingMinutes(
+            words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+        )
+        return max(computed, estimatedReadingMinutes)
+    }
+
     /// Timed length when known. Videos without a fetched duration return nil
-    /// instead of a fake "1 min".
+    /// instead of a fake "1 min". Articles omit "1 min read" until the body is
+    /// long enough to be a real estimate, not an RSS teaser.
     var timedDurationPhrase: String? {
         if durationSeconds >= 60 {
             let minutes = max(1, Int((Double(durationSeconds) / 60.0).rounded()))
@@ -66,13 +75,26 @@ final class Article {
             return "\(durationSeconds) sec"
         }
         if contentKind == "article" {
-            return "\(estimatedReadingMinutes) min read"
+            let minutes = resolvedReadingMinutes
+            guard minutes >= 2 else { return nil }
+            return "\(minutes) min read"
         }
         return nil
     }
 
     var durationPhrase: String {
-        timedDurationPhrase ?? kindLabel ?? "\(estimatedReadingMinutes) min read"
+        timedDurationPhrase ?? kindLabel ?? ""
+    }
+
+    /// Raises the persisted estimate when current HTML is longer than ingest.
+    func refreshEstimatedReadingMinutes() {
+        guard contentKind == "article" else { return }
+        let minutes = ContentClassifier.readingMinutes(
+            words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+        )
+        if minutes > estimatedReadingMinutes {
+            estimatedReadingMinutes = minutes
+        }
     }
 
     var readableHTML: String? {

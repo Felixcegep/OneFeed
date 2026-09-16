@@ -52,6 +52,11 @@ struct ReaderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(OneFeedTheme.paper)
+            #if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                readerActionBar
+            }
+            #endif
             .overlay {
                 if let decision {
                     OneFeedDecisionCurtain(state: decision)
@@ -87,43 +92,6 @@ struct ReaderView: View {
                             OneFeedMarkPulse(isActive: true, size: 18)
                         }
                         readingOptionsMenu
-                    }
-                }
-                ToolbarItem(placement: .oneFeedBottomBar) {
-                    HStack(spacing: 8) {
-                        Button("Save", systemImage: decision == .saved ? "star.fill" : "star") {
-                            finish(.saved)
-                        }
-                        .buttonStyle(DecisionActionStyle(expands: false))
-                        .disabled(decision != nil)
-                        .accessibilityHint("Keeps this in Saved")
-                        Button("Skip", systemImage: "forward") {
-                            finish(.skipped)
-                        }
-                        .buttonStyle(DecisionActionStyle(expands: false))
-                        .disabled(decision != nil)
-                        Spacer(minLength: 8)
-                        Button("Done", systemImage: "checkmark") {
-                            finish(.read)
-                        }
-                        .buttonStyle(InkCapsuleStyle())
-                        .disabled(decision != nil)
-                        .accessibilityHint("Marks this article done")
-                        Spacer(minLength: 8)
-                        ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundStyle(OneFeedTheme.ink)
-                        }
-                        .disabled(article.url == nil)
-                        .accessibilityLabel("Share")
-                        Button {
-                            isPresentingBrowser = true
-                        } label: {
-                            Image(systemName: "safari")
-                                .foregroundStyle(OneFeedTheme.ink)
-                        }
-                        .disabled(article.url == nil)
-                        .accessibilityLabel("Open in browser")
                     }
                 }
             }
@@ -176,6 +144,121 @@ struct ReaderView: View {
 
     private var article: Article { viewModel.article }
 
+    #if os(iOS)
+    /// Standard sizes keep five equal slots. Accessibility sizes stack a full-width
+    /// Done control above the remaining actions so captions never clip or scroll away.
+    private var readerActionBar: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                readerAccessibilityActions
+            } else {
+                readerActionItems
+            }
+        }
+        .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 16 : 8)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .background {
+            OneFeedTheme.paper
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(OneFeedTheme.sand)
+                        .frame(height: 1)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var readerAccessibilityActions: some View {
+        VStack(spacing: 8) {
+            Button {
+                finish(.read)
+            } label: {
+                Label("Done", systemImage: "checkmark")
+            }
+            .buttonStyle(PrimaryActionStyle())
+            .disabled(decision != nil)
+            .accessibilityLabel("Done")
+            .accessibilityHint("Marks this article done")
+
+            readerSecondaryAction(
+                "Queue",
+                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
+                hint: "Adds this to Queue"
+            ) {
+                finish(.saved)
+            }
+            readerSecondaryAction("Skip", systemImage: "forward", hint: "Skip this article") {
+                finish(.skipped)
+            }
+        }
+    }
+
+    private var readerActionItems: some View {
+        HStack(spacing: 0) {
+            readerBarItem(
+                "Queue",
+                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
+                hint: "Adds this to Queue"
+            ) {
+                finish(.saved)
+            }
+            readerBarItem("Skip", systemImage: "forward", hint: "Skip this article") {
+                finish(.skipped)
+            }
+            readerBarItem("Done", systemImage: "checkmark", hint: "Marks this article done", emphasized: true) {
+                finish(.read)
+            }
+            ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                ReaderBarItemLabel(title: "Share", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.plain)
+            .disabled(article.url == nil || decision != nil)
+            .accessibilityLabel("Share")
+            .frame(maxWidth: .infinity)
+            readerBarItem("Browser", systemImage: "safari", hint: "Opens the original page") {
+                isPresentingBrowser = true
+            }
+            .disabled(article.url == nil)
+        }
+    }
+
+    private func readerSecondaryAction(
+        _ title: String,
+        systemImage: String,
+        hint: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(DecisionActionStyle())
+        .disabled(decision != nil)
+        .accessibilityLabel(title)
+        .accessibilityHint(hint)
+    }
+
+    private func readerBarItem(
+        _ title: String,
+        systemImage: String,
+        hint: String,
+        emphasized: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            ReaderBarItemLabel(title: title, systemImage: systemImage, emphasized: emphasized)
+        }
+        .buttonStyle(.plain)
+        .disabled(decision != nil)
+        .accessibilityLabel(title)
+        .accessibilityHint(hint)
+        .frame(maxWidth: .infinity)
+    }
+    #endif
+
     private func finish(_ state: ArticleState) {
         guard decision == nil else { return }
         decision = state
@@ -191,14 +274,29 @@ struct ReaderView: View {
         }
     }
 
+    @ViewBuilder
     private var modePicker: some View {
-        Picker("View", selection: $mode) {
-            ForEach(ReaderDisplayMode.allCases) { option in
-                Text(option.title).tag(option)
+        if dynamicTypeSize.isAccessibilitySize {
+            Menu {
+                Picker("View", selection: $mode) {
+                    ForEach(ReaderDisplayMode.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+            } label: {
+                Text(mode.title)
+                    .font(.body.weight(.medium))
             }
+            .accessibilityLabel("Reading mode, \(mode.title)")
+        } else {
+            Picker("View", selection: $mode) {
+                ForEach(ReaderDisplayMode.allCases) { option in
+                    Text(option.title).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Reading mode")
         }
-        .pickerStyle(.segmented)
-        .accessibilityLabel("Reading mode")
     }
 
     private var readingOptionsMenu: some View {
@@ -213,6 +311,21 @@ struct ReaderView: View {
                     Text(size.label).tag(size.rawValue)
                 }
             }
+            #if os(iOS)
+            if dynamicTypeSize.isAccessibilitySize {
+                Divider()
+                if let url = article.url {
+                    ShareLink(item: url) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(decision != nil)
+                    Button("Browser", systemImage: "safari") {
+                        isPresentingBrowser = true
+                    }
+                    .disabled(decision != nil)
+                }
+            }
+            #endif
             if article.contentKind == "youtube" {
                 Divider()
                 Button("Summarize video", systemImage: "text.quote") {
@@ -271,7 +384,7 @@ struct ReaderView: View {
     private var readerBottomBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
-                readerBarButton("Save", systemImage: "star", help: "Keep this in Saved") {
+                readerBarButton("Queue", systemImage: "square.stack", help: "Add this to Queue") {
                     finish(.saved)
                 }
                 .disabled(decision != nil)
@@ -376,7 +489,7 @@ struct ReaderView: View {
         } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
             ScrollView {
                 Text(summary)
-                    .font(OneFeedTheme.serifBody(16))
+                    .font(.system(.body, design: .serif))
                     .foregroundStyle(OneFeedTheme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -388,6 +501,39 @@ struct ReaderView: View {
             }
             .transition(.opacity)
         }
+    }
+}
+
+private struct ReaderBarItemLabel: View {
+    let title: String
+    let systemImage: String
+    var emphasized = false
+    @ScaledMetric(relativeTo: .body) private var iconSize = 32.0
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: iconSize, height: iconSize)
+                .foregroundStyle(emphasized ? OneFeedTheme.plaster : OneFeedTheme.ink)
+                .background {
+                    if emphasized {
+                        Circle().fill(OneFeedTheme.ink)
+                    }
+                }
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(OneFeedTheme.ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 52)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
     }
 }
 

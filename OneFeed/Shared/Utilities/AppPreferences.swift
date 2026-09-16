@@ -60,6 +60,7 @@ enum AppPreferenceKey {
     static let articleRetentionDays = "articleRetentionDays"
     static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
     static let knownFolderNames = "knownFolderNames"
+    static let folderEmojis = "folderEmojis"
     static let libraryFolderBookmark = "libraryFolderBookmark"
     static let libraryBookmarkIsFile = "libraryBookmarkIsFile"
     static let libraryTombstones = "libraryTombstones"
@@ -92,6 +93,7 @@ enum FolderStore {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let next = knownNames().filter { $0.caseInsensitiveCompare(trimmed) != .orderedSame }
         UserDefaults.standard.set(next, forKey: AppPreferenceKey.knownFolderNames)
+        FolderEmoji.remove(for: trimmed)
     }
 
     /// Known empty folders plus folders that already contain feeds.

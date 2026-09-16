@@ -4,6 +4,7 @@ import SwiftData
 struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = HistoryViewModel()
+    @State private var selectedArticle: Article?
 
     var body: some View {
         Group {
@@ -16,12 +17,16 @@ struct HistoryView: View {
             } else {
                 List {
                     ForEach(viewModel.days) { group in
-                        Section(group.label) {
+                        Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
-                                ArticleRow(article: article, status: article.state == .read ? "Read" : "Skipped")
-                                    .listRowBackground(OneFeedTheme.paper)
-                                    .listRowSeparatorTint(OneFeedTheme.sand)
+                                Button { selectedArticle = article } label: {
+                                    ArticleRow(article: article, status: article.state == .read ? "Read" : "Skipped")
+                                }
+                                .buttonStyle(DirectoryRowButtonStyle())
+                                .articleListRow()
                             }
+                        } header: {
+                            GallerySectionHeader(text: group.label)
                         }
                     }
                 }
@@ -30,7 +35,11 @@ struct HistoryView: View {
         }
         .navigationTitle("History")
         .oneFeedInlineTitle()
+        .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
         .task { viewModel.load(from: modelContext) }
+        .oneFeedArticleCover(item: $selectedArticle) { article in
+            ReaderView(article: article) { _ in selectedArticle = nil }
+        }
     }
 }
