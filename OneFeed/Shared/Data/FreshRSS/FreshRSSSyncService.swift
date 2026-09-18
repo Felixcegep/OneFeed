@@ -177,10 +177,9 @@ extension LibraryIngestActor {
             throw FreshRSSSyncError.missingCredentials
         }
         try await flushMutations(client: client, token: token)
-        _ = try ArticleIdentity.mergeDuplicates(in: modelContext)
         let subscriptions = try await client.subscriptions(authToken: token).subscriptions
         await progress.begin(phase: .sync, total: subscriptions.count)
-        var index = ArticleIdentityIndex(articles: try modelContext.fetch(FetchDescriptor<Article>()))
+        var index = ArticleIdentityIndex(articles: identityArticles())
         let existingFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
         var feedsByRemoteID: [String: Feed] = [:]
         var feedsByURL: [String: Feed] = [:]
@@ -228,7 +227,7 @@ extension LibraryIngestActor {
                 await Task.yield()
             }
         }
-        _ = try ArticleIdentity.mergeDuplicates(in: modelContext)
+        _ = try ArticleIdentity.mergeDuplicates(in: modelContext, persist: false)
         ingestAccount.lastSyncAt = .now
         ingestAccount.lastSyncError = nil
         try persistIfNeeded()
@@ -324,7 +323,6 @@ extension LibraryIngestActor {
         descriptor.fetchLimit = 250
         for mutation in try modelContext.fetch(descriptor) {
             mutation.attempts += 1
-            try persistIfNeeded()
             do {
                 switch mutation.kind {
                 case .markRead: try await client.markRead(itemID: mutation.remoteArticleID, authToken: token)
@@ -340,8 +338,8 @@ extension LibraryIngestActor {
                 throw error
             }
             modelContext.delete(mutation)
-            try persistIfNeeded()
         }
+        try persistIfNeeded()
     }
 }
 

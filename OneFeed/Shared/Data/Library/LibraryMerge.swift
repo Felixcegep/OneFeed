@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum LibraryMerge {
+nonisolated enum LibraryMerge {
     static func snapshot(from context: ModelContext, now: Date = .now, extraTombstones: [LibraryTombstone] = []) throws -> LibraryDocument {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
         let articles = try context.fetch(FetchDescriptor<Article>())
@@ -164,7 +164,7 @@ enum LibraryMerge {
             article.state = .queued
             article.firstDisplayedAt = nil
         }
-        if let deck = try DailyDeckService().todayDeck(in: context) {
+        if let deck = try DailyDeckService.todayDeck(in: context) {
             var sawCurrent = false
             for item in deck.items.sorted(by: { $0.position < $1.position }) {
                 guard let article = item.article, article.isStored else { continue }

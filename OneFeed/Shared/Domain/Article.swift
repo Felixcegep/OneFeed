@@ -55,12 +55,9 @@ final class Article {
         }
     }
 
-    /// Minutes from stored HTML, never below a server-provided estimate.
+    /// Stored estimate. Lists must not regex `contentHTML` in `body`.
     var resolvedReadingMinutes: Int {
-        let computed = ContentClassifier.readingMinutes(
-            words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
-        )
-        return max(computed, estimatedReadingMinutes)
+        estimatedReadingMinutes
     }
 
     /// Timed length when known. Videos without a fetched duration return nil
@@ -75,7 +72,7 @@ final class Article {
             return "\(durationSeconds) sec"
         }
         if contentKind == "article" {
-            let minutes = resolvedReadingMinutes
+            let minutes = estimatedReadingMinutes
             guard minutes >= 2 else { return nil }
             return "\(minutes) min read"
         }

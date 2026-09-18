@@ -494,10 +494,10 @@ struct FeedAndFreshRSSDomainTests {
             contentHTML: "<p>" + String(repeating: "word ", count: 440) + "</p>",
             estimatedReadingMinutes: 1
         )
-        #expect(extracted.resolvedReadingMinutes == 2)
-        #expect(extracted.timedDurationPhrase == "2 min read")
         extracted.refreshEstimatedReadingMinutes()
         #expect(extracted.estimatedReadingMinutes == 2)
+        #expect(extracted.resolvedReadingMinutes == 2)
+        #expect(extracted.timedDurationPhrase == "2 min read")
 
         let server = Article(
             guid: "fresh",

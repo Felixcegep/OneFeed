@@ -118,7 +118,7 @@ enum FeedFolderGrouping {
     }
 
     /// Seeded cadence/topic order first, then alphabetical extras.
-    static func compareFolderNames(_ lhs: String, _ rhs: String) -> Bool {
+    nonisolated static func compareFolderNames(_ lhs: String, _ rhs: String) -> Bool {
         let order = FeedSeedCatalog.folderOrder
         let li = order.firstIndex { $0.caseInsensitiveCompare(lhs) == .orderedSame }
         let ri = order.firstIndex { $0.caseInsensitiveCompare(rhs) == .orderedSame }

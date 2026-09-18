@@ -180,10 +180,20 @@ final class FeedService {
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse else { throw FeedServiceError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else { throw FeedServiceError.http(http.statusCode) }
-        if let parsed = try? parser.parse(data) { return (http.url ?? url, parsed) }
+        let parser = self.parser
+        return try await Self.resolvedFeed(data: data, responseURL: http.url ?? url, parser: parser, session: session)
+    }
+
+    nonisolated private static func resolvedFeed(
+        data: Data,
+        responseURL: URL,
+        parser: FeedParser,
+        session: URLSession
+    ) async throws -> (URL, ParsedFeed) {
+        if let parsed = try? parser.parse(data) { return (responseURL, parsed) }
 
         guard let html = String(data: data, encoding: .utf8),
-              let discovered = Self.discoverFeedURL(in: html, relativeTo: http.url ?? url) else {
+              let discovered = discoverFeedURL(in: html, relativeTo: responseURL) else {
             throw FeedServiceError.discoveryFailed
         }
         let (feedData, feedResponse) = try await session.data(from: discovered)

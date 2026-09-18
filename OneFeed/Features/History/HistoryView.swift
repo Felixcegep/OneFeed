@@ -2,13 +2,20 @@ import SwiftUI
 import SwiftData
 
 struct HistoryView: View {
-    @Environment(\.modelContext) private var modelContext
-    @State private var viewModel = HistoryViewModel()
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "read" || $0.stateRawValue == "skipped" },
+        sort: \Article.completedAt,
+        order: .reverse
+    ) private var history: [Article]
     @State private var selectedArticle: Article?
+
+    private var days: [HistoryDay] {
+        HistoryViewModel.days(from: history)
+    }
 
     var body: some View {
         Group {
-            if viewModel.days.isEmpty {
+            if days.isEmpty {
                 EmptyLibraryState(
                     title: "No history yet",
                     systemImage: "clock",
@@ -16,7 +23,7 @@ struct HistoryView: View {
                 )
             } else {
                 List {
-                    ForEach(viewModel.days) { group in
+                    ForEach(days) { group in
                         Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 Button { selectedArticle = article } label: {
@@ -37,7 +44,6 @@ struct HistoryView: View {
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
-        .task { viewModel.load(from: modelContext) }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { _ in selectedArticle = nil }
         }

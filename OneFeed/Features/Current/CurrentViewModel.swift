@@ -163,6 +163,10 @@ final class CurrentViewModel {
             await self.performRefreshWork(in: context)
         }
         loadCurrent()
+        Task(priority: .utility) {
+            let current = try? self.deckService.currentItem(in: context)
+            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
+        }
     }
 
     private func performRefreshWork(in context: ModelContext) async {
@@ -177,8 +181,6 @@ final class CurrentViewModel {
             try await SwiftDataIngest.actor(from: context).finishToday()
             let current = try deckService.currentItem(in: context)
             apply(item: current, totalCount: (try? deckService.todayDeck(in: context))?.items.count ?? 0)
-            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
-            apply(item: try deckService.currentItem(in: context), totalCount: (try? deckService.todayDeck(in: context))?.items.count ?? totalCount)
             progress.finishItem(newArticles: 0)
         } catch {
             refreshError = refreshError ?? error

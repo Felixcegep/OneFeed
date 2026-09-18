@@ -334,7 +334,9 @@ final class LibrarySyncService {
             )
         }
 
-        let localData = try Self.encodedLibraryFile(from: context)
+        let localData = try await SwiftDataIngest.actor(from: context).encodedLibraryFile(
+            extraTombstones: LibraryFolderStore.loadTombstones()
+        )
         let localHash = CloudFileContentHash.sha256Hex(localData)
 
         let remoteData = try await readDriveData(from: record)
@@ -492,7 +494,7 @@ final class LibrarySyncService {
         }
     }
 
-    private static func portableUpdatedAt(for document: LibraryDocument) -> Date {
+    nonisolated static func portableUpdatedAt(for document: LibraryDocument) -> Date {
         var latest = document.currentUpdatedAt ?? Date(timeIntervalSince1970: 0)
         for feed in document.feeds {
             latest = max(latest, feed.updatedAt)
@@ -518,7 +520,9 @@ final class LibrarySyncService {
             let options = mergeOptions(in: context)
             isApplyingRemote = true
             defer { isApplyingRemote = false }
-            let local = try LibraryMerge.snapshot(from: context, extraTombstones: LibraryFolderStore.loadTombstones())
+            let local = try await SwiftDataIngest.actor(from: context).librarySnapshot(
+                extraTombstones: LibraryFolderStore.loadTombstones()
+            )
             let merged = LibraryMerge.merge(local: local, remote: remote ?? .empty(), options: options)
             _ = try LibraryMerge.apply(merged, to: context, options: options)
             if (try? DailyDeckService().todayDeck(in: context)) == nil {
@@ -549,7 +553,9 @@ final class LibrarySyncService {
             }
             let remote = try readDocument(at: libraryFileURL)
             let options = mergeOptions(in: context)
-            let local = try LibraryMerge.snapshot(from: context, extraTombstones: LibraryFolderStore.loadTombstones())
+            let local = try await SwiftDataIngest.actor(from: context).librarySnapshot(
+                extraTombstones: LibraryFolderStore.loadTombstones()
+            )
             let merged = LibraryMerge.merge(local: local, remote: remote ?? .empty(), options: options)
             try writeDocument(merged, to: libraryFileURL)
             LibraryFolderStore.saveTombstones(merged.tombstones)

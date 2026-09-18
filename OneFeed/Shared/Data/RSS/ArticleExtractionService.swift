@@ -32,8 +32,7 @@ nonisolated struct ArticleExtractionPolicy: Sendable {
     }
 
     func wordCount(in html: String?) -> Int {
-        let plain = (html ?? "").replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-        return plain.split(whereSeparator: \.isWhitespace).count
+        ContentClassifier.wordCount(in: html ?? "")
     }
 }
 
@@ -82,15 +81,24 @@ final class ArticleExtractionService {
             .filter { $0.position >= currentPosition }
             .prefix(1 + extraQueued)
             .compactMap(\.article)
+        var bodies: [ExtractedBody] = []
         for article in targets {
+            let existing = article.contentHTML
             if let html = await extractedHTML(for: article) {
-                if html != article.contentHTML {
+                if html != existing {
                     article.contentHTML = html
+                    article.refreshEstimatedReadingMinutes()
+                    bodies.append(
+                        ExtractedBody(
+                            articleID: article.id,
+                            html: article.contentHTML ?? html,
+                            estimatedMinutes: article.estimatedReadingMinutes
+                        )
+                    )
                 }
-                article.refreshEstimatedReadingMinutes()
             }
         }
-        try? context.save()
+        try? await LibraryIngestActor(modelContainer: context.container).persistExtractedBodies(bodies)
     }
 }
 

@@ -9,20 +9,12 @@ struct HistoryDay: Identifiable {
     var id: Date { day }
 }
 
-@MainActor
-@Observable
-final class HistoryViewModel {
-    private(set) var days: [HistoryDay] = []
-
-    func load(from context: ModelContext) {
-        let read = ArticleState.read.rawValue
-        let skipped = ArticleState.skipped.rawValue
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == read || $0.stateRawValue == skipped })
-        descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
-        let articles = (try? context.fetch(descriptor)) ?? []
+enum HistoryViewModel {
+    static func days(from articles: [Article]) -> [HistoryDay] {
         let calendar = Calendar.current
-        let groups = Dictionary(grouping: articles) { calendar.startOfDay(for: $0.completedAt ?? $0.publishedAt) }
-        days = groups.keys.sorted(by: >).map { day in
+        let stored = articles.filter(\.isStored)
+        let groups = Dictionary(grouping: stored) { calendar.startOfDay(for: $0.completedAt ?? $0.publishedAt) }
+        return groups.keys.sorted(by: >).map { day in
             let label: String
             if calendar.isDateInToday(day) { label = "Today" }
             else if calendar.isDateInYesterday(day) { label = "Yesterday" }

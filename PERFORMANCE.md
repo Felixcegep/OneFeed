@@ -44,9 +44,10 @@ Ne pas « corriger » ça en animant la `List` Feed pendant l’ingest : ça emp
 
 1. Le contexte de l’écran est sauvé s’il a des changements locaux, pour que l’actor voie les flux déjà ajoutés.
 2. RSS, FreshRSS, `mergeDuplicates`, `generateIfNeeded` et `purge` tournent sur l’actor.
-3. Un seul `save()` (ou presque) **sur l’actor**, pas sur le Main Actor.
+3. Un seul `save()` (ou presque) **sur l’actor**, pas sur le Main Actor. `generateIfNeeded` / `purge` / `mergeDuplicates` ne sauvent plus eux-mêmes pendant `finishToday` ; les mutations FreshRSS se flushent en **un** save, pas un par item.
 4. La barre de progression revient au main via `RefreshProgressSink` : texte seulement, pas le store.
 5. Après le save, `@Query` Feed / Queue se met à jour **une fois**. Un court à-coup de liste est possible ; ce n’est plus le freeze du write SQLite.
+6. L’extraction HTML du card Today, le snapshot JSON iCloud/Drive, et le parse d’un nouveau flux partent de l’actor / `nonisolated async`. Pas de `save()` d’extract ni d’encode de bibliothèque dans le `runExclusive` de Today.
 
 `classify` / `wordCount` tournent sur cet actor. L’échantillon HTML est plafonné ; ne pas relancer un regex sur tout le body RSS depuis le Main Actor.
 
@@ -74,8 +75,20 @@ Ces habitudes font geler, buggent l’état, ou recréent des requêtes. Elles o
 14. **Fetcher SwiftData dans une boucle d’items** (`FetchDescriptor` par `remoteID` FreshRSS). Construire un `ArticleIdentityIndex` une fois, y compris `remoteID`.
 15. **Animer `progress.fraction`.** La barre de 1 pt n’a pas besoin d’un ease de 300 ms à chaque source. Animer seulement `isActive` (apparition / disparition). `wordCount` : une passe, un plafond de caractères, pas deux regex sur le HTML complet.
 16. **`Task.detached` + `ModelContext` dans une fonction `nonisolated async`.** Le contexte n’est pas Sendable ; il doit rester sur l’exécuteur qui l’a créé. Passer par `@ModelActor`, pas par un hop vers le pool concurrent.
+17. **`save()` dans une boucle de mutations** (FreshRSS `flushMutations`). Chaque save fusionne vers les `@Query` du Main Actor. Accumuler, un persist à la fin (et sur erreur).
+18. **Regex HTML dans un getter lu par `ArticleRow`.** `timedDurationPhrase` / `resolvedReadingMinutes` relisaient `contentHTML` à chaque frame. Garder l’estimation persistée ; `refreshEstimatedReadingMinutes()` seulement après extract.
+19. **Bloquer « Updating sources » sur l’extract ou le JSON bibliothèque.** L’extract se fait en `.utility` après `finishToday`. Le snapshot iCloud/Drive se construit sur l’actor.
 
-## 5. Patterns à garder
+## 5. Encore sur le Main Actor
+
+Pas un freeze SQLite, mais ça peut encore accrocher :
+
+- **Feed** : `@Query` de tous les queued/current pour les compteurs de dossiers. Après le save de l’actor, SwiftUI relit cette liste une fois. Compteurs dénormalisés sur `Feed` si la bibliothèque devient énorme.
+- **Done / Restore / import OPML / seed** : petit `save()` sur le contexte de l’écran. Action utilisateur, pas un refresh.
+- **`ArticleQueueService.ensureCurrent`** après un sync FreshRSS, sur le contexte de l’écran. En pratique un fetch, rarement un save.
+- **`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`** : tout type sans `nonisolated` vit sur le main. Les helpers d’ingest (`LibraryMerge.snapshot`, `FolderStore.allNames`) doivent rester `nonisolated` pour que l’actor n’y saute pas.
+
+## 6. Patterns à garder
 
 - View → demande au ViewModel → le ViewModel change l’état → SwiftUI redessine. Pas Page A qui mute Page B.
 - `@MainActor` + `@Observable` pour l’état d’écran.

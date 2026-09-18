@@ -28,12 +28,12 @@ struct ArticleRetentionService {
     }
 
     @discardableResult
-    func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now) throws -> Int {
-        try Self.purge(in: context, olderThanDays: days, now: now)
+    func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now, persist: Bool = true) throws -> Int {
+        try Self.purge(in: context, olderThanDays: days, now: now, persist: persist)
     }
 
     @discardableResult
-    nonisolated static func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now) throws -> Int {
+    nonisolated static func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now, persist: Bool = true) throws -> Int {
         let days = days ?? Self.configuredDays
         guard days > 0 else { return 0 }
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
@@ -50,7 +50,7 @@ struct ArticleRetentionService {
             context.delete(article)
             removed += 1
         }
-        if removed > 0 { try context.save() }
+        if persist, removed > 0 { try context.save() }
         return removed
     }
 }

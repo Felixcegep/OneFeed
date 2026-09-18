@@ -76,12 +76,12 @@ enum AppPreferenceKey {
 
 /// Folder names the user created (even before any feed is filed there).
 enum FolderStore {
-    static func knownNames() -> [String] {
+    nonisolated static func knownNames() -> [String] {
         let stored = UserDefaults.standard.stringArray(forKey: AppPreferenceKey.knownFolderNames) ?? []
         return normalize(stored)
     }
 
-    static func remember(_ names: [String]) {
+    nonisolated static func remember(_ names: [String]) {
         var merged = Set(knownNames())
         for name in names {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -91,7 +91,7 @@ enum FolderStore {
         UserDefaults.standard.set(normalize(Array(merged)), forKey: AppPreferenceKey.knownFolderNames)
     }
 
-    static func remember(_ name: String) {
+    nonisolated static func remember(_ name: String) {
         remember([name])
     }
 
@@ -103,7 +103,7 @@ enum FolderStore {
     }
 
     /// Known empty folders plus folders that already contain feeds.
-    static func allNames(from feeds: [Feed]) -> [String] {
+    nonisolated static func allNames(from feeds: [Feed]) -> [String] {
         var names = Set(knownNames())
         for feed in feeds {
             if let folder = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
@@ -113,7 +113,7 @@ enum FolderStore {
         return normalize(Array(names))
     }
 
-    static func normalize(_ names: [String]) -> [String] {
+    nonisolated static func normalize(_ names: [String]) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
         for name in names {

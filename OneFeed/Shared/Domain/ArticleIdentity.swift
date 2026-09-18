@@ -41,10 +41,10 @@ nonisolated enum ArticleIdentity {
     }
 
     @discardableResult
-    static func mergeDuplicates(in context: ModelContext) throws -> Int {
+    static func mergeDuplicates(in context: ModelContext, persist: Bool = true) throws -> Int {
         let feedMerged = try mergeDuplicateFeeds(in: context)
         let articleMerged = try mergeDuplicateArticles(in: context)
-        if feedMerged + articleMerged > 0 {
+        if persist, feedMerged + articleMerged > 0 {
             try context.save()
         }
         return feedMerged + articleMerged

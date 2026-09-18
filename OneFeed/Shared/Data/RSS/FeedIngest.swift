@@ -95,7 +95,7 @@ extension LibraryIngestActor {
             persist: false
         )
         if insertedCount > 0 {
-            _ = try? ArticleIdentity.mergeDuplicates(in: modelContext)
+            _ = try? ArticleIdentity.mergeDuplicates(in: modelContext, persist: false)
         }
         try persistIfNeeded()
         if succeeded == 0, let firstError { throw firstError }
@@ -299,13 +299,6 @@ extension LibraryIngestActor {
             }
         }
         return inserted
-    }
-
-    private func identityArticles() -> [Article] {
-        var descriptor = FetchDescriptor<Article>()
-        descriptor.propertiesToFetch = [\.guid, \.url, \.remoteID]
-        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
-        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     private func feed(id: UUID) throws -> Feed? {

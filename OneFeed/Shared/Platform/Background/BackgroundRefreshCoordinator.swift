@@ -57,11 +57,11 @@ enum BackgroundRefreshCoordinator {
                 try? await freshRSSService.sync(account: account, in: context, progress: nil)
             }
             try? await SwiftDataIngest.actor(from: context).finishToday()
-            let current = try? DailyDeckService().currentItem(in: context)
-            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
             lastSuccessfulRefresh = .now
-            await LibrarySyncService.shared.flush()
         }
+        let current = try? DailyDeckService().currentItem(in: context)
+        await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
+        await LibrarySyncService.shared.flush()
     }
 
     static var lastSuccessfulRefresh: Date? {

@@ -3,11 +3,11 @@ import SwiftData
 
 @MainActor
 struct DailyDeckService {
-    func generateIfNeeded(in context: ModelContext, maxItems: Int = 10) throws -> DailyDeck {
-        try Self.generateIfNeeded(in: context, maxItems: maxItems)
+    func generateIfNeeded(in context: ModelContext, maxItems: Int = 10, persist: Bool = true) throws -> DailyDeck {
+        try Self.generateIfNeeded(in: context, maxItems: maxItems, persist: persist)
     }
 
-    nonisolated static func generateIfNeeded(in context: ModelContext, maxItems: Int = 10) throws -> DailyDeck {
+    nonisolated static func generateIfNeeded(in context: ModelContext, maxItems: Int = 10, persist: Bool = true) throws -> DailyDeck {
         if let existing = try todayDeck(in: context) {
             return existing
         }
@@ -26,7 +26,7 @@ struct DailyDeckService {
             }
         }
 
-        try context.save()
+        if persist { try context.save() }
         WidgetSnapshotStore.write(article: selected.first)
         return try todayDeck(in: context) ?? deck
     }

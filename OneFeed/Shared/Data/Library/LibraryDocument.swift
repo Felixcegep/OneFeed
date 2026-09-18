@@ -1,6 +1,6 @@
 import Foundation
 
-enum LibraryDocumentFormat {
+nonisolated enum LibraryDocumentFormat {
     static let schemaVersion = 1
     static let fileName = "OneFeed.library.json"
 
@@ -28,7 +28,7 @@ enum LibraryDocumentFormat {
     }
 }
 
-private enum LibraryJSON {
+nonisolated private enum LibraryJSON {
     static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -50,7 +50,7 @@ private enum LibraryJSON {
     }
 }
 
-struct LibraryDocument: Codable, Equatable, Sendable {
+nonisolated struct LibraryDocument: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var updatedAt: Date
     var folderNames: [String]
@@ -82,7 +82,7 @@ struct LibraryDocument: Codable, Equatable, Sendable {
     }
 }
 
-struct LibraryFeed: Codable, Equatable, Sendable {
+nonisolated struct LibraryFeed: Codable, Equatable, Sendable {
     var feedURL: String
     var title: String
     var websiteURL: String?
@@ -97,7 +97,7 @@ struct LibraryFeed: Codable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct LibraryArticle: Codable, Equatable, Sendable {
+nonisolated struct LibraryArticle: Codable, Equatable, Sendable {
     var key: String
     var feedURL: String
     var guid: String
@@ -109,12 +109,12 @@ struct LibraryArticle: Codable, Equatable, Sendable {
     var updatedAt: Date
 }
 
-struct LibraryTombstone: Codable, Equatable, Sendable {
+nonisolated struct LibraryTombstone: Codable, Equatable, Sendable {
     var feedURL: String
     var deletedAt: Date
 }
 
-struct LibraryMergeOptions: Equatable, Sendable {
+nonisolated struct LibraryMergeOptions: Equatable, Sendable {
     var syncFeeds: Bool
     var syncReadAndSaved: Bool
 
