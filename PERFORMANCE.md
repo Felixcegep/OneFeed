@@ -87,6 +87,7 @@ Pas un freeze SQLite, mais ça peut encore accrocher :
 - **Done / Restore / import OPML / seed** : petit `save()` sur le contexte de l’écran. Action utilisateur, pas un refresh.
 - **`ArticleQueueService.ensureCurrent`** après un sync FreshRSS, sur le contexte de l’écran. En pratique un fetch, rarement un save.
 - **`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`** : tout type sans `nonisolated` vit sur le main. Les helpers d’ingest (`LibraryMerge.snapshot`, `FolderStore.allNames`) doivent rester `nonisolated` pour que l’actor n’y saute pas.
+- **Premier tap lecteur / lancement lent** : WebKit lance WebContent / GPU / Networking (parfois 6–8 s). Ce n’est pas SwiftData, et `sandbox_extension_issue_file` / PointerUI / « Reading from public effective user settings » sont du bruit système. `OneFeedLoadingCover` reste à l’ouverture jusqu’à ce que le préchauffage 4 pt ait fini (ou 8 s). Les `Couldn't open <private>` / `Unable to hide query parameters` du WebContent sont du bruit WebKit (caches, ITP), pas des fichiers OneFeed.
 
 ## 6. Patterns à garder
 

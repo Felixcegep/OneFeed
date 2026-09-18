@@ -7,6 +7,13 @@ struct AppRootView: View {
     @State private var selectedTab: AppTab = .today
     @State private var subscribeAddress: String?
     @State private var isPresentingSubscribe = false
+    @State private var warmReaderWeb = false
+    @State private var isLaunching = !ReaderWebWarmup.skipsOpeningCover
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var showsLaunchCover: Bool {
+        isLaunching && !ReaderWebWarmup.skipsOpeningCover
+    }
 
     var body: some View {
         root
@@ -18,8 +25,31 @@ struct AppRootView: View {
             .oneFeedOnboardingCover(isPresented: Binding(get: { !completedOnboarding }, set: { if !$0 { completedOnboarding = true } })) {
                 OnboardingView { completedOnboarding = true }
             }
+            .overlay(alignment: .bottomLeading) {
+                if warmReaderWeb {
+                    ReaderWebProcessWarmup {
+                        isLaunching = false
+                    }
+                }
+            }
+            .overlay {
+                if showsLaunchCover {
+                    OneFeedLoadingCover(
+                        title: "OneFeed",
+                        status: "Hanging the room…",
+                        canvas: OneFeedTheme.plaster
+                    )
+                    .ignoresSafeArea()
+                }
+            }
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsLaunchCover)
             .task {
                 LibrarySyncService.shared.configure(with: modelContext)
+                guard ReaderWebWarmup.isEnabled else {
+                    isLaunching = false
+                    return
+                }
+                warmReaderWeb = true
             }
             .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.subscribe)) { _ in
                 isPresentingSubscribe = true

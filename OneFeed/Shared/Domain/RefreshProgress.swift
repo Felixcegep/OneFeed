@@ -103,6 +103,13 @@ final class RefreshProgress {
         return remainingCount == 1 ? "1 left" : "\(remainingCount) left"
     }
 
+    var coverStatus: String {
+        let detail = detailText()
+        if !detail.isEmpty { return detail }
+        if !remainingText.isEmpty { return remainingText }
+        return "This can take a minute the first time."
+    }
+
     /// One line for the navigation subtitle so the list does not need a tall banner.
     var compactStatus: String {
         if total > 0 {

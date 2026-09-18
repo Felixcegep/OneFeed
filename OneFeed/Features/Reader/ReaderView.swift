@@ -446,9 +446,8 @@ struct ReaderView: View {
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
                     textSize: ReaderTextSize(rawValue: textSize) ?? .standard
                 ),
-                baseURL: article.url ?? URL(string: "about:blank")!
+                title: article.title
             )
-            .id(dynamicTypeSize)
         }
     }
 
@@ -467,7 +466,7 @@ struct ReaderView: View {
 
     @ViewBuilder
     private func inAppWebsite(_ url: URL) -> some View {
-        WebsiteReaderPane(url: url)
+        WebsiteReaderPane(url: url, title: article.title, isVideo: article.contentKind == "youtube")
     }
 
     @ViewBuilder
@@ -576,15 +575,23 @@ private struct ReaderBarGlyph: View {
 
 private struct WebsiteReaderPane: View {
     let url: URL
+    let title: String
+    var isVideo = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page: WebPage
+    @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
 
-    init(url: URL) {
+    init(url: URL, title: String, isVideo: Bool = false) {
         self.url = url
+        self.title = title
+        self.isVideo = isVideo
         var configuration = WebPage.Configuration()
         configuration.loadsSubresources = true
         configuration.defaultNavigationPreferences.allowsContentJavaScript = true
         _page = State(initialValue: WebPage(configuration: configuration))
     }
+
+    private var showCover: Bool { !hasCommitted }
 
     var body: some View {
         WebView(page)
@@ -592,38 +599,53 @@ private struct WebsiteReaderPane: View {
             .webViewTextSelection(.enabled)
             .webViewBackForwardNavigationGestures(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .top) {
-                if page.isLoading {
-                    OneFeedMarkPulse(isActive: true, size: 18)
-                        .padding(.top, 8)
-                        .transition(.opacity)
+            .overlay {
+                if showCover {
+                    OneFeedLoadingCover(
+                        title: title,
+                        status: isVideo ? "Opening the video" : "Opening the site"
+                    )
                 }
             }
-            .animation(OneFeedMotion.overlay, value: page.isLoading)
-            .task(id: url) { _ = page.load(URLRequest(url: url)) }
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
+            .onChange(of: page.isLoading) { _, loading in
+                if !loading { hasCommitted = true }
+            }
+            .task(id: url) {
+                _ = page.load(URLRequest(url: url))
+                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                hasCommitted = true
+            }
     }
 }
 
 private struct ReaderWebContent: View {
     let html: String
-    let baseURL: URL
-    @State private var page: WebPage
+    let title: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var page = ReaderWebWarmup.makeReaderPage()
+    @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
 
-    init(html: String, baseURL: URL) {
-        self.html = html
-        self.baseURL = baseURL
-        var configuration = WebPage.Configuration()
-        configuration.loadsSubresources = true
-        configuration.defaultNavigationPreferences.allowsContentJavaScript = false
-        configuration.websiteDataStore = .nonPersistent()
-        _page = State(initialValue: WebPage(configuration: configuration))
-    }
+    private var showCover: Bool { !hasCommitted }
 
     var body: some View {
         WebView(page)
             .webViewLinkPreviews(.enabled)
             .webViewTextSelection(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task(id: html) { page.load(html: html, baseURL: baseURL) }
+            .overlay {
+                if showCover {
+                    OneFeedLoadingCover(title: title, status: "Laying the page")
+                }
+            }
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
+            .onChange(of: page.isLoading) { _, loading in
+                if !loading { hasCommitted = true }
+            }
+            .task(id: html) {
+                page.load(html: html, baseURL: ReaderWebWarmup.blankURL)
+                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                hasCommitted = true
+            }
     }
 }

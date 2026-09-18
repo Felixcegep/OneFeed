@@ -8,6 +8,7 @@ struct CurrentView: View {
     @State private var readerArticle: Article?
     @State private var showingSources = false
     @State private var celebrateClear = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var stories: [Article] {
         viewModel.remainingArticles.filter(\.isStored)
@@ -52,6 +53,16 @@ struct CurrentView: View {
             }
         }
         .background(OneFeedTheme.plaster)
+        .overlay {
+            if showsSourceRefreshCover {
+                OneFeedLoadingCover(
+                    title: viewModel.progress.primaryText,
+                    status: viewModel.progress.coverStatus,
+                    canvas: OneFeedTheme.plaster
+                )
+            }
+        }
+        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
@@ -111,6 +122,10 @@ struct CurrentView: View {
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
+    }
+
+    private var showsSourceRefreshCover: Bool {
+        viewModel.isRefreshing && !ReaderWebWarmup.skipsOpeningCover
     }
 
     private var subtitle: String {

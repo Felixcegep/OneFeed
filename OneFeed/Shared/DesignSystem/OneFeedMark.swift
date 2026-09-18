@@ -83,6 +83,37 @@ struct OneFeedMarkPulse: View {
     }
 }
 
+/// Full-canvas wait: launch, reader WebKit, or a source refresh that still hitches.
+struct OneFeedLoadingCover: View {
+    var title: String
+    var status: String
+    var canvas: Color = OneFeedTheme.paper
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        VStack(spacing: 20) {
+            OneFeedMarkPulse(isActive: true, size: 52)
+            Text(title)
+                .font(.system(.title, design: .serif))
+                .foregroundStyle(OneFeedTheme.ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 4)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(status)
+                .font(.body)
+                .foregroundStyle(OneFeedTheme.graphite)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, OneFeedTheme.pagePadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(canvas)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(status)")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
 /// Quiet bloom for Save / add-source — scale in, no bounce carnival.
 struct OneFeedMarkBurst: View {
     var size: CGFloat = 28

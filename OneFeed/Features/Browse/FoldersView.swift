@@ -31,11 +31,16 @@ struct FoldersView: View {
     @State private var toolbarDestination: FeedToolbarDestination?
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var folderSectionTitle: String {
         accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
             ? String(localized: "FreshRSS")
             : String(localized: "Folders")
+    }
+
+    private var showsSourceRefreshCover: Bool {
+        refresh.isRefreshing && !ReaderWebWarmup.skipsOpeningCover
     }
 
     var body: some View {
@@ -64,6 +69,16 @@ struct FoldersView: View {
             }
         }
         .oneFeedGroupedListStyle()
+        .overlay {
+            if showsSourceRefreshCover {
+                OneFeedLoadingCover(
+                    title: refresh.progress.primaryText,
+                    status: refresh.progress.coverStatus,
+                    canvas: OneFeedTheme.plaster
+                )
+            }
+        }
+        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
