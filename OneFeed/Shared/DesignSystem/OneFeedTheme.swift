@@ -39,6 +39,9 @@ enum OneFeedTheme {
     static let readerCorner: CGFloat = 10
     static let readerWidth: CGFloat = 760
     static let readerHeight: CGFloat = 720
+    /// Centered measure for Mac lists and featured cards. UX23: 680–760.
+    static let readingColumnWidth: CGFloat = 720
+    static let formColumnWidth: CGFloat = 520
 
     /// Authored display — system New York serif.
     static func serifDisplay(_ size: CGFloat = 32) -> Font {
@@ -83,7 +86,11 @@ struct GallerySectionHeader: View {
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+            #if os(macOS)
+            .padding(.top, 12)
+            #else
             .padding(.top, 4)
+            #endif
             .padding(.bottom, 8)
             .textCase(nil)
             .accessibilityAddTraits(.isHeader)
@@ -569,6 +576,7 @@ struct EmptyLibraryState: View {
                     .padding(.horizontal, 28)
                     .padding(.bottom, 96)
                     .frame(maxWidth: .infinity)
+                    .oneFeedMacEmptyCanvas()
                 }
                 .scrollBounceBehavior(.basedOnSize)
             } else {
@@ -613,6 +621,7 @@ struct EmptyLibraryState: View {
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
+            .oneFeedMacEmptyCanvas()
         }
     }
 }
@@ -644,5 +653,8 @@ extension View {
     func oneFeedPaperScreen() -> some View {
         scrollContentBackground(.hidden)
             .background(OneFeedTheme.plaster)
+            #if os(macOS)
+            .alternatingRowBackgrounds(.disabled)
+            #endif
     }
 }

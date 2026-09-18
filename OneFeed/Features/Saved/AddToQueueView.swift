@@ -89,7 +89,7 @@ struct AddToQueueView: View {
             }
             .interactiveDismissDisabled(isAdding)
         }
-        .oneFeedMacSheetCanvas()
+        .oneFeedMacFormSheet()
         #if os(iOS)
         .presentationDetents([.medium, .large], selection: $sheetDetent)
         #endif

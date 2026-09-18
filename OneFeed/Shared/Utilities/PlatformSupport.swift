@@ -227,7 +227,9 @@ extension View {
         #if os(macOS)
         listStyle(.inset)
             .scrollContentBackground(.hidden)
+            .alternatingRowBackgrounds(.disabled)
             .background(OneFeedTheme.plaster)
+            .oneFeedMacReadingColumn()
         #else
         listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
@@ -236,6 +238,71 @@ extension View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: 96)
             }
+        #endif
+    }
+
+    /// Phone tab-bar clearance only. Mac windows have no floating tabs.
+    @ViewBuilder
+    func oneFeedTabBarClearance() -> some View {
+        #if os(iOS)
+        safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: 96)
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// Settings and destination lists stay a reading-width column on Mac.
+    @ViewBuilder
+    func oneFeedMacReadingColumn() -> some View {
+        #if os(macOS)
+        frame(maxWidth: OneFeedTheme.readingColumnWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func oneFeedMacFormColumn() -> some View {
+        #if os(macOS)
+        frame(maxWidth: OneFeedTheme.formColumnWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func oneFeedMacEmptyCanvas() -> some View {
+        #if os(macOS)
+        frame(maxWidth: 400)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #else
+        self
+        #endif
+    }
+
+    @ViewBuilder
+    func oneFeedSettingsCanvas() -> some View {
+        scrollContentBackground(.hidden)
+            .background(OneFeedTheme.plaster)
+            #if os(macOS)
+            .alternatingRowBackgrounds(.disabled)
+            #endif
+            .oneFeedTabBarClearance()
+            .oneFeedMacFormColumn()
+    }
+
+    @ViewBuilder
+    func oneFeedWindowPlaster() -> some View {
+        #if os(macOS)
+        containerBackground(OneFeedTheme.plaster, for: .window)
+            .toolbarBackground(OneFeedTheme.plaster, for: .windowToolbar)
+            .toolbarBackground(.visible, for: .windowToolbar)
+        #else
+        self
         #endif
     }
 
@@ -274,14 +341,30 @@ extension View {
         #endif
     }
 
-    /// macOS sheets size to their content. A fitted card keeps the reader from
-    /// filling the display; `WebView` still needs an explicit frame.
+    /// Reader / browser sheet. Sized to shrink on a short window.
     @ViewBuilder
     func oneFeedMacSheetCanvas() -> some View {
+        oneFeedMacSheet(idealWidth: OneFeedTheme.readerWidth, idealHeight: 640)
+    }
+
+    /// Forms, pickers, onboarding. Not the 760 × 720 reader frame.
+    @ViewBuilder
+    func oneFeedMacFormSheet() -> some View {
+        oneFeedMacSheet(idealWidth: 480, idealHeight: 520)
+    }
+
+    @ViewBuilder
+    func oneFeedMacSheet(idealWidth: CGFloat, idealHeight: CGFloat) -> some View {
         #if os(macOS)
-        self
-            .frame(width: OneFeedTheme.readerWidth, height: OneFeedTheme.readerHeight)
-            .clipShape(.rect(cornerRadius: OneFeedTheme.readerCorner, style: .continuous))
+        background(OneFeedTheme.plaster)
+            .frame(
+                minWidth: min(420, idealWidth),
+                idealWidth: idealWidth,
+                maxWidth: idealWidth + 80,
+                minHeight: 380,
+                idealHeight: idealHeight,
+                maxHeight: idealHeight + 160
+            )
             .presentationSizing(.fitted)
             .presentationCornerRadius(OneFeedTheme.readerCorner)
         #else
@@ -302,7 +385,10 @@ extension View {
         #if os(iOS)
         fullScreenCover(isPresented: isPresented, content: content)
         #else
-        sheet(isPresented: isPresented, content: content)
+        sheet(isPresented: isPresented) {
+            content()
+                .oneFeedMacFormSheet()
+        }
         #endif
     }
 }

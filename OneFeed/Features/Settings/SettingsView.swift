@@ -40,11 +40,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .oneFeedInlineTitle()
-        .scrollContentBackground(.hidden)
-        .background(OneFeedTheme.plaster)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 96)
-        }
+        .oneFeedSettingsCanvas()
         .tint(OneFeedTheme.ink)
         .refreshProgressBanner(viewModel.progress)
         .task {
@@ -238,11 +234,7 @@ struct SettingsView: View {
             }
             .navigationTitle(title)
             .oneFeedInlineTitle()
-            .scrollContentBackground(.hidden)
-            .background(OneFeedTheme.plaster)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: 96)
-            }
+            .oneFeedSettingsCanvas()
             .tint(OneFeedTheme.ink)
             .refreshProgressBanner(viewModel.progress)
             .onAppear { viewModel.reload() }
@@ -349,6 +341,7 @@ private struct FreshRSSConnectView: View {
                 }
             }
         }
+        .oneFeedMacFormSheet()
     }
 }
 
@@ -391,6 +384,7 @@ struct GeminiAPIKeyForm: View {
                 }
             }
         }
+        .oneFeedMacFormSheet()
         #if os(iOS)
         .presentationDetents([.medium, .large], selection: $sheetDetent)
         .presentationContentInteraction(.scrolls)

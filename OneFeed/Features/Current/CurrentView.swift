@@ -97,6 +97,7 @@ struct CurrentView: View {
             NavigationStack {
                 SourcesView()
             }
+            .oneFeedMacSheet(idealWidth: 520, idealHeight: 640)
         }
         .oneFeedArticleCover(item: $readerArticle) { article in
             ReaderView(article: article, onFinish: { state in
@@ -185,6 +186,7 @@ struct CurrentView: View {
                     .padding(.top, 8)
             }
         }
+        .oneFeedMacEmptyCanvas()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
         .animation(nil, value: viewModel.progress.completed)

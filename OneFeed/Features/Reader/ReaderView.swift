@@ -378,7 +378,14 @@ struct ReaderView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(.bar)
+        .background {
+            OneFeedTheme.paper
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(OneFeedTheme.sand)
+                        .frame(height: 1)
+                }
+        }
     }
 
     private var readerBottomBar: some View {
@@ -416,7 +423,14 @@ struct ReaderView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(.bar)
+        .background {
+            OneFeedTheme.paper
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(OneFeedTheme.sand)
+                        .frame(height: 1)
+                }
+        }
     }
 
     private func readerBarButton(

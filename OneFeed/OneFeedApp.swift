@@ -156,7 +156,7 @@ struct OneFeedApp: App {
         #if os(macOS)
         Settings {
             SettingsView()
-                .frame(minWidth: 480, minHeight: 520)
+                .frame(minWidth: 520, minHeight: 480)
                 .modelContainer(sharedModelContainer)
         }
         #endif

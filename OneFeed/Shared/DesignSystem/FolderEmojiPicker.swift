@@ -79,7 +79,7 @@ struct FolderEmojiPicker: View {
                 }
             }
         }
-        .oneFeedMacSheetCanvas()
+        .oneFeedMacFormSheet()
         #if os(iOS)
         .presentationDetents([.medium, .large])
         #endif

@@ -340,6 +340,7 @@ struct AddSourceView: View {
                 } footer: {
                     Text("One per line. Paste several to add them all into the same folder.")
                 }
+                .listRowBackground(OneFeedTheme.paper)
 
                 Section {
                     Picker("Folder", selection: folderPickerSelection) {
@@ -358,6 +359,7 @@ struct AddSourceView: View {
                 } footer: {
                     Text("Same folder for every URL in this batch.")
                 }
+                .listRowBackground(OneFeedTheme.paper)
 
                 if let progress = viewModel.progressLabel {
                     Section {
@@ -367,10 +369,12 @@ struct AddSourceView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .listRowBackground(OneFeedTheme.paper)
                 }
 
                 if let errorMessage = viewModel.presentedError {
                     Section { Text(errorMessage).foregroundStyle(OneFeedTheme.error) }
+                        .listRowBackground(OneFeedTheme.paper)
                 }
             }
             .overlay {
@@ -405,6 +409,7 @@ struct AddSourceView: View {
                 }
             }
         }
+        .oneFeedMacFormSheet()
     }
 
     private var folderPickerSelection: Binding<FolderPick> {
