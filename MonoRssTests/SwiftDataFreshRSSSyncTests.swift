@@ -202,6 +202,7 @@ struct SwiftDataFreshRSSSyncTests {
     }
 
     @Test func backgroundRefreshSyncsLocalFeedsAndFreshRSS() async throws {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
         let context = try context()
         let feeds = RecordingFeedRepository()
         let sync = RecordingFreshRSSService()

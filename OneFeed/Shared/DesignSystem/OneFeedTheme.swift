@@ -9,7 +9,7 @@ enum OneFeedTheme {
     /// Sage for Done. Terracotta stays the Save verb.
     static let sage = Color(red: 0.420, green: 0.616, blue: 0.369)
     /// Error red with the same clay undertone as the accent.
-    static let error = Color(red: 0.757, green: 0.400, blue: 0.329)
+    static let error = Color.oneFeedErrorText
 
     static let plaster = Color.oneFeedPlaster
     static let page = Color.oneFeedPlaster
@@ -136,7 +136,7 @@ struct InkCapsuleStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(OneFeedTheme.sansUI(15, weight: .medium))
+            .font(.subheadline.weight(.medium))
             .foregroundStyle(OneFeedTheme.plaster)
             .padding(.horizontal, 18)
             .frame(minHeight: 44)
@@ -170,6 +170,16 @@ struct DecisionActionStyle: ButtonStyle {
     }
 }
 
+/// Display-only attribution for subscribed stories and standalone saved links.
+enum ArticlePresentation {
+    static func sourceName(for article: Article) -> String {
+        if let title = article.feed?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return article.url?.host() ?? String(localized: "Saved link")
+    }
+}
+
 struct ArticleRow: View {
     let article: Article
     var status: String? = nil
@@ -185,8 +195,8 @@ struct ArticleRow: View {
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                if let source = article.feed?.title, !source.isEmpty {
-                    Text(source)
+                Group {
+                    Text(ArticlePresentation.sourceName(for: article))
                         .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
@@ -251,7 +261,7 @@ struct FeaturedStory: View {
             }
 
             VStack(alignment: .leading, spacing: 10) {
-                GalleryLabel(text: article.feed?.title ?? "Source")
+                GalleryLabel(text: ArticlePresentation.sourceName(for: article))
                 Text(article.title)
                     .font(.system(.title2, design: .serif))
                     .foregroundStyle(OneFeedTheme.ink)

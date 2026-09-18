@@ -4,14 +4,18 @@ import SwiftData
 @MainActor
 struct DailyDeckService {
     func generateIfNeeded(in context: ModelContext, maxItems: Int = 10) throws -> DailyDeck {
+        try Self.generateIfNeeded(in: context, maxItems: maxItems)
+    }
+
+    nonisolated static func generateIfNeeded(in context: ModelContext, maxItems: Int = 10) throws -> DailyDeck {
         if let existing = try todayDeck(in: context) {
             return existing
         }
 
-        let deck = DailyDeck(dayStart: Self.dayStart(for: .now), createdAt: .now)
+        let deck = DailyDeck(dayStart: dayStart(for: .now), createdAt: .now)
         context.insert(deck)
 
-        let selected = Self.selectCandidates(from: try Self.fetchCandidates(in: context), maxItems: maxItems)
+        let selected = selectCandidates(from: try fetchCandidates(in: context), maxItems: maxItems)
         for (index, article) in selected.enumerated() {
             let status: ArticleState = index == 0 ? .current : .queued
             let item = DailyDeckItem(position: index + 1, status: status, article: article, deck: deck)
@@ -28,13 +32,17 @@ struct DailyDeckService {
     }
 
     func todayDeck(in context: ModelContext) throws -> DailyDeck? {
-        let start = Self.dayStart(for: .now)
+        try Self.todayDeck(in: context)
+    }
+
+    nonisolated static func todayDeck(in context: ModelContext) throws -> DailyDeck? {
+        let start = dayStart(for: .now)
         let descriptor = FetchDescriptor<DailyDeck>(predicate: #Predicate { $0.dayStart == start })
         return try context.fetch(descriptor).first
     }
 
     func currentItem(in context: ModelContext) throws -> DailyDeckItem? {
-        guard let deck = try todayDeck(in: context) else { return nil }
+        guard let deck = try Self.todayDeck(in: context) else { return nil }
         let items = deck.items.sorted { $0.position < $1.position }
         if let current = items.first(where: { $0.status == .current && $0.article?.isStored == true }) {
             return current
@@ -91,7 +99,7 @@ struct DailyDeckService {
     }
 
     func remainingArticles(in context: ModelContext) throws -> [Article] {
-        guard let deck = try todayDeck(in: context) else { return [] }
+        guard let deck = try Self.todayDeck(in: context) else { return [] }
         return deck.items
             .filter { $0.status == .current || $0.status == .queued }
             .sorted { $0.position < $1.position }
@@ -99,11 +107,11 @@ struct DailyDeckService {
             .filter(\.isStored)
     }
 
-    private static func dayStart(for date: Date) -> Date {
+    nonisolated private static func dayStart(for date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
     }
 
-    private static func fetchCandidates(in context: ModelContext) throws -> [Article] {
+    nonisolated private static func fetchCandidates(in context: ModelContext) throws -> [Article] {
         let cutoff = Date().addingTimeInterval(-86_400)
         let skipped = ArticleState.skipped.rawValue
         let read = ArticleState.read.rawValue
@@ -124,7 +132,7 @@ struct DailyDeckService {
         }
     }
 
-    private static func selectCandidates(from candidates: [Article], maxItems: Int) -> [Article] {
+    nonisolated private static func selectCandidates(from candidates: [Article], maxItems: Int) -> [Article] {
         var selected: [Article] = []
         var feedCounts: [UUID: Int] = [:]
         var lastTwoFeedIDs: [UUID] = []

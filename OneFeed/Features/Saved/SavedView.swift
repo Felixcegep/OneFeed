@@ -3,11 +3,16 @@ import SwiftData
 
 struct SavedView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(
+        filter: #Predicate<Article> { $0.stateRawValue == "saved" },
+        sort: \Article.completedAt,
+        order: .reverse
+    ) private var savedQuery: [Article]
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
 
     private var waiting: [Article] {
-        viewModel.articles.filter(\.isStored)
+        ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
     }
 
     private var upNext: Article? { waiting.first }
@@ -30,7 +35,11 @@ struct SavedView: View {
                             .accessibilityHint("Opens the next piece in Queue")
                             .laterQueueActions(article: upNext, restore: restore, onChanged: { viewModel.reload() })
                         } header: {
-                            GallerySectionHeader(text: upNext.contentKind == "youtube" ? "Up next · Video" : "Up next")
+                            GallerySectionHeader(
+                                text: upNext.contentKind == "youtube"
+                                    ? "Recently saved\u{00A0}·\u{00A0}Video"
+                                    : "Recently saved"
+                            )
                         }
                     }
 
@@ -54,7 +63,6 @@ struct SavedView: View {
             }
         }
         .task { viewModel.configure(with: modelContext) }
-        .onAppear { viewModel.reload() }
         .sheet(isPresented: $isAdding, onDismiss: { viewModel.reload() }) {
             AddToQueueView { viewModel.reload() }
         }
@@ -160,8 +168,8 @@ private struct QueueArticleRow: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let source = article.feed?.title, !source.isEmpty {
-                    Text(source)
+                Group {
+                    Text(ArticlePresentation.sourceName(for: article))
                         .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)

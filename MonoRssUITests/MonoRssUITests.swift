@@ -151,6 +151,45 @@ final class MonoRssUITests: XCTestCase {
         capture("16-Queue-Bottom", app: app)
     }
 
+    @MainActor
+    func testCaptureSettingsDestinations() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-inMemoryStore"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 5))
+        app.tabBars.buttons["Settings"].tap()
+
+        let destinations = ["Reading", "Sources & Import", "Sync", "Storage", "Video summaries", "About"]
+        for (index, title) in destinations.enumerated() {
+            let destination = app.staticTexts[title].firstMatch
+            for _ in 0..<12 {
+                if destination.isHittable { break }
+                app.swipeUp()
+            }
+            XCTAssertTrue(destination.isHittable, "Settings destination must be reachable: \(title)")
+            destination.tap()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3))
+            if title == "Reading" {
+                XCTAssertTrue(app.staticTexts["Reading preview"].waitForExistence(timeout: 2))
+            }
+            if title == "Sources & Import" {
+                XCTAssertTrue(app.buttons["Manage sources"].waitForExistence(timeout: 2))
+            }
+            capture("\(17 + index)-Settings-\(title.replacingOccurrences(of: " & ", with: "-").replacingOccurrences(of: " ", with: "-"))", app: app)
+            if title == "Sync" {
+                let connect = app.buttons["Connect FreshRSS"]
+                XCTAssertTrue(connect.waitForExistence(timeout: 3))
+                connect.tap()
+                XCTAssertTrue(app.navigationBars["Connect FreshRSS"].waitForExistence(timeout: 3))
+                capture("23-Connect-FreshRSS", app: app)
+                app.buttons["Cancel"].tap()
+                XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 3))
+            }
+            app.navigationBars[title].buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        }
+    }
+
     private func capture(_ name: String, app: XCUIApplication) {
         let screenshot = app.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)

@@ -111,6 +111,13 @@ struct MonoRssTests {
 
         #expect(try context.fetchCount(FetchDescriptor<Article>()) == 1)
     }
+
+    @Test func identityIndexFindsAnExistingArticleByRemoteID() {
+        let article = Article(guid: "local", title: "More nothing now", remoteID: "item-more")
+        let index = ArticleIdentityIndex(articles: [article])
+        #expect(index.existing(url: nil, guid: "other", feedID: UUID(), remoteID: "item-more") === article)
+        #expect(index.existing(url: nil, guid: "missing", feedID: UUID(), remoteID: "item-else") == nil)
+    }
 }
 
 private final class StubFeedURLProtocol: URLProtocol, @unchecked Sendable {

@@ -40,8 +40,8 @@ final class BrowseRefresh {
         }
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)
+            self.lastRefreshedAt = .now
         }
-        lastRefreshedAt = .now
     }
 
     private func performRefreshWork(in context: ModelContext) async {
@@ -52,9 +52,13 @@ final class BrowseRefresh {
             do { try await freshRSSService.sync(account: account, in: context, progress: progress) } catch { refreshError = refreshError ?? error }
         }
         progress.begin(phase: .finishing, total: 1)
-        do { _ = try DailyDeckService().generateIfNeeded(in: context) } catch { refreshError = refreshError ?? error }
-        _ = try? ArticleRetentionService().purge(in: context)
-        progress.finishItem(newArticles: 0)
+        do {
+            try await SwiftDataIngest.actor(from: context).finishToday()
+            progress.finishItem(newArticles: 0)
+        } catch {
+            refreshError = refreshError ?? error
+            progress.finishItem(newArticles: 0)
+        }
         if let refreshError {
             presentedError = RefreshFailure.message(for: refreshError)
         } else {

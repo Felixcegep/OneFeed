@@ -10,6 +10,8 @@ final class CurrentViewModel {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
     private var inFlightRefresh: Task<Void, Never>?
+    private var didRunUtilityBackfill = false
+    private var hasAppeared = false
 
     private(set) var currentArticle: Article?
     private(set) var remainingArticles: [Article] = []
@@ -52,6 +54,15 @@ final class CurrentViewModel {
         loadCurrent()
     }
 
+    /// Cheap deck reread when returning to Today. Skips the first appear — configure already loaded.
+    func syncVisibleDeck() {
+        if !hasAppeared {
+            hasAppeared = true
+            return
+        }
+        loadCurrent()
+    }
+
     /// Starts a refresh that outlives Today disappearing, and skips work when feeds are still fresh.
     func startRefreshIfNeeded() {
         if needsRefresh {
@@ -59,7 +70,8 @@ final class CurrentViewModel {
             inFlightRefresh = Task { await self.performRefresh() }
             return
         }
-        guard inFlightRefresh == nil else { return }
+        guard inFlightRefresh == nil, !didRunUtilityBackfill else { return }
+        didRunUtilityBackfill = true
         inFlightRefresh = Task(priority: .utility) { await self.backfillThenReload() }
     }
 
@@ -162,12 +174,11 @@ final class CurrentViewModel {
         }
         progress.begin(phase: .finishing, total: 1)
         do {
-            _ = try? ArticleRetentionService().purge(in: context)
-            let deck = try deckService.generateIfNeeded(in: context)
+            try await SwiftDataIngest.actor(from: context).finishToday()
             let current = try deckService.currentItem(in: context)
-            apply(item: current, totalCount: deck.items.count)
+            apply(item: current, totalCount: (try? deckService.todayDeck(in: context))?.items.count ?? 0)
             await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
-            apply(item: try deckService.currentItem(in: context), totalCount: deck.items.count)
+            apply(item: try deckService.currentItem(in: context), totalCount: (try? deckService.todayDeck(in: context))?.items.count ?? totalCount)
             progress.finishItem(newArticles: 0)
         } catch {
             refreshError = refreshError ?? error

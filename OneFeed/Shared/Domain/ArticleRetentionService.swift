@@ -29,6 +29,11 @@ struct ArticleRetentionService {
 
     @discardableResult
     func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now) throws -> Int {
+        try Self.purge(in: context, olderThanDays: days, now: now)
+    }
+
+    @discardableResult
+    nonisolated static func purge(in context: ModelContext, olderThanDays days: Int? = nil, now: Date = .now) throws -> Int {
         let days = days ?? Self.configuredDays
         guard days > 0 else { return 0 }
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)

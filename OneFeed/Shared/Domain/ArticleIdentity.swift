@@ -3,7 +3,7 @@ import SwiftData
 
 /// Cross-feed identity for the same story. Local RSS and FreshRSS often
 /// disagree on `guid` (entry id vs GReader item id), so URL is the real key.
-enum ArticleIdentity {
+nonisolated enum ArticleIdentity {
     private static let trackingQueryNames: Set<String> = [
         "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
         "fbclid", "gclid", "mc_cid", "mc_eid"
@@ -154,9 +154,10 @@ enum ArticleIdentity {
     }
 }
 
-struct ArticleIdentityIndex {
+nonisolated struct ArticleIdentityIndex {
     private var byNormalizedURL: [String: Article] = [:]
     private var byFeedAndGUID: [String: Article] = [:]
+    private var byRemoteID: [String: Article] = [:]
 
     init(articles: [Article] = []) {
         for article in articles { register(article) }
@@ -171,9 +172,19 @@ struct ArticleIdentityIndex {
             }
         }
         byFeedAndGUID[guidKey(feedID: article.feed?.id, guid: article.guid)] = article
+        if let remoteID = article.remoteID {
+            if let existing = byRemoteID[remoteID] {
+                byRemoteID[remoteID] = ArticleIdentity.preferred(in: [existing, article])
+            } else {
+                byRemoteID[remoteID] = article
+            }
+        }
     }
 
-    func existing(url: URL?, guid: String, feedID: UUID) -> Article? {
+    func existing(url: URL?, guid: String, feedID: UUID, remoteID: String? = nil) -> Article? {
+        if let remoteID, let found = byRemoteID[remoteID] {
+            return found
+        }
         if let key = ArticleIdentity.normalizedURLString(url), let found = byNormalizedURL[key] {
             return found
         }

@@ -52,6 +52,15 @@ extension Color {
         )
     }
 
+    /// Error copy, with readable contrast on both paper surfaces.
+    static var oneFeedErrorText: Color {
+        oneFeedAdaptive(
+            light: (0.643, 0.247, 0.196),
+            dark: (0.953, 0.631, 0.545),
+            name: "OneFeedErrorText"
+        )
+    }
+
     /// Tertiary / meta. Light `#8A7E72`, dark `#9C9084`.
     static var oneFeedStone: Color {
         oneFeedAdaptive(

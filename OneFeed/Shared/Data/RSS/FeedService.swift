@@ -91,134 +91,51 @@ final class FeedService {
         )
         context.insert(feed)
         if let folder { FolderStore.remember(folder) }
-        var index = ArticleIdentityIndex(articles: identityArticles(in: context))
-        _ = try await insert(parsed.articles, into: feed, in: context, index: &index, fetchDurations: false)
-        await enrichMissingYouTubeDurations(in: context)
         try context.save()
+        try await LibraryIngestActor(modelContainer: context.container).ingestParsedArticles(
+            feedID: feed.id,
+            articles: parsed.articles,
+            youtubeMetadata: youtubeMetadata
+        )
         LibraryChange.note(feed)
         return feed
     }
 
     func refresh(_ feed: Feed, in context: ModelContext) async throws {
+        let feedID = feed.id
         let loaded = try await Self.download(
             RemoteFeedRequest(id: feed.id, url: feed.feedURL, etag: feed.etag, lastModified: feed.lastModified),
             session: session,
             parser: parser,
             timeout: 12
         )
-        var index = ArticleIdentityIndex(articles: identityArticles(in: context))
-        _ = try await apply(loaded, to: feed, in: context, index: &index)
+        let actor = try SwiftDataIngest.actor(from: context)
+        try await actor.applyDownload(feedID: feedID, loaded: loaded, youtubeMetadata: youtubeMetadata)
     }
 
     func refreshAll(in context: ModelContext, progress: RefreshProgress? = nil) async throws {
-        let feeds = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.isEnabled && $0.remoteID == nil }))
-        progress?.begin(phase: .sources, total: feeds.count)
-        let requests = feeds.map { RemoteFeedRequest(id: $0.id, url: $0.feedURL, etag: $0.etag, lastModified: $0.lastModified) }
-        let feedsByID = Dictionary(uniqueKeysWithValues: feeds.map { ($0.id, $0) })
-        var identityIndex = ArticleIdentityIndex(articles: identityArticles(in: context))
-        var succeeded = 0
-        var insertedCount = 0
-        var firstError: Error?
-        let session = self.session
-        let parser = self.parser
-        var unsaved = 0
-        await withTaskGroup(of: FetchOutcome.self) { group in
-            var next = 0
-            func startOne() {
-                guard next < requests.count else { return }
-                let request = requests[next]
-                next += 1
-                group.addTask {
-                    do {
-                        let loaded = try await Self.download(request, session: session, parser: parser)
-                        return FetchOutcome(id: request.id, loaded: loaded, cancelled: false, transient: false, errorDescription: nil)
-                    } catch {
-                        return FetchOutcome(
-                            id: request.id,
-                            loaded: nil,
-                            cancelled: error.isCancellation,
-                            transient: error.isTransientNetwork,
-                            errorDescription: error.localizedDescription
-                        )
-                    }
-                }
-            }
-            for _ in 0..<min(Self.maxConcurrentFetches, requests.count) {
-                startOne()
-            }
-            for await outcome in group {
-                startOne()
-                guard let feed = feedsByID[outcome.id] else { continue }
-                progress?.startItem(title: feed.title)
-                do {
-                    if Task.isCancelled {
-                        group.cancelAll()
-                        firstError = firstError ?? CancellationError()
-                        progress?.finishItem(newArticles: 0)
-                        continue
-                    }
-                    if let loaded = outcome.loaded {
-                        let added = try await apply(
-                            loaded,
-                            to: feed,
-                            in: context,
-                            persist: false,
-                            fetchDurations: false,
-                            index: &identityIndex
-                        )
-                        insertedCount += added
-                        unsaved += 1
-                        if unsaved >= 6 {
-                            try context.save()
-                            unsaved = 0
-                        }
-                        succeeded += 1
-                        progress?.finishItem(newArticles: added)
-                    } else {
-                        feed.lastFetchedAt = .now
-                        unsaved += 1
-                        if outcome.cancelled {
-                            group.cancelAll()
-                            firstError = firstError ?? CancellationError()
-                        } else if !outcome.transient {
-                            firstError = firstError ?? FeedRefreshFailure(outcome.errorDescription ?? "The source returned an unexpected response.")
-                        }
-                        progress?.finishItem(newArticles: 0)
-                    }
-                } catch {
-                    feed.lastFetchedAt = .now
-                    unsaved += 1
-                    if error.isCancellation {
-                        group.cancelAll()
-                        firstError = firstError ?? error
-                    } else if !error.isTransientNetwork {
-                        firstError = firstError ?? error
-                    }
-                    progress?.finishItem(newArticles: 0)
-                }
-            }
-        }
-        if unsaved > 0 { try? context.save() }
-        await enrichMissingYouTubeDurations(in: context)
-        if insertedCount > 0 {
-            _ = try? ArticleIdentity.mergeDuplicates(in: context)
-        }
-        if succeeded == 0, let firstError { throw firstError }
+        let actor = try SwiftDataIngest.actor(from: context)
+        try await actor.refreshLocalFeeds(
+            session: session,
+            parser: parser,
+            youtubeMetadata: youtubeMetadata,
+            progress: RefreshProgressSink(progress)
+        )
     }
 
-    private struct RemoteFeedRequest: Sendable {
+    struct RemoteFeedRequest: Sendable {
         let id: UUID
         let url: URL
         let etag: String?
         let lastModified: String?
     }
 
-    private enum LoadedFeed: Sendable {
+    enum LoadedFeed: Sendable {
         case notModified
         case updated(ParsedFeed, etag: String?, lastModified: String?)
     }
 
-    private struct FetchOutcome: Sendable {
+    struct FetchOutcome: Sendable {
         let id: UUID
         let loaded: LoadedFeed?
         let cancelled: Bool
@@ -226,14 +143,14 @@ final class FeedService {
         let errorDescription: String?
     }
 
-    private struct FeedRefreshFailure: LocalizedError {
+    struct FeedRefreshFailure: LocalizedError {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
     }
 
-    private static let maxConcurrentFetches = 4
+    static let maxConcurrentFetches = 4
 
-    private nonisolated static func download(
+    nonisolated static func download(
         _ request: RemoteFeedRequest,
         session: URLSession,
         parser: FeedParser,
@@ -259,40 +176,6 @@ final class FeedService {
         )
     }
 
-    @discardableResult
-    private func apply(
-        _ loaded: LoadedFeed,
-        to feed: Feed,
-        in context: ModelContext,
-        persist: Bool = true,
-        fetchDurations: Bool = false,
-        index: inout ArticleIdentityIndex
-    ) async throws -> Int {
-        var inserted = 0
-        switch loaded {
-        case .notModified:
-            feed.lastFetchedAt = .now
-        case .updated(let parsed, let etag, let lastModified):
-            feed.title = parsed.title
-            feed.websiteURL = parsed.websiteURL ?? feed.websiteURL
-            feed.etag = etag
-            feed.lastModified = lastModified
-            feed.lastFetchedAt = .now
-            inserted = try await insert(
-                parsed.articles,
-                into: feed,
-                in: context,
-                index: &index,
-                fetchDurations: fetchDurations
-            )
-        }
-        if persist {
-            await enrichMissingYouTubeDurations(in: context)
-            try context.save()
-        }
-        return inserted
-    }
-
     private func discoverAndParse(_ url: URL) async throws -> (URL, ParsedFeed) {
         let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse else { throw FeedServiceError.invalidResponse }
@@ -310,117 +193,7 @@ final class FeedService {
         return (feedHTTP.url ?? discovered, try parser.parse(feedData))
     }
 
-    @discardableResult
-    private func insert(
-        _ parsedArticles: [ParsedArticle],
-        into feed: Feed,
-        in context: ModelContext,
-        index: inout ArticleIdentityIndex,
-        fetchDurations: Bool = false
-    ) async throws -> Int {
-        let feedKind = ContentKind(rawValue: feed.contentKind) ?? .article
-        let filterRules = FilterEngine.blockedWordRules(from: feed.blockedWords)
-        let feedContext = FilterFeedContext(title: feed.title, url: feed.feedURL.absoluteString)
-        var inserted = 0
-
-        let cutoff = ArticleRetentionService.ingestCutoff(isFirstPopulate: isEmptyFeed(feed, in: context))
-        for parsed in parsedArticles {
-            if let existing = index.existing(url: parsed.url, guid: parsed.guid, feedID: feed.id) {
-                if existing.feed == nil { existing.feed = feed }
-                continue
-            }
-            if let cutoff, parsed.publishedAt < cutoff { continue }
-            let classified = ContentClassifier.classify(
-                url: parsed.url,
-                title: parsed.title,
-                summary: parsed.summary,
-                contentHTML: parsed.contentHTML,
-                enclosureMIME: parsed.enclosureMIME,
-                durationSeconds: parsed.durationSeconds,
-                feedType: feedKind
-            )
-
-            if classified.kind == .youtube {
-                if classified.isShort, !feed.includeShorts { continue }
-                if !feed.includeVideos { continue }
-
-                let videoID = classified.videoID ?? YouTubeProcessor.parseVideoID(fromGUID: parsed.guid)
-                var duration = classified.durationSeconds
-                if fetchDurations, !classified.isShort, duration == nil, let videoID {
-                    duration = await youtubeMetadata.fetchDuration(videoID: videoID)
-                }
-                if !YouTubeProcessor.shouldKeep(durationSeconds: duration, minVideoSeconds: feed.minVideoSeconds) {
-                    continue
-                }
-
-                let filterEntry = Self.filterEntry(from: parsed)
-                let filterResult = FilterEngine.apply(rules: filterRules, entry: filterEntry, feed: feedContext)
-                if filterResult.drop { continue }
-
-                let article = Article(
-                    guid: parsed.guid,
-                    title: parsed.title,
-                    url: parsed.url ?? videoID.flatMap { YouTubeProcessor.watchURL(for: $0) },
-                    author: parsed.author,
-                    publishedAt: parsed.publishedAt,
-                    summary: parsed.summary,
-                    contentHTML: parsed.contentHTML,
-                    estimatedReadingMinutes: ContentClassifier.consumeMinutes(
-                        entryType: classified.kind,
-                        words: ContentClassifier.wordCount(in: parsed.contentHTML ?? parsed.summary ?? ""),
-                        durationSeconds: duration
-                    ),
-                    state: filterResult.star ? .saved : .queued,
-                    isRemoteStarred: filterResult.star,
-                    contentKind: classified.kind.rawValue,
-                    durationSeconds: duration ?? 0,
-                    imageURL: parsed.imageURL ?? videoID.flatMap { YouTubeProcessor.thumbnailURL(for: $0) },
-                    videoID: videoID,
-                    enclosureURL: parsed.enclosureURL,
-                    enclosureMIME: parsed.enclosureMIME,
-                    feed: feed
-                )
-                context.insert(article)
-                index.register(article)
-                inserted += 1
-                continue
-            }
-
-            let filterEntry = Self.filterEntry(from: parsed)
-            let filterResult = FilterEngine.apply(rules: filterRules, entry: filterEntry, feed: feedContext)
-            if filterResult.drop { continue }
-
-            let article = Article(
-                guid: parsed.guid,
-                title: parsed.title,
-                url: parsed.url,
-                author: parsed.author,
-                publishedAt: parsed.publishedAt,
-                summary: parsed.summary,
-                contentHTML: parsed.contentHTML,
-                estimatedReadingMinutes: ContentClassifier.consumeMinutes(
-                    entryType: classified.kind,
-                    words: ContentClassifier.wordCount(in: parsed.contentHTML ?? parsed.summary ?? ""),
-                    durationSeconds: classified.durationSeconds
-                ),
-                state: filterResult.star ? .saved : .queued,
-                isRemoteStarred: filterResult.star,
-                contentKind: classified.kind.rawValue,
-                durationSeconds: classified.durationSeconds ?? 0,
-                imageURL: parsed.imageURL,
-                videoID: classified.videoID,
-                enclosureURL: parsed.enclosureURL,
-                enclosureMIME: parsed.enclosureMIME,
-                feed: feed
-            )
-            context.insert(article)
-            index.register(article)
-            inserted += 1
-        }
-        return inserted
-    }
-
-    private static func filterEntry(from parsed: ParsedArticle) -> FilterEntry {
+    nonisolated static func filterEntry(from parsed: ParsedArticle) -> FilterEntry {
         FilterEntry(
             title: parsed.title,
             author: parsed.author ?? "",
@@ -429,81 +202,12 @@ final class FeedService {
         )
     }
 
-    private static let durationConcurrency = 2
-    private static let durationBackfillLimit = 8
-
-    private func enrichMissingYouTubeDurations(in context: ModelContext, limit: Int = 8) async {
-        let missing = articlesMissingYouTubeDuration(in: context, limit: limit)
-        guard !missing.isEmpty else { return }
-
-        let metadata = youtubeMetadata
-        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
-        var iterator = missing.makeIterator()
-        var inFlight = 0
-        await withTaskGroup(of: (UUID, String?, Int?).self) { group in
-            func enqueue() {
-                while inFlight < Self.durationConcurrency, let article = iterator.next() {
-                    let id = article.id
-                    let videoID = article.videoID
-                        ?? YouTubeProcessor.parseVideoID(from: article.url)
-                        ?? YouTubeProcessor.parseVideoID(fromGUID: article.guid)
-                    guard let videoID else { continue }
-                    inFlight += 1
-                    group.addTask {
-                        (id, videoID, await metadata.fetchDuration(videoID: videoID, allowWatchHTML: false))
-                    }
-                }
-            }
-            enqueue()
-            for await (id, videoID, duration) in group {
-                inFlight -= 1
-                if let article = missing.first(where: { $0.isStored && $0.id == id }) {
-                    if let videoID, article.videoID == nil {
-                        article.videoID = videoID
-                    }
-                    if let duration, duration > 0 {
-                        _ = YouTubeProcessor.applyFetchedDuration(duration, to: article, deckItems: deckItems)
-                    }
-                }
-                enqueue()
-            }
-        }
-        try? context.save()
-    }
-
-    private func articlesMissingYouTubeDuration(in context: ModelContext, limit: Int) -> [Article] {
-        let deckItems = ((try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? [])
-            .sorted { $0.position < $1.position }
-        var targets: [Article] = []
-        var seen = Set<UUID>()
-        for item in deckItems {
-            guard let article = item.article, article.isStored else { continue }
-            guard article.contentKind == "youtube", article.durationSeconds <= 0 else { continue }
-            if seen.insert(article.id).inserted {
-                targets.append(article)
-            }
-            if targets.count >= limit { return targets }
-        }
-        let youtube = "youtube"
-        var descriptor = FetchDescriptor<Article>(
-            predicate: #Predicate { article in
-                article.contentKind == youtube && article.durationSeconds <= 0
-            }
-        )
-        descriptor.fetchLimit = max(limit * 2, 16)
-        descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
-        let extra = ((try? context.fetch(descriptor)) ?? []).filter { article in
-            article.isStored && !seen.contains(article.id)
-        }
-        for article in extra {
-            targets.append(article)
-            if targets.count >= limit { break }
-        }
-        return targets
-    }
+    static let durationConcurrency = 2
+    static let durationBackfillLimit = 8
 
     func backfillYouTubeDurations(in context: ModelContext) async {
-        await enrichMissingYouTubeDurations(in: context, limit: Self.durationBackfillLimit)
+        let actor = LibraryIngestActor(modelContainer: context.container)
+        await actor.enrichMissingYouTubeDurations(limit: Self.durationBackfillLimit, youtubeMetadata: youtubeMetadata, persist: true)
     }
 
     nonisolated static func normalizedURL(from input: String) -> URL? {
@@ -527,20 +231,6 @@ final class FeedService {
             }
         }
         return nil
-    }
-
-    private func identityArticles(in context: ModelContext) -> [Article] {
-        var descriptor = FetchDescriptor<Article>()
-        descriptor.propertiesToFetch = [\.guid, \.url]
-        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
-        return (try? context.fetch(descriptor)) ?? []
-    }
-
-    private func isEmptyFeed(_ feed: Feed, in context: ModelContext) -> Bool {
-        let feedID = feed.id
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
-        descriptor.fetchLimit = 1
-        return (try? context.fetch(descriptor))?.isEmpty ?? true
     }
 }
 

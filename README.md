@@ -29,3 +29,5 @@ OneFeed is not an inbox. There is no home timeline, unread badge, unread total, 
 ## Development
 
 Open `OneFeed.xcodeproj` in Xcode 26.6 or later. The app targets iOS/iPadOS 26.5 and macOS 26.5. Choose a folder, a `OneFeed.library.json` file, or Google Drive in Settings to keep subscriptions and reading state in a portable file. The test targets contain pure state/parser/FreshRSS/library coverage and a deterministic UI screenshot tour seeded with `-uiTesting -inMemoryStore`.
+
+Docs: [`agent.md`](agent.md).

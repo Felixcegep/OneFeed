@@ -32,9 +32,6 @@ struct FoldersView: View {
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
 
-    private var unread: [Article] { FeedFolderGrouping.openArticles(from: openQuery) }
-    private var today: [Article] { FeedFolderGrouping.todayArticles(from: openQuery) }
-    private var summaries: [FolderSummary] { FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery) }
     private var folderSectionTitle: String {
         accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
             ? String(localized: "FreshRSS")
@@ -42,22 +39,23 @@ struct FoldersView: View {
     }
 
     var body: some View {
+        let directory = FeedRootDirectory(feeds: feeds, articles: openQuery)
         let _ = iconTick
         List {
             Section {
-                smartLink(.unread, systemImage: "tray", count: unread.count)
-                smartLink(.today, systemImage: "sun.max", count: today.count)
+                smartLink(.unread, systemImage: "tray", count: directory.unreadCount)
+                smartLink(.today, systemImage: "sun.max", count: directory.todayCount)
             } header: {
                 GallerySectionHeader(text: "Smart Feeds")
             }
             Section {
-                if summaries.isEmpty {
+                if directory.summaries.isEmpty {
                     Text("Folders appear here after you add sources.")
                         .font(OneFeedTheme.sansUI(15, weight: .regular))
                         .foregroundStyle(OneFeedTheme.graphite)
                         .oneFeedDirectoryRow()
                 } else {
-                    ForEach(summaries) { summary in
+                    ForEach(directory.summaries) { summary in
                         folderRow(summary)
                     }
                 }
@@ -151,6 +149,21 @@ struct FoldersView: View {
 private enum FeedToolbarDestination: Hashable, Identifiable {
     case sources, history
     var id: Self { self }
+}
+
+private struct FeedRootDirectory {
+    let unreadCount: Int
+    let todayCount: Int
+    let summaries: [FolderSummary]
+
+    init(feeds: [Feed], articles: [Article]) {
+        let open = FeedFolderGrouping.openArticles(from: articles)
+        unreadCount = open.count
+        todayCount = open.reduce(into: 0) { count, article in
+            if Calendar.current.isDateInToday(article.publishedAt) { count += 1 }
+        }
+        summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open)
+    }
 }
 
 struct ArticleCollectionView: View {

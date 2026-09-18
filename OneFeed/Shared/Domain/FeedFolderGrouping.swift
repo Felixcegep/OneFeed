@@ -57,13 +57,23 @@ enum FeedFolderGrouping {
     }
 
     static func folderSummaries(feeds: [Feed], articles: [Article]) -> [FolderSummary] {
-        let open = openArticles(from: articles)
+        folderSummaries(feeds: feeds, openArticles: openArticles(from: articles))
+    }
+
+    static func folderSummaries(feeds: [Feed], openArticles open: [Article]) -> [FolderSummary] {
+        var counts: [UUID: Int] = [:]
+        var unfiledOrphans = 0
+        counts.reserveCapacity(open.count)
+        for article in open {
+            if let id = article.feed?.id {
+                counts[id, default: 0] += 1
+            } else {
+                unfiledOrphans += 1
+            }
+        }
         return groups(from: feeds).map { group in
-            let feedIDs = Set(group.feeds.map(\.id))
-            let unreadCount = open.filter { article in
-                guard let id = article.feed?.id else { return group.folderID == .unfiled }
-                return feedIDs.contains(id)
-            }.count
+            let fromFeeds = group.feeds.reduce(0) { $0 + (counts[$1.id] ?? 0) }
+            let unreadCount = group.folderID == .unfiled ? fromFeeds + unfiledOrphans : fromFeeds
             return FolderSummary(folderID: group.folderID, unreadCount: unreadCount, feedCount: group.feeds.count)
         }
     }

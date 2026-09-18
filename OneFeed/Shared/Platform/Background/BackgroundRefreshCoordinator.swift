@@ -17,12 +17,19 @@ enum BackgroundRefreshCoordinator {
             return
         }
         let task = Task { @MainActor in
+            defer { exclusiveRefresh = nil }
             await work()
-            exclusiveRefresh = nil
         }
         exclusiveRefresh = task
         await task.value
     }
+
+#if DEBUG
+    static func resetExclusiveRefreshForTests() {
+        exclusiveRefresh?.cancel()
+        exclusiveRefresh = nil
+    }
+#endif
 
     static func schedule() {
         #if os(iOS)
@@ -49,8 +56,7 @@ enum BackgroundRefreshCoordinator {
             if let account = try? context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == freshRSS && $0.isEnabled })).first {
                 try? await freshRSSService.sync(account: account, in: context, progress: nil)
             }
-            _ = try? DailyDeckService().generateIfNeeded(in: context)
-            _ = try? ArticleRetentionService().purge(in: context)
+            try? await SwiftDataIngest.actor(from: context).finishToday()
             let current = try? DailyDeckService().currentItem(in: context)
             await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
             lastSuccessfulRefresh = .now

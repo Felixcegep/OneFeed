@@ -70,50 +70,24 @@ final class FreshRSSSyncService {
               let credentials = try await credentialStore.load(for: account.id) else {
             throw FreshRSSSyncError.missingCredentials
         }
+        let accountID = account.id
         let configuration = try FreshRSSConfiguration(baseURL: serverURL, username: username)
         let client = clientFactory(configuration)
         do {
             let token = try await client.login(credentials: credentials).authToken
-            try await flushMutations(client: client, token: token, in: context)
-            _ = try ArticleIdentity.mergeDuplicates(in: context)
-            let subscriptions = try await client.subscriptions(authToken: token).subscriptions
-            progress?.begin(phase: .sync, total: subscriptions.count)
-            var index = ArticleIdentityIndex(articles: try context.fetch(FetchDescriptor<Article>()))
-            for subscription in subscriptions {
-                progress?.startItem(title: subscription.title)
-                if FeedSeedCatalog.isRetired(title: subscription.title, url: subscription.resolvedFeedURL) {
-                    progress?.finishItem(newArticles: 0)
-                    continue
-                }
-                let feed = try upsert(subscription: subscription, in: context)
-                var continuation: String?
-                var pages = 0
-                var added = 0
-                repeat {
-                    let page = try await client.streamContents(
-                        streamID: subscription.id,
-                        authToken: token,
-                        unreadOnly: false,
-                        limit: 1_000,
-                        continuation: continuation
-                    )
-                    for item in page.items {
-                        if try upsert(item: item, feed: feed, in: context, index: &index) { added += 1 }
-                    }
-                    continuation = page.continuation
-                    pages += 1
-                } while pages < 20 && continuation.map({ !$0.isEmpty }) == true
-                feed.lastFetchedAt = .now
-                progress?.finishItem(newArticles: added)
-            }
-            _ = try ArticleIdentity.mergeDuplicates(in: context)
-            account.lastSyncAt = .now
-            account.lastSyncError = nil
-            try context.save()
-            _ = try ArticleQueueService().ensureCurrent(in: context)
+            let actor = try SwiftDataIngest.actor(from: context)
+            try await actor.syncFreshRSS(
+                accountID: accountID,
+                client: client,
+                token: token,
+                progress: RefreshProgressSink(progress)
+            )
+            _ = try? ArticleQueueService().ensureCurrent(in: context)
         } catch {
-            account.lastSyncError = error.localizedDescription
-            try? context.save()
+            try? await SwiftDataIngest.actor(from: context).setFreshRSSSyncError(
+                accountID: accountID,
+                message: error.localizedDescription
+            )
             throw error
         }
     }
@@ -189,18 +163,93 @@ final class FreshRSSSyncService {
         return (client, token)
     }
 
-    private func upsert(subscription: FreshRSSSubscription, in context: ModelContext) throws -> Feed {
+}
+
+extension LibraryIngestActor {
+    func syncFreshRSS(
+        accountID: UUID,
+        client: any FreshRSSAPI,
+        token: String,
+        progress: RefreshProgressSink
+    ) async throws {
+        modelContext.autosaveEnabled = false
+        guard let ingestAccount = try modelContext.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.id == accountID })).first else {
+            throw FreshRSSSyncError.missingCredentials
+        }
+        try await flushMutations(client: client, token: token)
+        _ = try ArticleIdentity.mergeDuplicates(in: modelContext)
+        let subscriptions = try await client.subscriptions(authToken: token).subscriptions
+        await progress.begin(phase: .sync, total: subscriptions.count)
+        var index = ArticleIdentityIndex(articles: try modelContext.fetch(FetchDescriptor<Article>()))
+        let existingFeeds = try modelContext.fetch(FetchDescriptor<Feed>())
+        var feedsByRemoteID: [String: Feed] = [:]
+        var feedsByURL: [String: Feed] = [:]
+        feedsByRemoteID.reserveCapacity(existingFeeds.count)
+        feedsByURL.reserveCapacity(existingFeeds.count)
+        for feed in existingFeeds {
+            if let remoteID = feed.remoteID { feedsByRemoteID[remoteID] = feed }
+            feedsByURL[ArticleIdentity.feedKey(feed.feedURL)] = feed
+        }
+        var processed = 0
+        for subscription in subscriptions {
+            if FeedSeedCatalog.isRetired(title: subscription.title, url: subscription.resolvedFeedURL) {
+                await progress.finishItem(newArticles: 0)
+                continue
+            }
+            let feed = try upsertSubscription(
+                subscription,
+                feedsByRemoteID: &feedsByRemoteID,
+                feedsByURL: &feedsByURL
+            )
+            var continuation: String?
+            var pages = 0
+            var added = 0
+            repeat {
+                let page = try await client.streamContents(
+                    streamID: subscription.id,
+                    authToken: token,
+                    unreadOnly: false,
+                    limit: 1_000,
+                    continuation: continuation
+                )
+                for (offset, item) in page.items.enumerated() {
+                    if upsertItem(item, feed: feed, index: &index) { added += 1 }
+                    if offset % 32 == 31 {
+                        await Task.yield()
+                    }
+                }
+                continuation = page.continuation
+                pages += 1
+            } while pages < 20 && continuation.map({ !$0.isEmpty }) == true
+            feed.lastFetchedAt = .now
+            await progress.finishItem(newArticles: added)
+            processed += 1
+            if processed.isMultiple(of: 2) {
+                await Task.yield()
+            }
+        }
+        _ = try ArticleIdentity.mergeDuplicates(in: modelContext)
+        ingestAccount.lastSyncAt = .now
+        ingestAccount.lastSyncError = nil
+        try persistIfNeeded()
+    }
+
+    private func upsertSubscription(
+        _ subscription: FreshRSSSubscription,
+        feedsByRemoteID: inout [String: Feed],
+        feedsByURL: inout [String: Feed]
+    ) throws -> Feed {
         let remoteID = subscription.id
-        if let feed = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.remoteID == remoteID })).first {
-            apply(subscription, to: feed)
+        if let feed = feedsByRemoteID[remoteID] {
+            applySubscription(subscription, to: feed)
             return feed
         }
         guard let feedURL = subscription.resolvedFeedURL else { throw FreshRSSSyncError.invalidSubscriptionURL }
-        let key = ArticleIdentity.normalizedURLString(feedURL)
-        let feeds = try context.fetch(FetchDescriptor<Feed>())
-        if let existing = feeds.first(where: { ArticleIdentity.normalizedURLString($0.feedURL) == key }) {
+        let key = ArticleIdentity.feedKey(feedURL)
+        if let existing = feedsByURL[key] {
             existing.remoteID = remoteID
-            apply(subscription, to: existing)
+            applySubscription(subscription, to: existing)
+            feedsByRemoteID[remoteID] = existing
             return existing
         }
         let feed = Feed(
@@ -211,11 +260,13 @@ final class FreshRSSSyncService {
             folderName: subscription.folderName,
             contentKind: subscription.contentType ?? "article"
         )
-        context.insert(feed)
+        modelContext.insert(feed)
+        feedsByRemoteID[remoteID] = feed
+        feedsByURL[key] = feed
         return feed
     }
 
-    private func apply(_ subscription: FreshRSSSubscription, to feed: Feed) {
+    private func applySubscription(_ subscription: FreshRSSSubscription, to feed: Feed) {
         feed.title = subscription.title
         feed.websiteURL = subscription.htmlURL
         if let feedURL = subscription.resolvedFeedURL { feed.feedURL = feedURL }
@@ -223,14 +274,17 @@ final class FreshRSSSyncService {
         if let kind = subscription.contentType { feed.contentKind = kind }
     }
 
-    private func upsert(item: FreshRSSItem, feed: Feed, in context: ModelContext, index: inout ArticleIdentityIndex) throws -> Bool {
+    private func upsertItem(_ item: FreshRSSItem, feed: Feed, index: inout ArticleIdentityIndex) -> Bool {
         let snapshot = item.snapshot
-        let remoteID = snapshot.remoteID
-        let existingByRemote = try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.remoteID == remoteID })).first
-        let existing = existingByRemote ?? index.existing(url: snapshot.url, guid: snapshot.guid, feedID: feed.id)
+        let existing = index.existing(
+            url: snapshot.url,
+            guid: snapshot.guid,
+            feedID: feed.id,
+            remoteID: snapshot.remoteID
+        )
         let article = existing ?? Article(guid: snapshot.guid, title: snapshot.title, feed: feed)
         let isNew = existing == nil
-        if isNew { context.insert(article) }
+        if isNew { modelContext.insert(article) }
         article.guid = snapshot.guid
         article.title = snapshot.title
         article.url = snapshot.url
@@ -245,15 +299,13 @@ final class FreshRSSSyncService {
         }
         if let minutes = snapshot.consumeMinutes, minutes > 0 {
             article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, minutes)
-        } else {
-            article.refreshEstimatedReadingMinutes()
-            let remoteMinutes = max(
+        } else if isNew {
+            article.estimatedReadingMinutes = max(
                 1,
                 ContentClassifier.readingMinutes(
                     words: ContentClassifier.wordCount(in: snapshot.contentHTML ?? snapshot.summary ?? "")
                 )
             )
-            article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, remoteMinutes)
         }
         article.remoteID = snapshot.remoteID
         article.isRemoteStarred = snapshot.isStarred
@@ -267,15 +319,12 @@ final class FreshRSSSyncService {
         return isNew
     }
 
-    private func flushMutations(client: any FreshRSSAPI, token: String, in context: ModelContext) async throws {
+    private func flushMutations(client: any FreshRSSAPI, token: String) async throws {
         var descriptor = FetchDescriptor<PendingSyncMutation>(sortBy: [SortDescriptor(\.createdAt)])
         descriptor.fetchLimit = 250
-        for mutation in try context.fetch(descriptor) {
+        for mutation in try modelContext.fetch(descriptor) {
             mutation.attempts += 1
-            // Persist the attempt before crossing the network boundary. If
-            // the process is suspended or the request fails, a later sync can
-            // show/retry the durable mutation instead of losing it.
-            try context.save()
+            try persistIfNeeded()
             do {
                 switch mutation.kind {
                 case .markRead: try await client.markRead(itemID: mutation.remoteArticleID, authToken: token)
@@ -287,17 +336,13 @@ final class FreshRSSSyncService {
                 case nil: break
                 }
             } catch {
-                // Keep the mutation and its attempt count. Do not continue
-                // with later mutations: ordering matters for opposite
-                // operations on the same remote item.
-                try? context.save()
+                try? persistIfNeeded()
                 throw error
             }
-            context.delete(mutation)
-            try context.save()
+            modelContext.delete(mutation)
+            try persistIfNeeded()
         }
     }
-
 }
 
 extension FreshRSSSyncService: FreshRSSSyncing {}

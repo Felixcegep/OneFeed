@@ -49,10 +49,8 @@ struct CurrentView: View {
                     }
                 }
                 .oneFeedGroupedListStyle()
-                .animation(viewModel.isRefreshing ? nil : OneFeedMotion.overlay, value: stories.count)
             }
         }
-        .animation(viewModel.isRefreshing ? nil : OneFeedMotion.page, value: stories.isEmpty)
         .background(OneFeedTheme.plaster)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
@@ -70,10 +68,15 @@ struct CurrentView: View {
         }
         .task {
             viewModel.configure(with: modelContext)
-            if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+            let process = ProcessInfo.processInfo
+            let hostedByTests = process.arguments.contains("-uiTesting")
+                || process.environment["XCTestConfigurationFilePath"] != nil
+                || process.environment["XCTestBundlePath"] != nil
+            if !hostedByTests {
                 viewModel.startRefreshIfNeeded()
             }
         }
+        .onAppear { viewModel.syncVisibleDeck() }
         .onOpenURL { url in
             guard url.scheme == "onefeed", url.host() == "reader", let article = viewModel.currentArticle else { return }
             readerArticle = article
@@ -125,29 +128,29 @@ struct CurrentView: View {
                 if viewModel.isRefreshing {
                     OneFeedMarkPulse(isActive: true, size: 52)
                     Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
-                        .font(OneFeedTheme.serifDisplay(32))
+                        .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                         .multilineTextAlignment(.center)
                 } else if celebrateClear {
                     OneFeedMarkBurst(size: 52)
                     Text("The room is still.")
-                        .font(OneFeedTheme.serifDisplay(32))
+                        .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                 } else if feeds.isEmpty {
                     OneFeedMark(size: 52)
                     Text("Add a source")
-                        .font(OneFeedTheme.serifDisplay(32))
+                        .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                 } else {
                     OneFeedMark(size: 52)
                     Text("You’re caught up")
-                        .font(OneFeedTheme.serifDisplay(32))
+                        .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                 }
             }
         } description: {
             Text(viewModel.isRefreshing ? caughtUpProgressCopy : feeds.isEmpty ? "Today fills after you subscribe." : "Tomorrow, a new hanging.")
-                .font(OneFeedTheme.sansUI(16, weight: .regular))
+                .font(.body)
                 .foregroundStyle(OneFeedTheme.graphite)
         } actions: {
             Button(viewModel.isRefreshing ? viewModel.progress.countText : feeds.isEmpty ? "Add a source" : "Refresh") {
@@ -161,7 +164,7 @@ struct CurrentView: View {
             .disabled(viewModel.isRefreshing)
             if !feeds.isEmpty {
                 Button("Add a source") { showingSources = true }
-                    .font(OneFeedTheme.sansUI(15, weight: .regular))
+                    .font(.subheadline)
                     .foregroundStyle(OneFeedTheme.graphite)
                     .frame(minHeight: 44)
                     .padding(.top, 8)
@@ -169,6 +172,7 @@ struct CurrentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
+        .animation(nil, value: viewModel.progress.completed)
         .sensoryFeedback(.success, trigger: celebrateClear)
     }
 

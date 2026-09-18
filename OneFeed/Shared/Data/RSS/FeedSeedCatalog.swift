@@ -2,7 +2,7 @@ import Foundation
 
 /// Single source of truth for seeded subscriptions: AI reading cadence folders
 /// plus the personal tiny-rss topic folders.
-enum FeedSeedCatalog {
+nonisolated enum FeedSeedCatalog {
     /// Bump when the seeded list/folders change so existing installs re-apply.
     static let version = 2
 

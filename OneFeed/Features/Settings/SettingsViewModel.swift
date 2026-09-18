@@ -32,7 +32,11 @@ final class SettingsViewModel {
     var freshRSS: SyncAccount? { accounts.first(where: { $0.provider == .freshRSS }) }
     var exportDocument: OPMLDocument { OPMLService().exportDocument(feeds: feeds) }
 
-    func configure(with context: ModelContext) { self.context = context; reload() }
+    func configure(with context: ModelContext) {
+        let shouldReload = self.context == nil
+        self.context = context
+        if shouldReload { reload() }
+    }
     func reload() {
         guard let context else { return }
         accounts = (try? context.fetch(FetchDescriptor<SyncAccount>())) ?? []

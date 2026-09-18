@@ -56,6 +56,7 @@ final class LibrarySyncService {
     private var lastWrittenData: Data?
     private var presenter: LibraryFilePresenter?
     private var isApplyingRemote = false
+    private var hasScheduledRestore = false
 
     private let defaults: UserDefaults
     private let linkStore: CloudFileLinkStore
@@ -123,6 +124,8 @@ final class LibrarySyncService {
             isLinked = false
             return
         }
+        guard !hasScheduledRestore else { return }
+        hasScheduledRestore = true
         Task { await restoreIfNeeded() }
     }
 

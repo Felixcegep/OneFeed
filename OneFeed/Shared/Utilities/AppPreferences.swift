@@ -9,7 +9,13 @@ enum ReaderFontChoice: String, CaseIterable, Identifiable {
     case mono
 
     var id: Self { self }
-    var label: String { rawValue.capitalized }
+    var label: String {
+        switch self {
+        case .sans: "Sans serif"
+        case .serif: "Serif"
+        case .mono: "Monospaced"
+        }
+    }
 }
 
 enum ReaderTextSize: String, CaseIterable, Identifiable {

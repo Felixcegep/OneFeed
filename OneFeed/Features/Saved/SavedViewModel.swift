@@ -24,7 +24,6 @@ final class SavedViewModel {
 
     func configure(with context: ModelContext) {
         self.context = context
-        reload()
     }
 
     func reload() {

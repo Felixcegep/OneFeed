@@ -1,6 +1,6 @@
 # OneFeed — guide de style et de parcours
 
-Mis à jour le 16 septembre 2026. Document de référence du chantier UI, complément de `UI_UX_IMPROVEMENT_PLAN.md`, pas une déclaration de validation complète.
+Mis à jour le 18 septembre 2026. Surfaces, typo, chrome, captures. Complément de [`UI_UX_IMPROVEMENT_PLAN.md`](UI_UX_IMPROVEMENT_PLAN.md). Lag et SwiftData : [`PERFORMANCE.md`](PERFORMANCE.md). Index : [`agent.md`](agent.md).
 
 ## 1. Intention
 
@@ -21,8 +21,11 @@ Source de vérité : `OneFeed/Shared/DesignSystem/OneFeedTheme.swift` et les cou
 | Texte secondaire | `graphite` | Source, date, durée, explications |
 | Contour | `sand` | Trait de 1 point, pas une ombre |
 | Accent | `accent` | Actions et sélection, pas les titres |
+| Texte d'erreur | `error` / `oneFeedErrorText` | Rouge adaptatif, accompagné d'un message explicite |
 
 Utiliser les couleurs adaptatives, jamais recopier leurs valeurs claires dans une nouvelle vue. Le contraste des états sombres et des actions colorées reste à mesurer ; l'existence d'un token n'est pas une garantie d'accessibilité.
+
+Contraste du texte d'erreur calculé à partir des composantes sRGB le 18 septembre : papier clair 5,98:1, plâtre clair 5,75:1, papier sombre 7,43:1, plâtre sombre 8,37:1. Ces mesures concernent le texte opaque sur ces fonds précis, pas toutes les combinaisons possibles.
 
 ### Typographie implémentée sur les articles
 
@@ -53,6 +56,10 @@ Utiliser les couleurs adaptatives, jamais recopier leurs valeurs claires dans un
 
 Les miniatures des lignes sont à droite, 64 × 64 points, alignées en haut. Leur absence ne doit pas laisser une colonne vide. Aux tailles d'accessibilité, elles sont omises pour laisser de la place au texte. Les images principales gardent actuellement leur hauteur de 248 points ; leur rendu avec images réelles reste à vérifier.
 
+L'attribution utilise le nom de l'abonnement, puis le domaine du lien, puis « Saved link » : ne pas afficher « Source » comme faux contenu. La première section de Queue est nommée « Recently saved », conformément au tri existant par date de sauvegarde ; aucun ordre de lecture ou tri métier n'a été changé.
+
+Les réglages de lecture montrent un spécimen en tête de groupe, dans la police et la taille choisies (`ReaderTextSize.points`, interligne 1,55). Pas de titre « Preview » redondant : le texte d'exemple *est* l'aperçu.
+
 L'appui d'une carte modifie sa surface dans le même contour arrondi et utilise une échelle de 0,99. Reduce Motion supprime cette mise à l'échelle et son animation. Ne pas ajouter d'animation automatique de décoration.
 
 ## 4. Parcours : contrat visuel et travail restant
@@ -81,6 +88,26 @@ Les règles d'état ci-dessus sont des critères de conception, pas des correcti
 
 ## 5. État réel de la vérification
 
+### Point de contrôle du 18 septembre — taille standard
+
+Les quatre tests `testCaptureAllScreens`, `testCaptureEmptyQueueAndOnboarding`, `testCaptureLongLayouts` et `testCaptureSettingsDestinations` ont réussi (4/4, 115,6 s) sur iPhone 17 Pro / iOS 26.5, taille de texte par défaut. Cette exécution inclut l'aperçu de lecture, `Manage sources`, le rouge d'erreur adaptatif et le titre « Recently saved ».
+
+Inspection des captures `/tmp/onefeed-uitest-screenshots/` à 11:08–11:12 :
+
+- Queue (`03`, `15`, `16`) : cartes papier séparées sur plâtre, contour sable, intervalle de sections plus large que l'intervalle entre cartes. La dernière carte d'une liste longue reste entière au-dessus de la barre d'onglets.
+- Today (`01`) : une pièce principale en carte ; « Also today » reste une liste compacte dans un groupe papier.
+- Lecture (`17-Settings-Reading`) : un spécimen serif en tête de groupe, lié à `ReaderTextSize.points` et à un interligne 1,55 comme le lecteur. Les pickers Font / Text Size sont visibles sans défiler.
+- Queue vide (`11`) et Settings (`10`) : actions et six rubriques entièrement visibles.
+- `UITestScreenshots/01–11` du dépôt ont été remplacés par ces captures standard (plus les barres colorées du 15 septembre).
+
+Une tentative de validation « finale » sous `/tmp/onefeed-final-20260918/` a exécuté 0 test : ne pas la citer comme preuve. Le mode sombre et les très grandes tailles de texte n'ont pas été recapturés sur cet arbre exact.
+
+### Point de contrôle antérieur du 18 septembre — accessibilité
+
+Une passe précédente à très grande taille (4/4, 165,9 s) a montré : lecteur sans défilement horizontal, actions de Queue vide au-dessus des onglets, dernière carte atteignable. Ces PNG AX ne reflètent pas l'aperçu de lecture ni `Manage sources`. À cette taille, « Recently saved · Video » orphelinait le point médian (corrigé depuis par des espaces insécables) et le bas de certains écrans Settings passait sous la barre d'onglets tant que l'utilisateur n'avait pas défilé.
+
+### Historique du 16 septembre
+
 - Revue de code ciblée : typographie adaptative, cumul de marges, retour d'appui arrondi, barre d'actions du lecteur, cibles emoji, insets Settings.
 - `testCaptureEmptyQueueAndOnboarding` et `testCaptureAllScreens` : réussis après correction du sélecteur `folder-Security` (bouton de navigation, pas l'édition d'icône).
 - Douze captures standard renouvelées le 16 septembre. Ne pas les assimiler à la validation du mode sombre, des très grandes tailles de texte, ni de cette passe d'accessibilité.
@@ -89,14 +116,6 @@ Les règles d'état ci-dessus sont des critères de conception, pas des correcti
 - Les captures du dépôt `UITestScreenshots/01–11` datent du 15 septembre : Feed y montre encore des barres colorées, alors que le code actuel utilise des emoji.
 
 Les captures temporaires sont sous `/tmp/onefeed-uitest-screenshots/`. Leur nom seul ne prouve pas leur fraîcheur.
-
-## 6. Priorités suivantes
-
-1. Recapturer le lecteur en très grande taille : Done pleine largeur + deuxième rangée, plus de défilement horizontal des cinq actions.
-2. Recapturer Queue vide en très grande taille : « Add a link » entièrement au-dessus de la barre d'onglets.
-3. Vérifier une liste longue défilée jusqu'en bas (`16-Queue-Bottom`) et le lecteur avec contenu long (`13–14`).
-4. Harmoniser les captures du dépôt avec le code actuel (emoji, en-têtes de section, Settings en sous-parcours).
-5. Grand format / iPad : encore ouvert. La réorganisation métier des réglages, de la synchro et des transitions d'articles reste hors de ce chantier de présentation.
 
 ### Avancement — 16 septembre, passe d'accessibilité
 
@@ -113,6 +132,14 @@ Les captures temporaires sont sous `/tmp/onefeed-uitest-screenshots/`. Leur nom 
 
 Le chantier complet reste ouvert jusqu'à inspection des nouvelles captures. Les changements de logique du plan d'audit restent hors périmètre de cette passe.
 
+## 6. Priorités suivantes
+
+1. Recapturer en mode sombre et à très grande taille l'aperçu de lecture et `Manage sources` (absents des PNG AX du matin).
+2. Grand format / iPad : encore ouvert.
+3. La réorganisation métier des réglages, de la synchro et des transitions d'articles reste hors de ce chantier de présentation.
+
+Lag des onglets, freeze au refresh, `save()` hors main : [`PERFORMANCE.md`](PERFORMANCE.md).
+
 ## 7. Garde-fous anti-slop et répartition du travail
 
 Le skill UI Slop Score demande une preuve rendue : ne pas qualifier de réussi un écran seulement parce que son code paraît correct. Garder au plus trois problèmes visuels prioritaires par passe. Ne pas pénaliser les composants natifs, les polices système ou la sobriété ; corriger ce qui nuit à la tâche.
@@ -121,5 +148,6 @@ Le skill UI Slop Score demande une preuve rendue : ne pas qualifier de réussi u
 
 - UI/Astra : hiérarchie, composants, espacements, lisibilité, retour d'appui et revue visuelle.
 - Luna : builds et tests de capture existants, rapport précis des états réellement capturés.
+- Luna en raisonnement élevé : écriture et exécution des tests, selon la demande du 18 septembre ; réserver Astra aux décisions et changements UI/UX.
 - Grok : logique et corrections fonctionnelles séparées (synchronisation, validation, stockage, transitions et filtres).
 - Une étape à la fois : correction limitée → compilation/tests disponibles → capture → inspection → mise à jour de ce guide.

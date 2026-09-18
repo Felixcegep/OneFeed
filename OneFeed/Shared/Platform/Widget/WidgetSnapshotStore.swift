@@ -11,7 +11,7 @@ struct CurrentArticleSnapshot: Codable, Sendable {
     let publishedAt: Date
 }
 
-enum WidgetSnapshotStore {
+nonisolated enum WidgetSnapshotStore {
     static let suiteName = "group.felix.MonoRss"
     static let key = "currentArticleSnapshot"
 
@@ -30,7 +30,9 @@ enum WidgetSnapshotStore {
         } else {
             defaults?.removeObject(forKey: key)
         }
-        WidgetCenter.shared.reloadTimelines(ofKind: "CurrentArticleWidget")
+        Task { @MainActor in
+            WidgetCenter.shared.reloadTimelines(ofKind: "CurrentArticleWidget")
+        }
         #endif
     }
 }

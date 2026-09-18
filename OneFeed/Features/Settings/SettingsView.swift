@@ -84,10 +84,12 @@ struct SettingsView: View {
 
     private var readingSection: some View {
         Section {
+            ReadingAppearancePreview(
+                fontChoice: ReaderFontChoice(rawValue: readerFont) ?? .serif,
+                textSize: ReaderTextSize(rawValue: readerTextSize) ?? .standard
+            )
             Picker("Font", selection: $readerFont) { ForEach(ReaderFontChoice.allCases) { Text($0.label).tag($0.rawValue) } }
             Picker("Text Size", selection: $readerTextSize) { ForEach(ReaderTextSize.allCases) { Text($0.label).tag($0.rawValue) } }
-        } header: {
-            GallerySectionHeader(text: "Reading")
         } footer: {
             Text("Serif is the default for long articles. These choices apply in the reader.")
                 .foregroundStyle(OneFeedTheme.graphite)
@@ -195,6 +197,11 @@ struct SettingsView: View {
 
     private var sourcesSection: some View {
         Section {
+            NavigationLink {
+                SourcesView()
+            } label: {
+                Label("Manage sources", systemImage: "dot.radiowaves.left.and.right")
+            }
             Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
                 viewModel.seedAllCatalogSources()
             }
@@ -238,6 +245,7 @@ struct SettingsView: View {
             }
             .tint(OneFeedTheme.ink)
             .refreshProgressBanner(viewModel.progress)
+            .onAppear { viewModel.reload() }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -255,6 +263,36 @@ struct SettingsView: View {
     @ViewBuilder
     private func settingsValue(_ title: String, value: String) -> some View {
         StackedLabeledValue(title: title, value: value)
+    }
+}
+
+private struct ReadingAppearancePreview: View {
+    let fontChoice: ReaderFontChoice
+    let textSize: ReaderTextSize
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var design: Font.Design {
+        switch fontChoice {
+        case .sans: .default
+        case .serif: .serif
+        case .mono: .monospaced
+        }
+    }
+
+    private var pointSize: CGFloat { textSize.points }
+
+    var body: some View {
+        Text("One article at a time. The rest of the room stays quiet.")
+            .font(.system(size: pointSize, design: design))
+            .lineSpacing(pointSize * 0.55)
+            .foregroundStyle(OneFeedTheme.ink)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .accessibilityLabel("Reading preview")
+            .accessibilityValue("One article at a time. The rest of the room stays quiet.")
     }
 }
 

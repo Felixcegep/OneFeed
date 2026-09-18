@@ -20,6 +20,8 @@ nonisolated enum ContentClassifier: Sendable {
     private static let wordsPerMinute = 220
     private static let defaultMinVideoSeconds = 180
     private static let htmlTagPattern = #/<[^>]+>/#
+    /// Long enough for a reading-time estimate; stops ingest from regexing a 200 KB RSS body on the main actor.
+    private static let wordCountSampleLimit = 48_000
 
     static func stripHTML(_ html: String) -> String {
         var stripped = html.replacing(htmlTagPattern, with: " ")
@@ -72,7 +74,10 @@ nonisolated enum ContentClassifier: Sendable {
     }
 
     static func wordCount(in html: String) -> Int {
-        let plain = stripHTML(html)
+        let sample = html.utf8.count > Self.wordCountSampleLimit
+            ? String(html.prefix(Self.wordCountSampleLimit))
+            : html
+        let plain = stripHTML(sample)
         guard !plain.isEmpty else { return 0 }
         return plain.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).count
     }

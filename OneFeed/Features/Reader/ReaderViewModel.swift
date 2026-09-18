@@ -41,13 +41,17 @@ final class ReaderViewModel {
         guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
         isExtracting = true
         defer { isExtracting = false }
-        if let html = await ArticleExtractionService().extractedHTML(for: article) {
-            if html != article.contentHTML {
-                article.contentHTML = html
-            }
-            article.refreshEstimatedReadingMinutes()
-            try? article.modelContext?.save()
+        guard let html = await ArticleExtractionService().extractedHTML(for: article) else { return }
+        do {
+            try Task.checkCancellation()
+        } catch {
+            return
         }
+        if html != article.contentHTML {
+            article.contentHTML = html
+        }
+        article.refreshEstimatedReadingMinutes()
+        try? article.modelContext?.save()
     }
 
     func declineYouTubeSummary() {
@@ -65,8 +69,11 @@ final class ReaderViewModel {
         defer { isSummarizing = false }
         do {
             let text = try await gemini.summarizeYouTube(url: url)
+            try Task.checkCancellation()
             article.aiSummary = text
             try? article.modelContext?.save()
+        } catch is CancellationError {
+            return
         } catch {
             summaryError = error.localizedDescription
         }
@@ -203,7 +210,7 @@ final class ReaderViewModel {
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
-        </style></head><body><div class="source">\(escape(article.feed?.title ?? "Source"))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div>\(body)</body></html>
+        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div>\(body)</body></html>
         """
         cachedDocument = (key, html)
         return html
