@@ -33,6 +33,20 @@ struct SettingsView: View {
                 settingsLink("Video summaries", summary: geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Not configured" : "API key configured") {
                     videoSection
                 }
+                NavigationLink {
+                    ExperimentalLibrarianView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Experimental")
+                            .font(.body)
+                            .foregroundStyle(OneFeedTheme.ink)
+                        Text(geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Needs API key" : "Gemini can change sources")
+                            .font(.subheadline)
+                            .foregroundStyle(OneFeedTheme.graphite)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 4)
+                }
                 settingsLink("About", summary: "OneFeed · 1.0") {
                     aboutSection
                 }

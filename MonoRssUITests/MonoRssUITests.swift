@@ -159,7 +159,7 @@ final class MonoRssUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Settings"].tap()
 
-        let destinations = ["Reading", "Sources & Import", "Sync", "Storage", "Video summaries", "About"]
+        let destinations = ["Reading", "Sources & Import", "Sync", "Storage", "Video summaries", "Experimental", "About"]
         for (index, title) in destinations.enumerated() {
             let destination = app.staticTexts[title].firstMatch
             for _ in 0..<12 {
@@ -175,13 +175,19 @@ final class MonoRssUITests: XCTestCase {
             if title == "Sources & Import" {
                 XCTAssertTrue(app.buttons["Manage sources"].waitForExistence(timeout: 2))
             }
+            if title == "Experimental" {
+                XCTAssertTrue(
+                    app.staticTexts["Gemini can add, move, pause, or remove sources. This page is experimental — check Sources after it acts."]
+                        .waitForExistence(timeout: 2)
+                )
+            }
             capture("\(17 + index)-Settings-\(title.replacingOccurrences(of: " & ", with: "-").replacingOccurrences(of: " ", with: "-"))", app: app)
             if title == "Sync" {
                 let connect = app.buttons["Connect FreshRSS"]
                 XCTAssertTrue(connect.waitForExistence(timeout: 3))
                 connect.tap()
                 XCTAssertTrue(app.navigationBars["Connect FreshRSS"].waitForExistence(timeout: 3))
-                capture("23-Connect-FreshRSS", app: app)
+                capture("24-Connect-FreshRSS", app: app)
                 app.buttons["Cancel"].tap()
                 XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 3))
             }
