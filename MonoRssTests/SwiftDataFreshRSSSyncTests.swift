@@ -167,6 +167,8 @@ struct SwiftDataFreshRSSSyncTests {
         let contentTypes = documentTypes.flatMap { $0["LSItemContentTypes"] as? [String] ?? [] }
         #expect(contentTypes.contains("public.rss"))
         #expect(contentTypes.contains("public.atom"))
+        #expect(contentTypes.contains("com.adobe.pdf"))
+        #expect(contentTypes.contains("org.idpf.epub-container"))
     }
 
     @Test func syncFollowsItemIDContinuationPages() async throws {

@@ -147,6 +147,13 @@ struct OneFeedApp: App {
                     NotificationCenter.default.post(name: OneFeedNotify.subscribe, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+                Button("Import EPUB or PDF…") {
+                    NotificationCenter.default.post(
+                        name: OneFeedNotify.addToQueue,
+                        object: nil,
+                        userInfo: ["pickFile": true]
+                    )
+                }
                 Button("Refresh") {
                     NotificationCenter.default.post(name: OneFeedNotify.refresh, object: nil)
                 }

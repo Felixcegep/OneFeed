@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct SavedView: View {
     @Environment(\.modelContext) private var modelContext
@@ -36,14 +37,13 @@ struct SavedView: View {
                             .laterQueueActions(article: upNext, restore: restore, onChanged: { viewModel.reload() })
                         } header: {
                             GallerySectionHeader(
-                                text: upNext.contentKind == "youtube"
-                                    ? "Recently saved\u{00A0}·\u{00A0}Video"
-                                    : "Recently saved"
+                                text: recentlySavedTitle(for: upNext)
                             )
                         }
                     }
 
                     laterSection(title: "Videos", articles: videos)
+                    laterSection(title: "Files", articles: files)
                     laterSection(title: "Articles", articles: articles)
                     laterSection(title: "Listen", articles: audio)
                 }
@@ -59,12 +59,25 @@ struct SavedView: View {
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add", systemImage: "plus") { isAdding = true }
-                    .accessibilityHint("Paste a link or pick a story from Feed")
+                    .accessibilityHint("Paste a link, import a file, or pick a story from Feed")
             }
         }
-        .task { viewModel.configure(with: modelContext) }
+        .task {
+            viewModel.configure(with: modelContext)
+            openPendingImportedArticle()
+        }
         .sheet(isPresented: $isAdding, onDismiss: { viewModel.reload() }) {
             AddToQueueView { viewModel.reload() }
+        }
+        .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
+            importDropped(providers)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.addToQueue)) { note in
+            if (note.userInfo?["pickFile"] as? Bool) == true { return }
+            isAdding = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.openQueueArticle)) { _ in
+            openPendingImportedArticle()
         }
         .oneFeedArticleCover(item: $viewModel.selectedArticle) { article in
             ReaderView(article: article) { state in
@@ -83,10 +96,10 @@ struct SavedView: View {
         EmptyLibraryState(
             title: "Nothing waiting",
             systemImage: "square.stack",
-            description: "Park a story from Today, or paste a link to read later.",
+            description: "Park a story from Today, or add a link or file to read later.",
             actionTitle: "Open Today",
             action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) },
-            secondaryTitle: "Add a link",
+            secondaryTitle: "Add to Queue",
             secondaryAction: { isAdding = true }
         )
     }
@@ -111,8 +124,26 @@ struct SavedView: View {
         rest.filter { $0.contentKind == "podcast" || $0.contentKind == "music" }
     }
 
+    private var files: [Article] {
+        rest.filter(\.isImportedDocument)
+    }
+
     private var articles: [Article] {
-        rest.filter { $0.contentKind != "youtube" && $0.contentKind != "podcast" && $0.contentKind != "music" }
+        rest.filter { article in
+            !article.isImportedDocument
+                && article.contentKind != "youtube"
+                && article.contentKind != "podcast"
+                && article.contentKind != "music"
+        }
+    }
+
+    private func recentlySavedTitle(for article: Article) -> String {
+        switch article.contentKind {
+        case "youtube": "Recently saved\u{00A0}·\u{00A0}Video"
+        case "pdf": "Recently saved\u{00A0}·\u{00A0}PDF"
+        case "epub": "Recently saved\u{00A0}·\u{00A0}Book"
+        default: "Recently saved"
+        }
     }
 
     private var rest: [Article] {
@@ -148,10 +179,40 @@ struct SavedView: View {
         .laterQueueActions(article: article, restore: restore, onChanged: { viewModel.reload() })
     }
 
+    private func openPendingImportedArticle() {
+        guard let id = QueueHandoff.pendingArticleID else { return }
+        QueueHandoff.pendingArticleID = nil
+        viewModel.openArticle(id: id)
+    }
+
     private func restore(_ article: Article) {
         withAnimation(OneFeedMotion.list) {
             viewModel.restore(article)
         }
+    }
+
+    private func importDropped(_ providers: [NSItemProvider]) -> Bool {
+        let matching = providers.filter { provider in
+            provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+                || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
+        }
+        guard !matching.isEmpty else { return false }
+        Task {
+            do {
+                let service = ImportedDocumentService()
+                var last: Article?
+                for provider in matching {
+                    let url = try await AddToQueueView.fileURLForDrop(from: provider)
+                    last = try await service.importFile(at: url, in: modelContext)
+                    try? FileManager.default.removeItem(at: url)
+                }
+                viewModel.reload()
+                if let last { viewModel.selectedArticle = last }
+            } catch {
+                viewModel.presentedError = error.localizedDescription
+            }
+        }
+        return true
     }
 }
 

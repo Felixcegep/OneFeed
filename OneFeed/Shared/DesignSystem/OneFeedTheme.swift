@@ -183,7 +183,21 @@ enum ArticlePresentation {
         if let title = article.feed?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
-        return article.url?.host() ?? String(localized: "Saved link")
+        if let host = article.url?.host(),
+           let scheme = article.url?.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return host
+        }
+        if article.contentKind == "epub" {
+            if let author = article.author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+                return author
+            }
+            return String(localized: "EPUB")
+        }
+        if article.contentKind == "pdf" {
+            return String(localized: "PDF")
+        }
+        return String(localized: "Saved link")
     }
 }
 

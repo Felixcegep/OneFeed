@@ -74,6 +74,10 @@ struct QueueLinkService {
             return existing
         }
 
+        if ImportedDocumentKind.infer(url: url) != nil {
+            return try await ImportedDocumentService(session: session).importRemote(url: url, in: context)
+        }
+
         var title = Self.fallbackTitle(for: url)
         var imageURL = classified.videoID.flatMap { YouTubeProcessor.thumbnailURL(for: $0) }
         var duration = 0

@@ -35,6 +35,18 @@ final class SavedViewModel {
         catch { presentedError = error.localizedDescription }
     }
 
+    func openArticle(id: UUID) {
+        guard let context else { return }
+        reload()
+        if let match = articles.first(where: { $0.id == id && $0.isStored }) {
+            selectedArticle = match
+            return
+        }
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        selectedArticle = try? context.fetch(descriptor).first
+    }
+
     func restore(_ article: Article) {
         guard let context, article.isStored else { return }
         if article.remoteID != nil { freshRSSService.enqueueMutation(for: article, transition: .queued, in: context) }

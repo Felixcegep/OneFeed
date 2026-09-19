@@ -276,7 +276,7 @@ struct ArticleCollectionView: View {
         switch destination {
         case .today: "Stories published today will collect here."
         case .unread: "New stories from your sources will land here."
-        case .saved: "Add a link, or pick a story from Feed."
+        case .saved: "Add a link or file, or pick a story from Feed."
         case .folder: "No unread stories in this folder."
         }
     }

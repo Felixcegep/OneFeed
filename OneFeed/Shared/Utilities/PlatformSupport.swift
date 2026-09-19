@@ -398,4 +398,10 @@ enum OneFeedNotify {
     static let refresh = Notification.Name("onefeed.refresh")
     static let openFeed = Notification.Name("onefeed.openFeed")
     static let openToday = Notification.Name("onefeed.openToday")
+    static let addToQueue = Notification.Name("onefeed.addToQueue")
+    static let openQueueArticle = Notification.Name("onefeed.openQueueArticle")
+}
+
+enum QueueHandoff {
+    @MainActor static var pendingArticleID: UUID?
 }

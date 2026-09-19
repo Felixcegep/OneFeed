@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 
 struct AppRootView: View {
     @Environment(\.modelContext) private var modelContext
@@ -7,6 +8,8 @@ struct AppRootView: View {
     @State private var selectedTab: AppTab = .today
     @State private var subscribeAddress: String?
     @State private var isPresentingSubscribe = false
+    @State private var importError: String?
+    @State private var isPickingDocument = false
     @State private var warmReaderWeb = false
     @State private var isLaunching = !ReaderWebWarmup.skipsOpeningCover
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -64,6 +67,32 @@ struct AppRootView: View {
             .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.refresh)) { _ in
                 Task { await BackgroundRefreshCoordinator.refresh(in: modelContext) }
             }
+            .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.addToQueue)) { note in
+                selectedTab = .queue
+                if (note.userInfo?["pickFile"] as? Bool) == true {
+                    isPickingDocument = true
+                }
+            }
+            .fileImporter(
+                isPresented: $isPickingDocument,
+                allowedContentTypes: ImportedDocumentKind.readableTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    Task { await importIncomingDocuments(urls) }
+                case .failure(let error):
+                    importError = error.localizedDescription
+                }
+            }
+            .alert("Couldn’t import", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+            )) {
+                Button("OK", role: .cancel) { importError = nil }
+            } message: {
+                Text(importError ?? "")
+            }
     }
 
     @ViewBuilder
@@ -97,10 +126,35 @@ struct AppRootView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
+        if url.isFileURL, ImportedDocumentKind.infer(url: url) != nil {
+            selectedTab = .queue
+            Task { await importIncomingDocument(url) }
+            return
+        }
         guard let address = IncomingFeedURL.subscriptionAddress(from: url) else { return }
         subscribeAddress = address
         isPresentingSubscribe = true
         selectedTab = .feed
+    }
+
+    private func importIncomingDocument(_ url: URL) async {
+        await importIncomingDocuments([url])
+    }
+
+    private func importIncomingDocuments(_ urls: [URL]) async {
+        do {
+            var last: Article?
+            let service = ImportedDocumentService()
+            for url in urls {
+                last = try await service.importFile(at: url, in: modelContext)
+            }
+            if let last {
+                QueueHandoff.pendingArticleID = last.id
+                NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
+            }
+        } catch {
+            importError = error.localizedDescription
+        }
     }
 }
 

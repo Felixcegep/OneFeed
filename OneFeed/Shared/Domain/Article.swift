@@ -51,8 +51,14 @@ final class Article {
         case "youtube": "Video"
         case "podcast": "Podcast"
         case "music": "Music"
+        case "pdf": "PDF"
+        case "epub": "Book"
         default: nil
         }
+    }
+
+    var isImportedDocument: Bool {
+        contentKind == "pdf" || contentKind == "epub"
     }
 
     /// Stored estimate. Lists must not regex `contentHTML` in `body`.
@@ -71,7 +77,7 @@ final class Article {
         if durationSeconds > 0 {
             return "\(durationSeconds) sec"
         }
-        if contentKind == "article" {
+        if contentKind == "article" || isImportedDocument {
             let minutes = estimatedReadingMinutes
             guard minutes >= 2 else { return nil }
             return "\(minutes) min read"

@@ -5,6 +5,8 @@ nonisolated enum ContentKind: String, Sendable {
     case youtube
     case podcast
     case music
+    case pdf
+    case epub
 }
 
 nonisolated struct ClassifiedEntry: Sendable {

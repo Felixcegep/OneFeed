@@ -47,6 +47,9 @@ struct ArticleRetentionService {
         var removed = 0
         for article in candidates {
             if keptIDs.contains(article.id) { continue }
+            if article.isImportedDocument {
+                ImportedDocumentStore.shared.removeFiles(for: article)
+            }
             context.delete(article)
             removed += 1
         }
