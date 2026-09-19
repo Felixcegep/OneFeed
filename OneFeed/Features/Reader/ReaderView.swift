@@ -20,9 +20,12 @@ struct ReaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
+    @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
+    @AppStorage(AppPreferenceKey.readerFocusIntensity) private var focusIntensity = ReaderFocus.defaultIntensity
     @State private var viewModel: ReaderViewModel
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
+    @State private var showingFocusSheet = false
     @State private var savePulse = 0
     @State private var donePulse = 0
     @State private var skipPulse = 0
@@ -82,7 +85,7 @@ struct ReaderView: View {
                         .accessibilityHint("Closes the reader without changing this article")
                 }
                 ToolbarItem(placement: .principal) {
-                    if viewModel.article.url != nil {
+                    if showsModePicker {
                         modePicker
                     }
                 }
@@ -91,7 +94,9 @@ struct ReaderView: View {
                         if viewModel.isExtracting {
                             OneFeedMarkPulse(isActive: true, size: 18)
                         }
-                        readingOptionsMenu
+                        if showsReadingOptions {
+                            readingOptionsMenu
+                        }
                     }
                 }
             }
@@ -128,6 +133,9 @@ struct ReaderView: View {
                 Button("OK", role: .cancel) { viewModel.summaryError = nil }
             } message: {
                 Text(viewModel.summaryError ?? "")
+            }
+            .sheet(isPresented: $showingFocusSheet) {
+                ReaderFocusSheet(mode: $focusMode, intensity: $focusIntensity)
             }
             .sheet(isPresented: $showingAPIKeySheet) {
                 GeminiAPIKeyForm(key: $geminiKey) {
@@ -210,17 +218,17 @@ struct ReaderView: View {
             readerBarItem("Done", systemImage: "checkmark", hint: "Marks this article done", emphasized: true) {
                 finish(.read)
             }
-            ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+            ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
                 ReaderBarItemLabel(title: "Share", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(.plain)
-            .disabled(article.url == nil || decision != nil)
+            .disabled(shareURL == nil || decision != nil)
             .accessibilityLabel("Share")
             .frame(maxWidth: .infinity)
             readerBarItem("Browser", systemImage: "safari", hint: "Opens the original page") {
                 isPresentingBrowser = true
             }
-            .disabled(article.url == nil)
+            .disabled(!canOpenBrowser)
         }
     }
 
@@ -301,6 +309,9 @@ struct ReaderView: View {
 
     private var readingOptionsMenu: some View {
         Menu {
+            Button("Focus", systemImage: "text.justify") {
+                showingFocusSheet = true
+            }
             Picker("Font", selection: $fontChoice) {
                 ForEach(ReaderFontChoice.allCases) { choice in
                     Text(choice.label).tag(choice.rawValue)
@@ -314,11 +325,13 @@ struct ReaderView: View {
             #if os(iOS)
             if dynamicTypeSize.isAccessibilitySize {
                 Divider()
-                if let url = article.url {
+                if let url = shareURL {
                     ShareLink(item: url) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
                     .disabled(decision != nil)
+                }
+                if canOpenBrowser {
                     Button("Browser", systemImage: "safari") {
                         isPresentingBrowser = true
                     }
@@ -361,16 +374,18 @@ struct ReaderView: View {
 
             Spacer(minLength: 8)
 
-            if viewModel.article.url != nil {
+            if showsModePicker {
                 modePicker
                     .frame(maxWidth: 240)
             }
 
             Spacer(minLength: 8)
 
-            readingOptionsMenu
-                .menuStyle(.borderlessButton)
-                .frame(width: 28, height: 28)
+            if showsReadingOptions {
+                readingOptionsMenu
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 28, height: 28)
+            }
 
             if viewModel.isExtracting {
                 OneFeedMarkPulse(isActive: true, size: 18)
@@ -407,17 +422,17 @@ struct ReaderView: View {
             .disabled(decision != nil)
             .frame(width: 88)
             HStack(spacing: 0) {
-                ShareLink(item: article.url ?? URL(fileURLWithPath: "/")) {
+                ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
                     ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.plain)
-                .disabled(article.url == nil)
+                .disabled(shareURL == nil)
                 .help("Share")
                 .accessibilityLabel("Share")
                 readerBarButton("Browser", systemImage: "safari", help: "Open in browser") {
                     isPresentingBrowser = true
                 }
-                .disabled(article.url == nil)
+                .disabled(!canOpenBrowser)
             }
             .frame(maxWidth: .infinity)
         }
@@ -452,7 +467,13 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var articleCanvas: some View {
-        if mode == .website, let url = playbackURL {
+        if article.contentKind == "pdf" {
+            if let url = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+                PDFReaderPane(url: url)
+            } else {
+                missingImportedFile
+            }
+        } else if mode == .website, let url = playbackURL {
             inAppWebsite(url)
         } else {
             ReaderWebContent(
@@ -460,12 +481,55 @@ struct ReaderView: View {
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
                     textSize: ReaderTextSize(rawValue: textSize) ?? .standard
                 ),
-                title: article.title
+                title: article.title,
+                articleID: article.id,
+                baseURL: viewModel.documentBaseURL,
+                showingFocusSheet: $showingFocusSheet
             )
         }
     }
 
+    private var missingImportedFile: some View {
+        VStack(spacing: 12) {
+            Text("This file is no longer on this device.")
+                .font(.system(.title3, design: .serif))
+                .foregroundStyle(OneFeedTheme.ink)
+                .multilineTextAlignment(.center)
+            Text("Import the PDF or EPUB again to keep reading.")
+                .font(.body)
+                .foregroundStyle(OneFeedTheme.graphite)
+                .multilineTextAlignment(.center)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OneFeedTheme.paper)
+    }
+
+    private var showsModePicker: Bool {
+        !article.isImportedDocument && article.url != nil
+    }
+
+    private var showsReadingOptions: Bool {
+        article.contentKind != "pdf"
+    }
+
+    private var shareURL: URL? {
+        if let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+            return file
+        }
+        let scheme = article.url?.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https" else { return nil }
+        return article.url
+    }
+
+    private var canOpenBrowser: Bool {
+        guard !article.isImportedDocument else { return false }
+        let scheme = article.url?.scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
+    }
+
     private static func initialMode(for article: Article) -> ReaderDisplayMode {
+        if article.isImportedDocument { return .reader }
         if article.contentKind == "youtube", article.videoID != nil || article.url != nil { return .website }
         if article.readableHTML == nil, article.url != nil { return .website }
         return .reader
@@ -636,11 +700,22 @@ private struct WebsiteReaderPane: View {
 private struct ReaderWebContent: View {
     let html: String
     let title: String
+    let articleID: UUID
+    var baseURL: URL = ReaderWebWarmup.blankURL
+    @Binding var showingFocusSheet: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
+    @AppStorage(AppPreferenceKey.readerFocusIntensity) private var focusIntensity = ReaderFocus.defaultIntensity
+    @AppStorage(AppPreferenceKey.readerFocusZoneY) private var focusZoneY = ReaderFocus.defaultZoneY
     @State private var page = ReaderWebWarmup.makeReaderPage()
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
+    @State private var didRestoreTrail = false
 
     private var showCover: Bool { !hasCommitted }
+    private var resolvedMode: ReaderFocusMode {
+        ReaderFocusMode(rawValue: focusMode) ?? .smart
+    }
 
     var body: some View {
         WebView(page)
@@ -652,14 +727,96 @@ private struct ReaderWebContent: View {
                     OneFeedLoadingCover(title: title, status: "Laying the page")
                 }
             }
+            .overlay(alignment: .bottom) {
+                if !showCover {
+                    focusDot
+                }
+            }
             .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             .onChange(of: page.isLoading) { _, loading in
-                if !loading { hasCommitted = true }
+                if !loading {
+                    hasCommitted = true
+                    Task { await applyFocus(restore: !didRestoreTrail) }
+                }
+            }
+            .onChange(of: focusMode) { _, _ in
+                Task { await applyFocus(restore: false) }
+            }
+            .onChange(of: focusIntensity) { _, _ in
+                Task { await applyFocus(restore: false) }
+            }
+            .onChange(of: focusZoneY) { _, _ in
+                Task { await applyFocus(restore: false) }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active {
+                    Task { await persistTrail() }
+                }
+            }
+            .onDisappear {
+                Task { await persistTrail() }
             }
             .task(id: html) {
-                page.load(html: html, baseURL: ReaderWebWarmup.blankURL)
+                didRestoreTrail = false
+                page.load(html: html, baseURL: baseURL)
                 try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
                 hasCommitted = true
+                await applyFocus(restore: !didRestoreTrail)
             }
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2.5))
+                    await persistTrail()
+                }
+            }
+    }
+
+    private var focusDot: some View {
+        Button {
+            showingFocusSheet = true
+        } label: {
+            Circle()
+                .fill(resolvedMode == .off ? OneFeedTheme.stone.opacity(0.45) : OneFeedTheme.accent.opacity(0.88))
+                .frame(width: 7, height: 7)
+                .frame(width: 44, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Reading focus")
+        .accessibilityValue(resolvedMode.label)
+        .accessibilityHint("Opens focus options")
+        .padding(.bottom, 2)
+    }
+
+    @MainActor
+    private func applyFocus(restore: Bool) async {
+        let trail = restore ? ReadingTrailStore.load(articleID: articleID) : nil
+        if restore { didRestoreTrail = true }
+        let cfg = ReaderFocus.configuration(
+            mode: resolvedMode,
+            intensity: focusIntensity,
+            zoneY: focusZoneY,
+            reduceMotion: reduceMotion,
+            trail: trail
+        )
+        _ = try? await page.callJavaScript(
+            "if (window.OneFeedFocus) { window.OneFeedFocus.configure(cfg); }",
+            arguments: ["cfg": cfg]
+        )
+    }
+
+    @MainActor
+    private func persistTrail() async {
+        let value = try? await page.callJavaScript(
+            "return window.OneFeedFocus ? window.OneFeedFocus.snapshot() : null;"
+        )
+        guard let trail = ReaderFocus.snapshot(from: value, articleID: articleID, fallbackZoneY: focusZoneY) else {
+            return
+        }
+        ReadingTrailStore.save(trail)
+        let zone = ReaderFocus.clampZone(trail.zoneY)
+        if abs(zone - focusZoneY) > 0.002 {
+            focusZoneY = zone
+        }
     }
 }

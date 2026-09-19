@@ -85,6 +85,8 @@ struct FeedAndFreshRSSDomainTests {
                 == "https://swift.org/atom.xml"
         )
         #expect(IncomingFeedURL.subscriptionAddress(from: URL(string: "onefeed://reader/abc")!) == nil)
+        #expect(IncomingFeedURL.subscriptionAddress(from: URL(fileURLWithPath: "/tmp/book.epub")) == nil)
+        #expect(IncomingFeedURL.subscriptionAddress(from: URL(fileURLWithPath: "/tmp/paper.pdf")) == nil)
 
         #expect(FeedService.normalizedURL(from: "feed:https://jvns.ca/atom.xml") == URL(string: "https://jvns.ca/atom.xml"))
         #expect(FeedService.normalizedURL(from: "example.com/feed") == URL(string: "https://example.com/feed"))
@@ -583,6 +585,7 @@ struct FeedAndFreshRSSDomainTests {
         #expect(html.contains("--link: light-dark(#A04B32, #E89B7A)"))
         #expect(html.contains("#2A2520"))
         #expect(html.contains("Hello reader"))
+        #expect(html.contains("onefeed-article"))
         #expect(!html.contains("alert(1)"))
     }
 }

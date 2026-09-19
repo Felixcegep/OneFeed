@@ -13,12 +13,17 @@ enum ReaderHTML {
         pattern: "\\s+on[a-z]+\\s*=\\s*(\"[^\"]*\"|'[^']*'|[^\\s>]+)",
         options: [.caseInsensitive]
     )
+    private static let javascriptURL = try! NSRegularExpression(
+        pattern: "\\s(?:href|src)\\s*=\\s*(?:\"\\s*javascript:[^\"]*\"|'\\s*javascript:[^']*'|javascript:\\S+)",
+        options: [.caseInsensitive]
+    )
 
     static func sanitizedBody(_ html: String) -> String {
         var result = html
         result = replace(dangerousBlock, in: result, with: "")
         result = replace(dangerousEmpty, in: result, with: "")
         result = replace(eventHandler, in: result, with: "")
+        result = replace(javascriptURL, in: result, with: "")
         if result.range(of: "<img ", options: .caseInsensitive) != nil {
             result = result.replacingOccurrences(
                 of: "<img ",

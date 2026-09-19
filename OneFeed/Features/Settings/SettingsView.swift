@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(AppPreferenceKey.readerFont) private var readerFont = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var readerTextSize = ReaderTextSize.standard.rawValue
+    @AppStorage(AppPreferenceKey.readerFocusMode) private var readerFocusMode = ReaderFocusMode.smart.rawValue
     @AppStorage(AppPreferenceKey.articleRetentionDays) private var retentionDays = ArticleRetentionService.defaultRetentionDays
     @State private var viewModel = SettingsViewModel()
     @State private var geminiKey = ""
@@ -16,7 +17,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                settingsLink("Reading", summary: "\(ReaderFontChoice(rawValue: readerFont)?.label ?? "Serif") · \(ReaderTextSize(rawValue: readerTextSize)?.label ?? "Default")") {
+                settingsLink("Reading", summary: "\(ReaderFontChoice(rawValue: readerFont)?.label ?? "Serif") · \(ReaderTextSize(rawValue: readerTextSize)?.label ?? "Default") · \(ReaderFocusMode(rawValue: readerFocusMode)?.label ?? "Smart")") {
                     readingSection
                 }
                 settingsLink("Sources & Import", summary: "Subscriptions and OPML") {
@@ -86,8 +87,9 @@ struct SettingsView: View {
             )
             Picker("Font", selection: $readerFont) { ForEach(ReaderFontChoice.allCases) { Text($0.label).tag($0.rawValue) } }
             Picker("Text Size", selection: $readerTextSize) { ForEach(ReaderTextSize.allCases) { Text($0.label).tag($0.rawValue) } }
+            Picker("Focus", selection: $readerFocusMode) { ForEach(ReaderFocusMode.allCases) { Text($0.label).tag($0.rawValue) } }
         } footer: {
-            Text("Serif is the default for long articles. These choices apply in the reader.")
+            Text("Serif is the default for long articles. Focus keeps your place while you scroll, then fades nearby paragraphs just enough to stay oriented.")
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)

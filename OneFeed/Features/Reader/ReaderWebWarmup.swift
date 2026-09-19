@@ -20,7 +20,8 @@ enum ReaderWebWarmup {
     static func makeReaderPage() -> WebPage {
         var configuration = WebPage.Configuration()
         configuration.loadsSubresources = true
-        configuration.defaultNavigationPreferences.allowsContentJavaScript = false
+        // Sanitized reader HTML plus OneFeed's own focus script — not third-party pages.
+        configuration.defaultNavigationPreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = .nonPersistent()
         return WebPage(configuration: configuration)
     }

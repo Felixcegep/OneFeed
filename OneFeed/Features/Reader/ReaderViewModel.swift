@@ -36,6 +36,10 @@ final class ReaderViewModel {
     }
 
     func enrichReadableHTML() async {
+        if article.contentKind == "epub" {
+            await loadEPUBIfNeeded()
+            return
+        }
         guard article.contentKind == "article" else { return }
         let existing = article.contentHTML ?? article.summary
         guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
@@ -81,15 +85,26 @@ final class ReaderViewModel {
 
     private var cachedDocument: (key: String, html: String)?
 
+    var documentBaseURL: URL {
+        if article.contentKind == "epub",
+           let hash = ImportedDocumentStore.hash(fromGuid: article.guid) {
+            let extracted = ImportedDocumentStore.shared.extractedDirectory(hash: hash)
+            return EPUBReader.opfDirectory(in: extracted) ?? ReaderWebWarmup.blankURL
+        }
+        return ReaderWebWarmup.blankURL
+    }
+
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
-        let fallback = "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        let fallback = article.contentKind == "epub"
+            ? "<p>This book couldn’t be opened. Import the EPUB again.</p>"
+            : "<p>This source only provided metadata. Open the original article to continue reading.</p>"
         let rawBody = article.readableHTML ?? fallback
         #if canImport(UIKit)
         let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
         #else
         let typeSize = "standard"
         #endif
-        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)"
+        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)|focus\(ReaderFocus.engineVersion)"
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
@@ -210,10 +225,31 @@ final class ReaderViewModel {
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
-        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div>\(body)</body></html>
+        \(ReaderFocus.pageCSS)
+        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div><div id="onefeed-article">\(body)</div>\(ReaderFocus.pageScriptTag)</body></html>
         """
         cachedDocument = (key, html)
         return html
+    }
+
+    private func loadEPUBIfNeeded() async {
+        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return
+        }
+        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article),
+              let hash = ImportedDocumentStore.hash(fromGuid: article.guid) else { return }
+        isExtracting = true
+        defer { isExtracting = false }
+        let extracted = ImportedDocumentStore.shared.extractedDirectory(hash: hash)
+        do {
+            let html = try await Task.detached {
+                try EPUBReader.html(fromEPUB: file, extractedTo: extracted)
+            }.value
+            article.contentHTML = html
+            try? article.modelContext?.save()
+        } catch {
+            return
+        }
     }
 
     private func escape(_ text: String) -> String {
