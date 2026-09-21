@@ -83,7 +83,7 @@ struct AddToQueueView: View {
                                 ArticleRow(article: article)
                             }
                             .accessibilityHint("Adds this to Queue")
-                            .articleListRow()
+                            .articleListRow(isCurrent: article.isCurrentReading)
                         }
                     } header: {
                         GallerySectionHeader(text: "From Feed")

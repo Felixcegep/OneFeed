@@ -33,7 +33,7 @@ enum OneFeedMotion {
     }
 }
 
-/// The OneFeed RSS mark, recast in terracotta on cream.
+/// The OneFeed RSS mark, recast in attention on plaster.
 struct OneFeedMark: View {
     var size: CGFloat = 28
     var arcProgress: CGFloat = 1

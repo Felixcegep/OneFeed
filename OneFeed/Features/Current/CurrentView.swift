@@ -29,7 +29,9 @@ struct CurrentView: View {
                             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                            .articleActions(for: featured, in: modelContext)
+                            .articleActions(for: featured, in: modelContext) {
+                                viewModel.loadCurrent()
+                            }
                         } header: {
                             GallerySectionHeader(text: "Now")
                         }
@@ -41,8 +43,10 @@ struct CurrentView: View {
                                     ArticleRow(article: article)
                                 }
                                 .buttonStyle(DirectoryRowButtonStyle())
-                                .articleListRow()
-                                .articleActions(for: article, in: modelContext)
+                                .articleListRow(isCurrent: article.isCurrentReading)
+                                .articleActions(for: article, in: modelContext) {
+                                    viewModel.loadCurrent()
+                                }
                             }
                         } header: {
                             GallerySectionHeader(text: "Also today")

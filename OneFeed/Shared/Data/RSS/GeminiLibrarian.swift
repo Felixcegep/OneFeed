@@ -28,9 +28,11 @@ struct GeminiPendingRemoval: Equatable, Sendable, Identifiable {
 enum GeminiLibraryTools {
     static let names = [
         "list_library",
+        "list_not_interested",
         "add_source",
         "remove_source",
         "move_source",
+        "archive_source",
         "create_folder",
         "rename_folder",
         "set_folder_emoji",
@@ -40,6 +42,12 @@ enum GeminiLibraryTools {
     static var declarations: [[String: Any]] {
         [
             declaration("list_library", "List folders and sources currently in the library.", [:], []),
+            declaration(
+                "list_not_interested",
+                "List articles the reader marked not interested, grouped by source, with folder and Today flags.",
+                [:],
+                []
+            ),
             declaration(
                 "add_source",
                 "Subscribe to a website or RSS/Atom URL. Use the homepage if the reader names a publication.",
@@ -52,6 +60,12 @@ enum GeminiLibraryTools {
             declaration(
                 "remove_source",
                 "Remove a subscribed source and its locally stored articles. Only when the reader is explicit.",
+                ["source": string("Exact source title or URL from the library.")],
+                ["source"]
+            ),
+            declaration(
+                "archive_source",
+                "Move a source to Archive and take it out of Today. The subscription stays. Use this when the reader wants to keep a source but stop seeing it daily.",
                 ["source": string("Exact source title or URL from the library.")],
                 ["source"]
             ),
@@ -246,11 +260,15 @@ final class GeminiLibrarian {
         Current library:
         \(snapshot(in: context))
 
+        \(NotInterestedLog.snapshot(in: context))
+
         Rules:
         - Prefer existing folder names. Create a folder only when asked or when a new group is clearly needed.
         - add_source accepts a website or RSS URL. Use the site’s homepage if the reader names a publication.
         - Identify sources by their exact title or URL from the library. If several match, ask.
         - remove_source deletes the source and its locally stored articles. Only do that when the reader is explicit.
+        - archive_source moves a source to Archive and sets include_in_today=false. The subscription stays.
+        - Use the not-interested log to notice noisy sources. Suggest Archive, blocked words, or removal. Only remove when the reader is explicit.
         - include_in_today controls whether a source enters Today. Pausing a source uses enabled=false.
         - After you change something, say what changed in one or two short sentences. Do not mention tools or being an AI.
         - You cannot change reading fonts, FreshRSS, iCloud, Google Drive, or the API key.
@@ -266,12 +284,16 @@ final class GeminiLibrarian {
         switch call.name {
         case "list_library":
             return .init(ok: true, message: snapshot(in: context))
+        case "list_not_interested":
+            return .init(ok: true, message: NotInterestedLog.snapshot(in: context, sources: 20, articlesPerSource: 6))
         case "add_source":
             return await addSource(call, in: context)
         case "remove_source":
             return await removeSource(call, in: context, allowRemoval: allowRemoval)
         case "move_source":
             return moveSource(call, in: context)
+        case "archive_source":
+            return archiveSource(call, in: context)
         case "create_folder":
             return createFolder(call)
         case "rename_folder":
@@ -330,6 +352,20 @@ final class GeminiLibrarian {
             try? context.save()
             return .init(ok: true, message: "Removed \(title).")
         }
+    }
+
+    private func archiveSource(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {
+        let resolved = resolveFeed(call.string("source"), in: context)
+        guard let feed = resolved.feed else {
+            return .init(ok: false, message: resolved.message ?? "Could not find that source.")
+        }
+        let alreadyArchived = feed.folderName?.caseInsensitiveCompare(NotInterestedLog.archiveFolderName) == .orderedSame
+            && feed.includeInToday == false
+        if alreadyArchived {
+            return .init(ok: true, message: "\(feed.title) is already in Archive and out of Today.")
+        }
+        NotInterestedLog.archive(feed, in: context)
+        return .init(ok: true, message: "Moved \(feed.title) to Archive and took it out of Today.")
     }
 
     private func moveSource(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {

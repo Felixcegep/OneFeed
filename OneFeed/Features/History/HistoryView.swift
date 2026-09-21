@@ -7,6 +7,7 @@ struct HistoryView: View {
         sort: \Article.completedAt,
         order: .reverse
     ) private var history: [Article]
+    @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @State private var selectedArticle: Article?
 
     private var days: [HistoryDay] {
@@ -15,7 +16,7 @@ struct HistoryView: View {
 
     var body: some View {
         Group {
-            if days.isEmpty {
+            if days.isEmpty && notInterested.isEmpty {
                 EmptyLibraryState(
                     title: "No history yet",
                     systemImage: "clock",
@@ -23,11 +24,30 @@ struct HistoryView: View {
                 )
             } else {
                 List {
+                    Section {
+                        NavigationLink {
+                            NotInterestedView()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Not interested")
+                                    .font(.body)
+                                    .foregroundStyle(OneFeedTheme.ink)
+                                Text(notInterested.isEmpty
+                                     ? "Set aside, grouped by source"
+                                     : notInterested.count == 1 ? "1 set aside" : "\(notInterested.count) set aside")
+                                    .font(.subheadline)
+                                    .foregroundStyle(OneFeedTheme.graphite)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .listRowBackground(OneFeedTheme.paper)
+
                     ForEach(days) { group in
                         Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 Button { selectedArticle = article } label: {
-                                    ArticleRow(article: article, status: article.state == .read ? "Read" : "Skipped")
+                                    ArticleRow(article: article, status: article.historyStatus)
                                 }
                                 .buttonStyle(DirectoryRowButtonStyle())
                                 .articleListRow()

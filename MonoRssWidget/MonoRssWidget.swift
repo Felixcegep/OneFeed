@@ -36,20 +36,21 @@ private struct CurrentArticleProvider: TimelineProvider {
 }
 
 private struct WidgetPaper {
+    /// Keep in sync with `OneFeedPalette.canvas` / `text` / `subdued`.
     static let cream = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.122, green: 0.106, blue: 0.086, alpha: 1)
-            : UIColor(red: 0.973, green: 0.957, blue: 0.929, alpha: 1)
+            ? UIColor(red: 0.110, green: 0.106, blue: 0.094, alpha: 1)
+            : UIColor(red: 0.953, green: 0.937, blue: 0.898, alpha: 1)
     })
     static let ink = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.910, green: 0.878, blue: 0.824, alpha: 1)
-            : UIColor(red: 0.176, green: 0.145, blue: 0.125, alpha: 1)
+            ? UIColor(red: 0.953, green: 0.937, blue: 0.898, alpha: 1)
+            : UIColor(red: 0.090, green: 0.090, blue: 0.082, alpha: 1)
     })
     static let stone = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.612, green: 0.565, blue: 0.518, alpha: 1)
-            : UIColor(red: 0.541, green: 0.494, blue: 0.447, alpha: 1)
+            ? UIColor(red: 0.706, green: 0.690, blue: 0.655, alpha: 1)
+            : UIColor(red: 0.384, green: 0.373, blue: 0.345, alpha: 1)
     })
 }
 

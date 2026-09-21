@@ -292,6 +292,10 @@ private struct LaterQueueActions: ViewModifier {
                     ArticleActions.apply(.read, to: article, in: modelContext)
                     onChanged()
                 }
+                Button("Not interested", systemImage: "hand.thumbsdown") {
+                    ArticleActions.markNotInterested(article, in: modelContext)
+                    onChanged()
+                }
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
                         Button {

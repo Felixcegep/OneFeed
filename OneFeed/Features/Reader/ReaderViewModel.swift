@@ -137,13 +137,7 @@ final class ReaderViewModel {
         <style>
         :root {
           color-scheme: light dark;
-          --paper: light-dark(#FBF9F4, #2A2520);
-          --ink: light-dark(#2D2520, #E8E0D2);
-          --title: light-dark(#2D2520, #E8E0D2);
-          --meta: light-dark(#5A4F44, #B8AFA3);
-          --rule: light-dark(#DDD2BD, #3A342C);
-          --link: light-dark(#A04B32, #E89B7A);
-          --quote: #D97757;
+        \(OneFeedPalette.readerRootCSS)
         }
         html { overflow-x: hidden; }
         body {

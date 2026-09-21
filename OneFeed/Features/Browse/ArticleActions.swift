@@ -16,40 +16,70 @@ enum ArticleActions {
             do { try queue.complete(article, as: state, in: context) }
             catch { }
         }
+        syncTodayDeck(article, to: state, in: context)
+    }
+
+    static func markNotInterested(_ article: Article, in context: ModelContext) {
+        NotInterestedLog.record(article, in: context)
+        apply(.skipped, to: article, in: context)
+    }
+
+    private static func syncTodayDeck(_ article: Article, to state: ArticleState, in context: ModelContext) {
+        guard let deck = try? DailyDeckService().todayDeck(in: context),
+              let item = deck.items.first(where: { $0.article?.id == article.id })
+        else { return }
+        item.status = state
+        try? context.save()
     }
 }
 
 struct ArticleSwipeActions: ViewModifier {
     let article: Article
     let context: ModelContext
+    var onChanged: (() -> Void)? = nil
 
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
                     ArticleActions.apply(.read, to: article, in: context)
+                    onChanged?()
                 }
                 .tint(OneFeedTheme.sage)
                 Button("Skip", systemImage: "forward") {
                     ArticleActions.apply(.skipped, to: article, in: context)
+                    onChanged?()
                 }
                 .tint(OneFeedTheme.stone)
+                Button("Not interested", systemImage: "hand.thumbsdown") {
+                    ArticleActions.markNotInterested(article, in: context)
+                    onChanged?()
+                }
+                .tint(OneFeedTheme.graphite)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button("Queue", systemImage: "square.stack") {
                     ArticleActions.apply(.saved, to: article, in: context)
+                    onChanged?()
                 }
                 .tint(OneFeedTheme.accent)
             }
             .contextMenu {
                 Button("Add to Queue", systemImage: "square.stack") {
                     ArticleActions.apply(.saved, to: article, in: context)
+                    onChanged?()
                 }
                 Button("Done", systemImage: "checkmark") {
                     ArticleActions.apply(.read, to: article, in: context)
+                    onChanged?()
                 }
                 Button("Skip", systemImage: "forward") {
                     ArticleActions.apply(.skipped, to: article, in: context)
+                    onChanged?()
+                }
+                Button("Not interested", systemImage: "hand.thumbsdown") {
+                    ArticleActions.markNotInterested(article, in: context)
+                    onChanged?()
                 }
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
@@ -75,7 +105,11 @@ struct ArticleSwipeActions: ViewModifier {
 }
 
 extension View {
-    func articleActions(for article: Article, in context: ModelContext) -> some View {
-        modifier(ArticleSwipeActions(article: article, context: context))
+    func articleActions(
+        for article: Article,
+        in context: ModelContext,
+        onChanged: (() -> Void)? = nil
+    ) -> some View {
+        modifier(ArticleSwipeActions(article: article, context: context, onChanged: onChanged))
     }
 }

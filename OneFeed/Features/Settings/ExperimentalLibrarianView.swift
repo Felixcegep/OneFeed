@@ -27,7 +27,8 @@ final class ExperimentalLibrarianViewModel {
         "Add kottke.org to Must read",
         "What sources are in Today?",
         "Make a folder called Newsletters",
-        "Move a noisy source out of Today"
+        "Move a noisy source out of Today",
+        "Review what I'm not interested in"
     ]
 
     var draft = ""
@@ -178,7 +179,7 @@ final class ExperimentalLibrarianViewModel {
                 return false
             }
             openResponses.append(Self.functionResponse(name: call.name, result: result))
-            if call.name != "list_library" {
+            if call.name != "list_library" && call.name != "list_not_interested" {
                 logs.append(result.message)
             }
         }
@@ -213,10 +214,12 @@ final class ExperimentalLibrarianViewModel {
 }
 
 struct ExperimentalLibrarianView: View {
+    var initialPrompt: String? = nil
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ExperimentalLibrarianViewModel()
     @State private var geminiKey = ""
     @State private var showingKeySheet = false
+    @State private var didSendInitial = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -271,6 +274,10 @@ struct ExperimentalLibrarianView: View {
         .task {
             viewModel.configure(with: modelContext)
             geminiKey = GeminiAPIKeyStore.load() ?? ""
+            if let initialPrompt, !didSendInitial, viewModel.hasAPIKey {
+                didSendInitial = true
+                await viewModel.sendSuggestion(initialPrompt)
+            }
         }
         .sheet(isPresented: $showingKeySheet) {
             GeminiAPIKeyForm(key: $geminiKey) {
@@ -282,7 +289,7 @@ struct ExperimentalLibrarianView: View {
     }
 
     private var warning: some View {
-        Text("Gemini can add, move, pause, or remove sources. This page is experimental — check Sources after it acts.")
+        Text("Gemini can add, move, archive, pause, or remove sources. This page is experimental — check Sources after it acts.")
             .font(.footnote)
             .foregroundStyle(OneFeedTheme.graphite)
             .fixedSize(horizontal: false, vertical: true)
@@ -312,7 +319,7 @@ struct ExperimentalLibrarianView: View {
                 .font(.system(.title2, design: .serif))
                 .foregroundStyle(OneFeedTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Add a site, make a folder, pause something noisy, or ask what is already here.")
+            Text("Add a site, make a folder, park something in Archive, or review what you marked not interested.")
                 .font(.body)
                 .foregroundStyle(OneFeedTheme.graphite)
                 .fixedSize(horizontal: false, vertical: true)

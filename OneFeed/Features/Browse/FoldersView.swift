@@ -107,10 +107,16 @@ struct FoldersView: View {
             switch destination {
             case .sources: SourcesView()
             case .history: HistoryView()
+            case .notInterested: NotInterestedView()
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
-        .task { refresh.adoptLatestFetch(from: feeds) }
+        .task {
+            refresh.adoptLatestFetch(from: feeds)
+            if ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") {
+                toolbarDestination = .notInterested
+            }
+        }
         .sheet(isPresented: $showingAddSource) { AddSourceView() }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
@@ -162,7 +168,7 @@ struct FoldersView: View {
 }
 
 private enum FeedToolbarDestination: Hashable, Identifiable {
-    case sources, history
+    case sources, history, notInterested
     var id: Self { self }
 }
 
@@ -232,7 +238,7 @@ struct ArticleCollectionView: View {
                             ArticleRow(article: article)
                         }
                         .buttonStyle(DirectoryRowButtonStyle())
-                        .articleListRow()
+                        .articleListRow(isCurrent: article.isCurrentReading)
                         .articleActions(for: article, in: modelContext)
                     }
                 }

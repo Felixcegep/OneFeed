@@ -2,14 +2,22 @@ import SwiftUI
 import SwiftData
 
 enum OneFeedTheme {
-    /// Terracotta verb — send, select, link, caret, mark. Not titles, body, or rules.
-    static let accent = Color(red: 0.851, green: 0.467, blue: 0.341)
-    static let accentPressed = Color(red: 0.745, green: 0.384, blue: 0.259)
-    static let accentSoft = Color(red: 0.949, green: 0.867, blue: 0.816)
-    /// Sage for Done. Terracotta stays the Save verb.
-    static let sage = Color(red: 0.420, green: 0.616, blue: 0.369)
-    /// Error red with the same clay undertone as the accent.
+    /// Attention — mark, save verb, sparse chrome. Not titles, body, or rules.
+    static let accent = Color.oneFeedAttention
+    static let accentPressed = OneFeedPalette.attentionPressed.color
+    static let accentSoft = OneFeedPalette.attentionSoft.color
+    /// Sage for Done. Attention stays the Save verb.
+    static let sage = Color.oneFeedSaved
+    static let saved = Color.oneFeedSaved
     static let error = Color.oneFeedErrorText
+    static let destructive = Color.oneFeedErrorText
+    static let link = Color.oneFeedLink
+    static let attention = Color.oneFeedAttention
+    static let clinical = Color.oneFeedClinical
+    static let research = Color.oneFeedResearch
+    static let wellness = Color.oneFeedWellness
+    /// Current wash. Pair with weight, a leading bar, or a label — never color alone.
+    static let current = Color.oneFeedCurrent
 
     static let plaster = Color.oneFeedPlaster
     static let page = Color.oneFeedPlaster
@@ -207,11 +215,19 @@ struct ArticleRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
+    private var isCurrent: Bool { article.isCurrentReading }
+
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
+                if let currentReadingLabel = article.currentReadingLabel {
+                    Text(currentReadingLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(OneFeedTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text(article.title)
-                    .font(.headline)
+                    .font(isCurrent ? .headline.weight(.bold) : .headline)
                     .foregroundStyle(OneFeedTheme.ink)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
                     .multilineTextAlignment(.leading)
@@ -244,10 +260,21 @@ struct ArticleRow: View {
                 .clipped()
             }
         }
+        .padding(.leading, isCurrent ? 10 : 0)
+        .overlay(alignment: .leading) {
+            if isCurrent {
+                Capsule()
+                    .fill(OneFeedTheme.ink)
+                    .frame(width: 3, height: 22)
+                    .padding(.top, 4)
+                    .accessibilityHidden(true)
+            }
+        }
         .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isCurrent ? .isSelected : [])
         .accessibilityHint("Opens this article")
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
@@ -284,7 +311,7 @@ struct FeaturedStory: View {
             VStack(alignment: .leading, spacing: 10) {
                 GalleryLabel(text: ArticlePresentation.sourceName(for: article))
                 Text(article.title)
-                    .font(.system(.title2, design: .serif))
+                    .font(.system(.title2, design: .serif).weight(article.isCurrentReading ? .semibold : .regular))
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -306,6 +333,7 @@ struct FeaturedStory: View {
         .padding(.vertical, 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(article.isCurrentReading ? .isSelected : [])
         .accessibilityHint("Opens this article")
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
@@ -642,11 +670,11 @@ struct EmptyLibraryState: View {
 
 extension View {
     @ViewBuilder
-    func articleListRow() -> some View {
+    func articleListRow(isCurrent: Bool = false) -> some View {
         listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             .listRowSeparator(.visible, edges: .bottom)
             .listRowSeparatorTint(OneFeedTheme.sand, edges: .bottom)
-            .listRowBackground(OneFeedTheme.paper)
+            .listRowBackground(isCurrent ? OneFeedTheme.current : OneFeedTheme.paper)
     }
 
     func oneFeedDirectoryRow() -> some View {

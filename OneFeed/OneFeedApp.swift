@@ -19,6 +19,7 @@ struct OneFeedApp: App {
             PendingSyncMutation.self,
             DailyDeck.self,
             DailyDeckItem.self,
+            NotInterestedEntry.self,
         ])
         URLCache.shared = URLCache(
             memoryCapacity: 32 * 1024 * 1024,
@@ -105,6 +106,28 @@ struct OneFeedApp: App {
                 let skipped = Article(guid: "ui-skipped", title: "Some announcement that can wait", publishedAt: .now.addingTimeInterval(-259200), estimatedReadingMinutes: 4, state: .skipped, feed: feedA)
                 skipped.completedAt = .now.addingTimeInterval(-90000)
                 context.insert(skipped)
+                if ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") {
+                    skipped.notInterested = true
+                    context.insert(NotInterestedEntry(
+                        recordedAt: .now.addingTimeInterval(-4000),
+                        articleTitle: skipped.title,
+                        articleGUID: skipped.guid,
+                        sourceTitle: feedA.title,
+                        sourceFeedURL: feedA.feedURL.absoluteString,
+                        feedID: feedA.id
+                    ))
+                    let second = Article(guid: "ui-noise", title: "A product roundup that can wait", publishedAt: .now.addingTimeInterval(-300000), estimatedReadingMinutes: 3, state: .skipped, notInterested: true, feed: feedA)
+                    second.completedAt = .now.addingTimeInterval(-8000)
+                    context.insert(second)
+                    context.insert(NotInterestedEntry(
+                        recordedAt: .now.addingTimeInterval(-8000),
+                        articleTitle: second.title,
+                        articleGUID: second.guid,
+                        sourceTitle: feedA.title,
+                        sourceFeedURL: feedA.feedURL.absoluteString,
+                        feedID: feedA.id
+                    ))
+                }
                 try? context.save()
             }
             return container

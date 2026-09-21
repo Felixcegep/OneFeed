@@ -14,6 +14,7 @@ enum FolderEmoji {
         "à scanner": "👀",
         "a scanner": "👀",
         "papers": "📄",
+        "archive": "📦",
         "unfiled": "📁"
     ]
 
@@ -64,6 +65,7 @@ enum FolderEmoji {
         if key.contains("news") { return "📰" }
         if key.contains("science") || key.contains("research") { return "🔬" }
         if key.contains("film") || key.contains("tv") || key.contains("watch") { return "🎬" }
+        if key.contains("archive") { return "📦" }
         return nil
     }
 
@@ -81,7 +83,7 @@ enum FolderEmojiPalette {
 
     static let categories: [Category] = [
         Category(title: "Suggested", glyphs: [
-            "📌", "🧱", "💭", "💻", "🔐", "📈", "🌍", "💪", "🎬", "👀", "📄", "📁"
+            "📌", "🧱", "💭", "💻", "🔐", "📈", "🌍", "💪", "🎬", "👀", "📄", "📦", "📁"
         ]),
         Category(title: "Reading", glyphs: [
             "📚", "📖", "🗞️", "📝", "📓", "⭐️", "🔥", "💡", "🧠", "✏️", "🔖", "📎"

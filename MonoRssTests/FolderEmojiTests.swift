@@ -12,6 +12,7 @@ struct FolderEmojiTests {
         #expect(FolderEmoji.glyph(for: "Programming & Software") == "💻")
         #expect(FolderEmoji.glyph(for: "Security & Systems") == "🔐")
         #expect(FolderEmoji.glyph(for: "À scanner") == "👀")
+        #expect(FolderEmoji.glyph(for: "Archive") == "📦")
         #expect(FolderEmoji.glyph(for: "Unfiled") == "📁")
     }
 

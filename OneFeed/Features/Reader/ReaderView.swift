@@ -16,6 +16,7 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
 
 struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
@@ -200,6 +201,13 @@ struct ReaderView: View {
             readerSecondaryAction("Skip", systemImage: "forward", hint: "Skip this article") {
                 finish(.skipped)
             }
+            readerSecondaryAction(
+                "Not interested",
+                systemImage: "hand.thumbsdown",
+                hint: "Sets this article aside and skips it"
+            ) {
+                finishNotInterested()
+            }
         }
     }
 
@@ -212,8 +220,13 @@ struct ReaderView: View {
             ) {
                 finish(.saved)
             }
-            readerBarItem("Skip", systemImage: "forward", hint: "Skip this article") {
+            readerBarItem("Skip", systemImage: "forward", hint: "Skip this article. Hold for Not interested.") {
                 finish(.skipped)
+            }
+            .contextMenu {
+                Button("Not interested", systemImage: "hand.thumbsdown") {
+                    finishNotInterested()
+                }
             }
             readerBarItem("Done", systemImage: "checkmark", hint: "Marks this article done", emphasized: true) {
                 finish(.read)
@@ -266,6 +279,11 @@ struct ReaderView: View {
         .frame(maxWidth: .infinity)
     }
     #endif
+
+    private func finishNotInterested() {
+        NotInterestedLog.record(article, in: modelContext)
+        finish(.skipped)
+    }
 
     private func finish(_ state: ArticleState) {
         guard decision == nil else { return }
@@ -410,10 +428,15 @@ struct ReaderView: View {
                     finish(.saved)
                 }
                 .disabled(decision != nil)
-                readerBarButton("Skip", systemImage: "forward", help: "Skip this article") {
+                readerBarButton("Skip", systemImage: "forward", help: "Skip this article. Hold for Not interested.") {
                     finish(.skipped)
                 }
                 .disabled(decision != nil)
+                .contextMenu {
+                    Button("Not interested", systemImage: "hand.thumbsdown") {
+                        finishNotInterested()
+                    }
+                }
             }
             .frame(maxWidth: .infinity)
             readerBarButton("Done", systemImage: "checkmark", help: "Mark this article done", emphasized: true) {
@@ -775,11 +798,18 @@ private struct ReaderWebContent: View {
         Button {
             showingFocusSheet = true
         } label: {
-            Circle()
-                .fill(resolvedMode == .off ? OneFeedTheme.stone.opacity(0.45) : OneFeedTheme.accent.opacity(0.88))
-                .frame(width: 7, height: 7)
-                .frame(width: 44, height: 28)
-                .contentShape(Rectangle())
+            Group {
+                if resolvedMode == .off {
+                    Circle()
+                        .strokeBorder(OneFeedTheme.ink.opacity(0.45), lineWidth: 1.5)
+                } else {
+                    Circle()
+                        .fill(OneFeedTheme.ink)
+                }
+            }
+            .frame(width: 7, height: 7)
+            .frame(width: 44, height: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Reading focus")

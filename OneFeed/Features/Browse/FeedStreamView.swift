@@ -107,6 +107,7 @@ struct FeedStreamView: View {
                                             .articleActions(for: article, in: modelContext)
                                             .padding(.horizontal, 12)
                                             .padding(.vertical, 6)
+                                            .background(article.isCurrentReading ? OneFeedTheme.current : Color.clear)
                                             if index < group.storedArticles.count - 1 {
                                                 Rectangle()
                                                     .fill(OneFeedTheme.plaster)

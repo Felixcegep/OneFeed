@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct AppRootView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(AppPreferenceKey.completedOnboarding) private var completedOnboarding = false
-    @State private var selectedTab: AppTab = .today
+    @State private var selectedTab: AppTab = ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") ? .feed : .today
     @State private var subscribeAddress: String?
     @State private var isPresentingSubscribe = false
     @State private var importError: String?

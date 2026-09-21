@@ -33,6 +33,8 @@ final class Article {
     var enclosureMIME: String?
     /// 0 is unrated; 1 through 5 are stars.
     var rating: Int = 0
+    /// Taste signal. The article is also skipped so it leaves Today and Feed.
+    var notInterested: Bool = false
     var aiSummary: String?
     var declinedVideoSummary: Bool = false
     /// Bumped only on user-facing state changes (read / skip / save / current).
@@ -44,6 +46,17 @@ final class Article {
     var state: ArticleState {
         get { ArticleState(rawValue: stateRawValue) ?? .queued }
         set { stateRawValue = newValue.rawValue }
+    }
+
+    var isCurrentReading: Bool { state == .current }
+
+    var currentReadingLabel: String? {
+        isCurrentReading ? String(localized: "Now reading") : nil
+    }
+
+    var historyStatus: String {
+        if notInterested { return String(localized: "Not interested") }
+        return state == .read ? String(localized: "Read") : String(localized: "Skipped")
     }
 
     var kindLabel: String? {
@@ -138,6 +151,7 @@ final class Article {
         enclosureURL: URL? = nil,
         enclosureMIME: String? = nil,
         rating: Int = 0,
+        notInterested: Bool = false,
         aiSummary: String? = nil,
         declinedVideoSummary: Bool = false,
         libraryUpdatedAt: Date = .distantPast,
@@ -162,6 +176,7 @@ final class Article {
         self.enclosureURL = enclosureURL
         self.enclosureMIME = enclosureMIME
         self.rating = min(5, max(0, rating))
+        self.notInterested = notInterested
         self.aiSummary = aiSummary
         self.declinedVideoSummary = declinedVideoSummary
         self.libraryUpdatedAt = libraryUpdatedAt
