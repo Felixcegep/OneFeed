@@ -100,28 +100,7 @@ struct AppRootView: View {
         #if os(macOS)
         MacRootView(selectedTab: $selectedTab)
         #else
-        TabView(selection: $selectedTab) {
-            Tab("Queue", systemImage: "square.stack", value: .queue) {
-                NavigationStack {
-                    SavedView()
-                }
-            }
-            Tab("Feed", systemImage: "square.grid.2x2", value: .feed) {
-                NavigationStack {
-                    FoldersView()
-                }
-            }
-            Tab("Today", systemImage: "sun.max", value: .today) {
-                NavigationStack {
-                    CurrentView()
-                }
-            }
-            Tab("Settings", systemImage: "gearshape", value: .settings) {
-                NavigationStack {
-                    SettingsView()
-                }
-            }
-        }
+        PhoneRootView(selectedTab: $selectedTab)
         #endif
     }
 
@@ -157,52 +136,3 @@ struct AppRootView: View {
         }
     }
 }
-
-enum AppTab: Hashable {
-    case queue, feed, today, settings
-}
-
-#if os(macOS)
-private struct MacRootView: View {
-    @Binding var selectedTab: AppTab
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $selectedTab) {
-                Section {
-                    Label("Today", systemImage: "sun.max").tag(AppTab.today)
-                    Label("Queue", systemImage: "square.stack").tag(AppTab.queue)
-                    Label("Feed", systemImage: "square.grid.2x2").tag(AppTab.feed)
-                }
-                Section {
-                    Label("Settings", systemImage: "gearshape").tag(AppTab.settings)
-                }
-            }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
-            .alternatingRowBackgrounds(.disabled)
-            .background(OneFeedTheme.warm1)
-            .tint(OneFeedTheme.ink)
-            .navigationTitle("OneFeed")
-            .navigationSplitViewColumnWidth(min: 196, ideal: 220, max: 260)
-        } detail: {
-            Group {
-                switch selectedTab {
-                case .queue:
-                    NavigationStack { SavedView() }
-                case .feed:
-                    NavigationStack { FoldersView() }
-                case .today:
-                    NavigationStack { CurrentView() }
-                case .settings:
-                    NavigationStack { SettingsView() }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(OneFeedTheme.plaster)
-        }
-        .navigationSplitViewStyle(.balanced)
-        .oneFeedWindowPlaster()
-    }
-}
-#endif

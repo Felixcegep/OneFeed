@@ -10,7 +10,7 @@ Le README exclut les compteurs et les catégories, alors que le code actuel expo
 
 ## 2. Fondations
 
-Source de vérité : `OneFeed/Shared/DesignSystem/OneFeedTheme.swift` et les couleurs adaptatives de `OneFeed/Shared/Utilities/PlatformSupport.swift`.
+Source de vérité : `OneFeed/DesignSystem/OneFeedTheme.swift` et les couleurs adaptatives de `OneFeed/Platform/PlatformSupport.swift`.
 
 | Rôle | Token | Usage |
 | --- | --- | --- |
