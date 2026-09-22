@@ -7,53 +7,71 @@ struct SourcesView: View {
     @State private var addPreferredFolder: String?
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
+    @State private var searchText = ""
+    @State private var folderToRemove: String?
+
+    private var visibleFolders: [FeedFolderGroup] {
+        guard !searchText.isEmpty else { return viewModel.folders }
+        return viewModel.folders.filter { folder in
+            folder.name.localizedStandardContains(searchText)
+                || folder.feeds.contains { $0.title.localizedStandardContains(searchText) }
+        }
+    }
 
     var body: some View {
         let _ = iconTick
         List {
-            Section {
-                SourceManageAction(title: "New Folder...", systemImage: "plus") {
-                    viewModel.newFolderName = ""
-                    viewModel.isPresentingNewFolder = true
-                }
-                .sourceManageRow()
-                SourceManageAction(title: "Add Source...", systemImage: "plus") {
-                    presentAdd()
-                }
-                .sourceManageRow()
-                ForEach(viewModel.folders) { folder in
-                    HStack(spacing: 4) {
-                        FolderEmojiButton(name: folder.name) {
-                            pickingFolder = FolderIconTarget(name: folder.name)
+            if visibleFolders.isEmpty {
+                Section {
+                    if searchText.isEmpty {
+                        ContentUnavailableView {
+                            Label("No folders yet", systemImage: "folder")
+                        } description: {
+                            Text("Add a source or create a folder to organize your reading.")
+                        } actions: {
+                            Button("Add Source") { presentAdd() }
+                                .buttonStyle(.borderedProminent)
                         }
-                        NavigationLink {
-                            FolderFeedsView(
-                                folderID: folder.folderID,
-                                viewModel: viewModel,
-                                onAddInFolder: {
-                                    addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
-                                    viewModel.isPresentingAddSource = true
-                                }
-                            )
-                        } label: {
-                            FolderRow(folder: folder)
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
+                    }
+                }
+                .listRowBackground(OneFeedTheme.paper)
+            } else {
+                if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
+                    Section("With sources") {
+                        ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
                         }
                     }
-                    .accessibilityIdentifier("folder-\(folder.name)")
-                    .sourceManageRow()
-                    .contextMenu {
-                        Button("Change icon", systemImage: "face.smiling") {
-                            pickingFolder = FolderIconTarget(name: folder.name)
+                }
+                if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
+                    Section("Empty folders") {
+                        ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
                         }
                     }
                 }
             }
         }
         .oneFeedGroupedListStyle()
+        .searchable(text: $searchText, prompt: "Folders or sources")
         .navigationTitle("Sources")
         .oneFeedLargeTitle()
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Menu {
+                    Button("Add Source", systemImage: "dot.radiowaves.left.and.right") { presentAdd() }
+                    Button("New Folder", systemImage: "folder.badge.plus") {
+                        viewModel.newFolderName = ""
+                        viewModel.isPresentingNewFolder = true
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add source or folder")
+            }
             ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
@@ -92,33 +110,62 @@ struct SourcesView: View {
         } message: {
             Text(viewModel.statusMessage ?? "")
         }
+        .confirmationDialog(
+            "Remove empty folder?",
+            isPresented: Binding(
+                get: { folderToRemove != nil },
+                set: { if !$0 { folderToRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let folderToRemove {
+                Button("Remove \(folderToRemove)", role: .destructive) {
+                    FolderStore.remove(folderToRemove)
+                    LibraryChange.noteStructureChanged()
+                    viewModel.reload()
+                    self.folderToRemove = nil
+                }
+            }
+        } message: {
+            Text("This folder has no sources.")
+        }
+    }
+
+    private func folderLink(_ folder: FeedFolderGroup) -> some View {
+        HStack(spacing: 4) {
+            FolderEmojiButton(name: folder.name) {
+                pickingFolder = FolderIconTarget(name: folder.name)
+            }
+            NavigationLink {
+                FolderFeedsView(
+                    folderID: folder.folderID,
+                    viewModel: viewModel,
+                    onAddInFolder: {
+                        addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
+                        viewModel.isPresentingAddSource = true
+                    }
+                )
+            } label: {
+                FolderRow(folder: folder)
+            }
+        }
+        .accessibilityIdentifier("folder-\(folder.name)")
+        .sourceManageRow()
+        .contextMenu {
+            Button("Change icon", systemImage: "face.smiling") {
+                pickingFolder = FolderIconTarget(name: folder.name)
+            }
+            if folder.feeds.isEmpty, case .named = folder.folderID {
+                Button("Remove empty folder", systemImage: "trash", role: .destructive) {
+                    folderToRemove = folder.name
+                }
+            }
+        }
     }
 
     private func presentAdd(folder: String? = nil) {
         addPreferredFolder = folder
         viewModel.isPresentingAddSource = true
-    }
-}
-
-private struct SourceManageAction: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(OneFeedTheme.ink)
-                    .frame(width: 36, height: 36)
-                Text(title)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(OneFeedTheme.ink)
-                Spacer(minLength: 0)
-            }
-            .frame(minHeight: 44)
-        }
     }
 }
 
@@ -141,10 +188,12 @@ private struct FolderRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Text("\(folder.feeds.count)")
-                .font(.body.monospacedDigit())
-                .foregroundStyle(OneFeedTheme.graphite)
-                .accessibilityLabel(sourceCount)
+            if !folder.feeds.isEmpty {
+                Text("\(folder.feeds.count)")
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(OneFeedTheme.graphite)
+                    .accessibilityLabel(sourceCount)
+            }
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
@@ -171,15 +220,38 @@ private struct FolderFeedsView: View {
     var onAddInFolder: () -> Void
 
     @Environment(\.modelContext) private var modelContext
+    @State private var searchText = ""
+
+    private var visibleFeeds: [Feed] {
+        let feeds = viewModel.feeds(in: folderID)
+        guard !searchText.isEmpty else { return feeds }
+        return feeds.filter {
+            $0.title.localizedStandardContains(searchText)
+                || $0.feedURL.absoluteString.localizedStandardContains(searchText)
+        }
+    }
 
     var body: some View {
         List {
-            Section {
-                SourceManageAction(title: "Add Source...", systemImage: "plus") {
-                    onAddInFolder()
+            if visibleFeeds.isEmpty {
+                Section {
+                    if searchText.isEmpty {
+                        ContentUnavailableView {
+                            Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
+                        } description: {
+                            Text("Add a source to start filling this folder.")
+                        } actions: {
+                            Button("Add Source") { onAddInFolder() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
+                    }
                 }
-                .sourceManageRow()
-                ForEach(viewModel.feeds(in: folderID)) { feed in
+                .listRowBackground(OneFeedTheme.paper)
+            } else {
+            Section {
+                ForEach(visibleFeeds) { feed in
                     NavigationLink {
                         SourceDetailView(feed: feed, context: modelContext)
                     } label: {
@@ -196,10 +268,17 @@ private struct FolderFeedsView: View {
                     }
                 }
             }
+            }
         }
         .oneFeedGroupedListStyle()
+        .searchable(text: $searchText, prompt: "Sources in this folder")
         .navigationTitle(folderID.title)
         .oneFeedLargeTitle()
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { onAddInFolder() }
+            }
+        }
     }
 }
 
