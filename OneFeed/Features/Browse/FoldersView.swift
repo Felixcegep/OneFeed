@@ -55,10 +55,17 @@ struct FoldersView: View {
             }
             Section {
                 if directory.summaries.isEmpty {
-                    Text("Folders appear here after you add sources.")
-                        .font(OneFeedTheme.sansUI(15, weight: .regular))
-                        .foregroundStyle(OneFeedTheme.graphite)
-                        .oneFeedDirectoryRow()
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Bring your favorite publications together.")
+                            .font(.subheadline)
+                            .foregroundStyle(OneFeedTheme.graphite)
+                        Button("Add a source", systemImage: "plus") {
+                            showingAddSource = true
+                        }
+                        .buttonStyle(DecisionActionStyle(expands: false))
+                    }
+                    .padding(.vertical, 12)
+                    .oneFeedDirectoryRow()
                 } else {
                     ForEach(directory.summaries) { summary in
                         folderRow(summary)
@@ -144,7 +151,14 @@ struct FoldersView: View {
         NavigationLink {
             ArticleCollectionView(destination: destination)
         } label: {
-            FeedDirectoryRow(title: destination.title, systemImage: systemImage, count: count)
+            FeedDirectoryRow(
+                title: destination.title,
+                systemImage: systemImage,
+                count: count,
+                detail: destination == .today
+                    ? String(localized: "Published today")
+                    : String(localized: "Across all your sources")
+            )
         }
         .oneFeedDirectoryRow()
     }

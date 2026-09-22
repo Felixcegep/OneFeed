@@ -44,7 +44,7 @@ struct SavedView: View {
                                 FeaturedStory(article: upNext)
                             }
                             .buttonStyle(ArticleCardButtonStyle())
-                            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .accessibilityHint("Opens the next piece in Queue")
@@ -54,6 +54,9 @@ struct SavedView: View {
                                 text: recentlySavedTitle(for: upNext)
                             )
                         }
+                        #if os(iOS)
+                        .listSectionSeparator(.hidden)
+                        #endif
                     }
 
                     laterSection(title: "Videos", articles: videos)
@@ -168,6 +171,9 @@ struct SavedView: View {
             } header: {
                 GallerySectionHeader(text: title)
             }
+            #if os(iOS)
+            .listSectionSeparator(.hidden)
+            #endif
         }
     }
 
@@ -176,12 +182,9 @@ struct SavedView: View {
             viewModel.selectedArticle = article
         } label: {
             QueueArticleRow(article: article)
-                .padding(16)
         }
-        .buttonStyle(ArticleCardButtonStyle())
-        .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
+        .buttonStyle(DirectoryRowButtonStyle())
+        .articleListRow(isCurrent: article.isCurrentReading, isSelected: viewModel.selectedArticle?.id == article.id)
         .accessibilityHint("Opens this piece from Queue")
         .laterQueueActions(article: article, restore: restore, onChanged: { viewModel.reload() })
     }
@@ -273,6 +276,7 @@ private struct QueueArticleRow: View {
                 Text(article.title)
                     .font(.headline)
                     .foregroundStyle(OneFeedTheme.ink)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Group {
@@ -296,6 +300,9 @@ private struct QueueArticleRow: View {
                 .frame(width: 64, height: 64)
             }
         }
+        .padding(.vertical, 4)
+        .frame(minHeight: 64)
+        .contentShape(Rectangle())
         .multilineTextAlignment(.leading)
         .accessibilityElement(children: .combine)
         .onChange(of: article.imageURL) { _, _ in imageFailed = false }

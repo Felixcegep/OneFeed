@@ -308,29 +308,47 @@ struct FeaturedStory: View {
                 .clipped()
             }
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 GalleryLabel(text: ArticlePresentation.sourceName(for: article))
                 Text(article.title)
-                    .font(.system(.title2, design: .serif).weight(article.isCurrentReading ? .semibold : .regular))
+                    .font(.system(.title, design: .serif))
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 if let excerpt = article.displayExcerpt {
                     Text(excerpt)
-                        .font(.system(.body, design: .serif))
+                        .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(byline)
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
                     .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Label(openTitle, systemImage: openSymbol)
+                        .labelStyle(.titleAndIcon)
+                    Spacer(minLength: 8)
+                    Image(systemName: "arrow.right")
+                        .accessibilityHidden(true)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(OneFeedTheme.ink)
+                .padding(.top, 14)
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(OneFeedTheme.separator)
+                        .frame(height: 0.5)
+                        .accessibilityHidden(true)
+                }
+                .padding(.top, 4)
             }
             .padding(.horizontal, OneFeedTheme.pagePadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 16)
+        .padding(.vertical, 20)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(article.isCurrentReading ? .isSelected : [])
@@ -344,6 +362,29 @@ struct FeaturedStory: View {
         var parts = [article.publishedAt.formatted(.dateTime.month(.abbreviated).day().year())]
         if let duration = article.timedDurationPhrase { parts.append(duration) }
         return parts.joined(separator: "  ·  ")
+    }
+
+    private var openTitle: String {
+        switch article.contentKind {
+        case "youtube": return String(localized: "Watch video")
+        case "podcast", "music": return String(localized: "Listen")
+        case "pdf": return String(localized: "Read PDF")
+        case "epub": return String(localized: "Read book")
+        default:
+            return article.isCurrentReading
+                ? String(localized: "Continue reading")
+                : String(localized: "Start reading")
+        }
+    }
+
+    private var openSymbol: String {
+        switch article.contentKind {
+        case "youtube": "play.rectangle"
+        case "podcast", "music": "headphones"
+        case "pdf": "doc.text"
+        case "epub": "book.closed"
+        default: "book"
+        }
     }
 }
 
@@ -436,17 +477,25 @@ struct FeedDirectoryRow: View {
     var systemImage: String? = nil
     var emoji: String? = nil
     var count: Int = 0
+    var detail: String? = nil
 
     var body: some View {
         HStack(spacing: 12) {
             leading
-            Text(title)
-                .font(.body.weight(.medium))
-                .foregroundStyle(OneFeedTheme.ink)
-                .multilineTextAlignment(.leading)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
             UnreadCount(count)
         }
         .frame(minHeight: 48)
@@ -473,7 +522,7 @@ struct FeedDirectoryRow: View {
     }
 }
 
-/// A paper card keeps its outline and pressed feedback inside the same shape.
+/// Paper and pressed feedback share a shape; iOS lists supply the outer corners.
 struct ArticleCardButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -482,10 +531,12 @@ struct ArticleCardButtonStyle: ButtonStyle {
         configuration.label
             .background(configuration.isPressed ? OneFeedTheme.warm1 : OneFeedTheme.paper, in: shape)
             .clipShape(shape)
+            #if os(macOS)
             .overlay {
                 shape.strokeBorder(OneFeedTheme.sand, lineWidth: 1)
                     .allowsHitTesting(false)
             }
+            #endif
             .contentShape(shape)
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.99)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)

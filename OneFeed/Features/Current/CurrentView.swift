@@ -48,15 +48,18 @@ struct CurrentView: View {
                                 FeaturedStory(article: featured)
                             }
                             .buttonStyle(ArticleCardButtonStyle())
-                            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .articleActions(for: featured, in: modelContext) {
                                 viewModel.loadCurrent()
                             }
                         } header: {
-                            GallerySectionHeader(text: "Now")
+                            GallerySectionHeader(text: "Up next")
                         }
+                        #if os(iOS)
+                        .listSectionSeparator(.hidden)
+                        #endif
                     }
                     if stories.count > 1 {
                         Section {
@@ -73,6 +76,9 @@ struct CurrentView: View {
                         } header: {
                             GallerySectionHeader(text: "Also today")
                         }
+                        #if os(iOS)
+                        .listSectionSeparator(.hidden)
+                        #endif
                     }
                 }
                 .oneFeedGroupedListStyle()
@@ -179,13 +185,13 @@ struct CurrentView: View {
             VStack(spacing: 20) {
                 if viewModel.isRefreshing {
                     OneFeedMarkPulse(isActive: true, size: 52)
-                    Text(viewModel.progress.remainingText.isEmpty ? "Hanging the room…" : viewModel.progress.remainingText)
+                    Text(viewModel.progress.remainingText.isEmpty ? "Updating your stories…" : viewModel.progress.remainingText)
                         .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                         .multilineTextAlignment(.center)
                 } else if celebrateClear {
                     OneFeedMarkBurst(size: 52)
-                    Text("The room is still.")
+                    Text("You’re all caught up")
                         .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                 } else if feeds.isEmpty {
@@ -201,7 +207,7 @@ struct CurrentView: View {
                 }
             }
         } description: {
-            Text(viewModel.isRefreshing ? caughtUpProgressCopy : feeds.isEmpty ? "Today fills after you subscribe." : "Tomorrow, a new hanging.")
+            Text(viewModel.isRefreshing ? caughtUpProgressCopy : feeds.isEmpty ? "Follow your favorite publications to find your next read here." : "You’ve finished today’s selection. Refresh to check for new stories.")
                 .font(.body)
                 .foregroundStyle(OneFeedTheme.graphite)
         } actions: {
