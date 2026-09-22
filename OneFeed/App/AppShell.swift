@@ -14,7 +14,7 @@ struct AppShell: View {
                 Tab("Feed", systemImage: "square.grid.2x2", value: AppTab.feed) {
                     AppTabRoot(tab: .feed)
                 }
-                Tab("Today", systemImage: "sun.max", value: AppTab.today, role: .prominent) {
+                Tab("Today", systemImage: "sun.max", value: AppTab.today) {
                     AppTabRoot(tab: .today)
                 }
             } header: {

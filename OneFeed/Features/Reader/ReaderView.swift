@@ -36,11 +36,21 @@ struct ReaderView: View {
     @State private var showingAPIKeySheet = false
     @State private var geminiKey = ""
     let onFinish: (ArticleState) -> Void
+    var onClose: (() -> Void)?
 
-    init(article: Article, onFinish: @escaping (ArticleState) -> Void) {
+    init(article: Article, onFinish: @escaping (ArticleState) -> Void, onClose: (() -> Void)? = nil) {
         _viewModel = State(initialValue: ReaderViewModel(article: article))
         _mode = State(initialValue: Self.initialMode(for: article))
         self.onFinish = onFinish
+        self.onClose = onClose
+    }
+
+    private func closeReader() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 
     var body: some View {
@@ -379,7 +389,7 @@ struct ReaderView: View {
     private var readerTopBar: some View {
         HStack(spacing: 12) {
             Button {
-                dismiss()
+                closeReader()
             } label: {
                 Image(systemName: "xmark")
                     .font(.body.weight(.semibold))
@@ -387,6 +397,7 @@ struct ReaderView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
             .help("Close")
             .accessibilityLabel("Close")
             .accessibilityHint("Closes the reader without changing this article")

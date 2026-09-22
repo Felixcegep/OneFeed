@@ -670,11 +670,11 @@ struct EmptyLibraryState: View {
 
 extension View {
     @ViewBuilder
-    func articleListRow(isCurrent: Bool = false) -> some View {
+    func articleListRow(isCurrent: Bool = false, isSelected: Bool = false) -> some View {
         listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
             .listRowSeparator(.visible, edges: .bottom)
             .listRowSeparatorTint(OneFeedTheme.sand, edges: .bottom)
-            .listRowBackground(isCurrent ? OneFeedTheme.current : OneFeedTheme.paper)
+            .listRowBackground(isCurrent ? OneFeedTheme.current : (isSelected ? OneFeedTheme.warm1 : OneFeedTheme.paper))
     }
 
     func oneFeedDirectoryRow() -> some View {

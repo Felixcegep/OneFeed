@@ -38,11 +38,17 @@ struct ImportedDocumentService {
 
     @discardableResult
     func importRemote(url: URL, in context: ModelContext) async throws -> Article {
-        let (temp, response) = try await session.download(from: url)
+        var request = URLRequest(url: url)
+        request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
+        let (temp, response) = try await session.download(for: request)
         var cleanup = temp
         defer { try? FileManager.default.removeItem(at: cleanup) }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw ImportedDocumentError.downloadFailed
+        }
+        if let length = http.value(forHTTPHeaderField: "Content-Length"),
+           let bytes = Int(length), bytes > Self.maxImportBytes {
+            throw ImportedDocumentError.tooLarge
         }
         let mime = http.value(forHTTPHeaderField: "Content-Type") ?? response.mimeType
         var kind = ImportedDocumentKind.infer(url: url, mime: mime)
@@ -100,7 +106,7 @@ struct ImportedDocumentService {
                 title: info.title ?? filenameTitle,
                 author: info.author,
                 html: nil,
-                summary: nil,
+                summary: info.summary,
                 minutes: max(1, info.pages)
             )
         case .epub:
@@ -185,15 +191,67 @@ struct ImportedDocumentService {
         return cleaned.isEmpty ? name : cleaned
     }
 
-    private nonisolated static func pdfInfo(from url: URL) throws -> (title: String?, author: String?, pages: Int) {
+    private nonisolated static func pdfInfo(from url: URL) throws -> (title: String?, author: String?, pages: Int, summary: String?) {
         guard let document = PDFDocument(url: url), document.pageCount > 0 else {
             throw ImportedDocumentError.invalidPDF
         }
         let attributes = document.documentAttributes ?? [:]
-        let title = (attributes[PDFDocumentAttribute.titleAttribute] as? String)?
+        let metadataTitle = trimmed(attributes[PDFDocumentAttribute.titleAttribute] as? String)
+        let metadataAuthor = trimmed(attributes[PDFDocumentAttribute.authorAttribute] as? String)
+        let heading = pdfHeading(from: document.page(at: 0)?.string ?? "")
+        let title = metadataTitle ?? heading.title
+        let author = metadataAuthor ?? heading.author
+        return (title, author, document.pageCount, heading.summary)
+    }
+
+    /// Papers such as PVLDB often leave the title out of the PDF metadata and put it on the first page.
+    nonisolated static func pdfHeading(from pageText: String) -> (title: String?, author: String?, summary: String?) {
+        let lines = pageText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let titleIndex = lines.firstIndex(where: isPaperTitleLine) else {
+            return (nil, nil, abstract(in: pageText))
+        }
+        var authors: [String] = []
+        for line in lines.dropFirst(titleIndex + 1) {
+            if line.uppercased().hasPrefix("ABSTRACT") { break }
+            if isAuthorName(line) { authors.append(line) }
+            if authors.count == 6 { break }
+        }
+        let author = authors.isEmpty ? nil : authors.joined(separator: ", ")
+        return (lines[titleIndex], author, abstract(in: pageText))
+    }
+
+    private nonisolated static func isPaperTitleLine(_ line: String) -> Bool {
+        guard (12...200).contains(line.count), line.contains(where: \.isLetter), !line.contains("@") else { return false }
+        if line.uppercased().hasPrefix("ABSTRACT") || line.uppercased().hasPrefix("INTRODUCTION") { return false }
+        return true
+    }
+
+    private nonisolated static func isAuthorName(_ line: String) -> Bool {
+        guard !line.contains("@"), (3...48).contains(line.count) else { return false }
+        let words = line.split(separator: " ")
+        guard (2...4).contains(words.count) else { return false }
+        return words.allSatisfy { word in
+            guard let first = word.first, first.isUppercase else { return false }
+            return word.allSatisfy { $0.isLetter || $0 == "-" || $0 == "." || $0 == "'" }
+        }
+    }
+
+    private nonisolated static func abstract(in text: String) -> String? {
+        guard let marker = text.range(of: "ABSTRACT", options: .caseInsensitive) else { return nil }
+        var body = String(text[marker.upperBound...])
+        if let intro = body.range(of: "INTRODUCTION", options: .caseInsensitive) {
+            body = String(body[..<intro.lowerBound])
+        }
+        let plain = ContentClassifier.plainExcerpt(body, maxCharacters: 280)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let author = (attributes[PDFDocumentAttribute.authorAttribute] as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (title?.isEmpty == false ? title : nil, author?.isEmpty == false ? author : nil, document.pageCount)
+        return plain.isEmpty ? nil : plain
+    }
+
+    private nonisolated static func trimmed(_ value: String?) -> String? {
+        let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
     }
 }

@@ -19,6 +19,20 @@ struct SavedView: View {
     private var upNext: Article? { waiting.first }
 
     var body: some View {
+        OneFeedReadingSplit(article: $viewModel.selectedArticle) {
+            queueColumn
+        } reader: { article in
+            ReaderView(article: article, onFinish: { state in
+                viewModel.finishReading(article, as: state)
+            }, onClose: {
+                viewModel.selectedArticle = nil
+            })
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+    }
+
+    private var queueColumn: some View {
         Group {
             if waiting.isEmpty {
                 empty
@@ -69,7 +83,7 @@ struct SavedView: View {
         .sheet(isPresented: $isAdding, onDismiss: { viewModel.reload() }) {
             AddToQueueView { viewModel.reload() }
         }
-        .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
+        .onDrop(of: [.pdf, .epub, .url, .plainText], isTargeted: nil) { providers in
             importDropped(providers)
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.addToQueue)) { note in
@@ -78,13 +92,6 @@ struct SavedView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.openQueueArticle)) { _ in
             openPendingImportedArticle()
-        }
-        .oneFeedArticleCover(item: $viewModel.selectedArticle) { article in
-            ReaderView(article: article) { state in
-                viewModel.finishReading(article, as: state)
-            }
-            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
-            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
         .alert("Couldn’t update article", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.presentedError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -192,19 +199,41 @@ struct SavedView: View {
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
-        let matching = providers.filter { provider in
+        let files = providers.filter { provider in
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
         }
-        guard !matching.isEmpty else { return false }
+        if !files.isEmpty {
+            Task {
+                do {
+                    let service = ImportedDocumentService()
+                    var last: Article?
+                    for provider in files {
+                        let url = try await AddToQueueView.fileURLForDrop(from: provider)
+                        last = try await service.importFile(at: url, in: modelContext)
+                        try? FileManager.default.removeItem(at: url)
+                    }
+                    viewModel.reload()
+                    if let last { viewModel.selectedArticle = last }
+                } catch {
+                    viewModel.presentedError = error.localizedDescription
+                }
+            }
+            return true
+        }
+
+        let links = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+                || $0.canLoadObject(ofClass: URL.self)
+                || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        }
+        guard !links.isEmpty else { return false }
         Task {
             do {
-                let service = ImportedDocumentService()
                 var last: Article?
-                for provider in matching {
-                    let url = try await AddToQueueView.fileURLForDrop(from: provider)
-                    last = try await service.importFile(at: url, in: modelContext)
-                    try? FileManager.default.removeItem(at: url)
+                for provider in links {
+                    guard let address = await Self.droppedAddress(from: provider) else { continue }
+                    last = try await QueueLinkService().add(urlString: address, in: modelContext)
                 }
                 viewModel.reload()
                 if let last { viewModel.selectedArticle = last }
@@ -213,6 +242,23 @@ struct SavedView: View {
             }
         }
         return true
+    }
+
+    private static func droppedAddress(from provider: NSItemProvider) async -> String? {
+        if provider.canLoadObject(ofClass: URL.self) {
+            let url: URL? = await withCheckedContinuation { continuation in
+                _ = provider.loadObject(ofClass: URL.self) { object, _ in
+                    continuation.resume(returning: object as? URL)
+                }
+            }
+            if let url, !url.isFileURL { return url.absoluteString }
+        }
+        guard provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) else { return nil }
+        return await withCheckedContinuation { continuation in
+            provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
+                continuation.resume(returning: item as? String)
+            }
+        }
     }
 }
 

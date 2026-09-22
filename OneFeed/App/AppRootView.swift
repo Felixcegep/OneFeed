@@ -101,9 +101,15 @@ struct AppRootView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        if url.isFileURL, ImportedDocumentKind.infer(url: url) != nil {
+        if ImportedDocumentKind.infer(url: url) != nil {
             selectedTab = .queue
-            Task { await importIncomingDocument(url) }
+            Task {
+                if url.isFileURL {
+                    await importIncomingDocument(url)
+                } else {
+                    await importRemoteDocument(url)
+                }
+            }
             return
         }
         guard let address = IncomingFeedURL.subscriptionAddress(from: url) else { return }
@@ -114,6 +120,16 @@ struct AppRootView: View {
 
     private func importIncomingDocument(_ url: URL) async {
         await importIncomingDocuments([url])
+    }
+
+    private func importRemoteDocument(_ url: URL) async {
+        do {
+            let article = try await ImportedDocumentService().importRemote(url: url, in: modelContext)
+            QueueHandoff.pendingArticleID = article.id
+            NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: article.id)
+        } catch {
+            importError = error.localizedDescription
+        }
     }
 
     private func importIncomingDocuments(_ urls: [URL]) async {

@@ -8,6 +8,7 @@ struct CurrentView: View {
     @State private var readerArticle: Article?
     @State private var showingSources = false
     @State private var celebrateClear = false
+    @State private var keepReadingPaneClear = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var stories: [Article] {
@@ -15,6 +16,27 @@ struct CurrentView: View {
     }
 
     var body: some View {
+        OneFeedReadingSplit(article: $readerArticle) {
+            todayColumn
+        } reader: { article in
+            ReaderView(article: article, onFinish: { state in
+                readerArticle = nil
+                guard article.isStored else { return }
+                viewModel.finish(article, as: state)
+                #if os(macOS)
+                keepReadingPaneClear = false
+                readerArticle = stories.first
+                #endif
+            }, onClose: {
+                readerArticle = nil
+                keepReadingPaneClear = true
+            })
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+    }
+
+    private var todayColumn: some View {
         Group {
             if stories.isEmpty {
                 caughtUp
@@ -22,7 +44,7 @@ struct CurrentView: View {
                 List {
                     if let featured = stories.first {
                         Section {
-                            Button { readerArticle = featured } label: {
+                            Button { open(featured) } label: {
                                 FeaturedStory(article: featured)
                             }
                             .buttonStyle(ArticleCardButtonStyle())
@@ -39,11 +61,11 @@ struct CurrentView: View {
                     if stories.count > 1 {
                         Section {
                             ForEach(Array(stories.dropFirst())) { article in
-                                Button { readerArticle = article } label: {
+                                Button { open(article) } label: {
                                     ArticleRow(article: article)
                                 }
                                 .buttonStyle(DirectoryRowButtonStyle())
-                                .articleListRow(isCurrent: article.isCurrentReading)
+                                .articleListRow(isCurrent: article.isCurrentReading, isSelected: readerArticle?.id == article.id)
                                 .articleActions(for: article, in: modelContext) {
                                     viewModel.loadCurrent()
                                 }
@@ -74,12 +96,16 @@ struct CurrentView: View {
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .toolbar {
-            ToolbarItemGroup(placement: .oneFeedTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
                     Task { await viewModel.refresh() }
                 }
+            }
+            .visibilityPriority(.high)
+            ToolbarItem(placement: .oneFeedPinnedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingSources = true }
             }
+            .visibilityPriority(.high)
         }
         .task {
             viewModel.configure(with: modelContext)
@@ -94,7 +120,17 @@ struct CurrentView: View {
         .onAppear { viewModel.syncVisibleDeck() }
         .onOpenURL { url in
             guard url.scheme == "onefeed", url.host() == "reader", let article = viewModel.currentArticle else { return }
-            readerArticle = article
+            open(article)
+        }
+        .onChange(of: stories.map(\.id)) { _, ids in
+            #if os(macOS)
+            if let current = readerArticle, !ids.contains(current.id) {
+                keepReadingPaneClear = false
+                readerArticle = stories.first
+            } else if readerArticle == nil, !keepReadingPaneClear {
+                readerArticle = stories.first
+            }
+            #endif
         }
         .refreshable { await viewModel.refresh() }
         .sheet(isPresented: $showingSources) {
@@ -102,15 +138,6 @@ struct CurrentView: View {
                 SourcesView()
             }
             .oneFeedMacSheet(idealWidth: 520, idealHeight: 640)
-        }
-        .oneFeedArticleCover(item: $readerArticle) { article in
-            ReaderView(article: article, onFinish: { state in
-                readerArticle = nil
-                guard article.isStored else { return }
-                viewModel.finish(article, as: state)
-            })
-            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
-            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
         .onChange(of: stories.count) { oldCount, newCount in
             if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
@@ -127,6 +154,11 @@ struct CurrentView: View {
         .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
+    }
+
+    private func open(_ article: Article) {
+        keepReadingPaneClear = false
+        readerArticle = article
     }
 
     private var showsSourceRefreshCover: Bool {

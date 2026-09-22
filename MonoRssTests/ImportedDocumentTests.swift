@@ -1,3 +1,4 @@
+import CoreText
 import Foundation
 import PDFKit
 import SwiftData
@@ -15,6 +16,51 @@ struct ImportedDocumentTests {
         #expect(ImportedDocumentKind.infer(magic: Data("PK\u{3}\u{4}".utf8)) == nil)
         #expect(ImportedDocumentKind.infer(url: URL(string: "https://example.com/a")!, mime: "application/pdf") == .pdf)
         #expect(ImportedDocumentKind.infer(url: URL(string: "https://example.com/a")!, mime: "application/epub+zip") == .epub)
+    }
+
+    @Test func paperWithoutMetadataUsesTheFirstPageTitle() {
+        let page = """
+        How Good Are Query Optimizers, Really?
+        Viktor Leis
+        TUM
+        leis@in.tum.de
+        Peter Boncz
+        ABSTRACT
+        Finding a good join order is crucial for query performance.
+        INTRODUCTION
+        The rest of the paper.
+        """
+        let heading = ImportedDocumentService.pdfHeading(from: page)
+        #expect(heading.title == "How Good Are Query Optimizers, Really?")
+        #expect(heading.author == "Viktor Leis, Peter Boncz")
+        #expect(heading.summary?.contains("Finding a good join order") == true)
+        #expect(heading.summary?.contains("rest of the paper") != true)
+    }
+
+    @Test func importingATextOnlyPDFReadsTheFirstPage() async throws {
+        let context = try InMemoryStore.makeContext()
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pdf = try writeTextPDF(
+            """
+            How Good Are Query Optimizers, Really?
+            Viktor Leis
+            TUM
+            leis@in.tum.de
+            ABSTRACT
+            Finding a good join order is crucial for query performance.
+            """,
+            to: root.appending(path: "p204-leis.pdf")
+        )
+
+        let article = try await ImportedDocumentService(store: ImportedDocumentStore(rootURL: root))
+            .importFile(at: pdf, in: context)
+
+        #expect(article.title == "How Good Are Query Optimizers, Really?")
+        #expect(article.author == "Viktor Leis")
+        #expect(article.summary?.contains("Finding a good join order") == true)
+        #expect(article.contentKind == "pdf")
+        #expect(article.state == .saved)
     }
 
     @Test func importingAPDFParksItInTheQueue() async throws {
@@ -161,6 +207,24 @@ struct ImportedDocumentTests {
     private func temporaryRoot() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OneFeed-import-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func writeTextPDF(_ text: String, to url: URL) throws -> URL {
+        var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        guard let consumer = CGDataConsumer(url: url as CFURL),
+              let context = CGContext(consumer: consumer, mediaBox: &box, nil) else {
+            throw ImportedDocumentError.invalidPDF
+        }
+        context.beginPDFPage(nil)
+        let font = CTFontCreateWithName("Helvetica" as CFString, 14, nil)
+        let attributed = NSAttributedString(string: text, attributes: [.font: font])
+        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
+        let path = CGPath(rect: box.insetBy(dx: 48, dy: 72), transform: nil)
+        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: attributed.length), path, nil)
+        CTFrameDraw(frame, context)
+        context.endPDFPage()
+        context.closePDF()
         return url
     }
 

@@ -9,72 +9,61 @@ struct SourcesView: View {
     @State private var iconTick = 0
 
     var body: some View {
-        Group {
-            if viewModel.feeds.isEmpty && viewModel.folders.isEmpty {
-                EmptyLibraryState(
-                    title: "No sources",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: "Add feeds one by one, paste a list, or restore the seeded library.",
-                    actionTitle: "Add Sources",
-                    action: { presentAdd() }
-                )
-            } else {
-                let _ = iconTick
-                List {
-                    Section {
-                        ForEach(viewModel.folders) { folder in
-                            HStack(spacing: 4) {
-                                FolderEmojiButton(name: folder.name) {
-                                    pickingFolder = FolderIconTarget(name: folder.name)
-                                }
-                                NavigationLink {
-                                    FolderFeedsView(
-                                        folderID: folder.folderID,
-                                        viewModel: viewModel,
-                                        onAddInFolder: {
-                                            addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
-                                            viewModel.isPresentingAddSource = true
-                                        }
-                                    )
-                                } label: {
-                                    FolderRow(folder: folder)
-                                }
-                            }
-                            .accessibilityIdentifier("folder-\(folder.name)")
-                            .oneFeedDirectoryRow()
-                            .contextMenu {
-                                Button("Change icon", systemImage: "face.smiling") {
-                                    pickingFolder = FolderIconTarget(name: folder.name)
-                                }
-                            }
+        let _ = iconTick
+        List {
+            Section {
+                SourceManageAction(title: "New Folder...", systemImage: "plus") {
+                    viewModel.newFolderName = ""
+                    viewModel.isPresentingNewFolder = true
+                }
+                .sourceManageRow()
+                SourceManageAction(title: "Add Source...", systemImage: "plus") {
+                    presentAdd()
+                }
+                .sourceManageRow()
+                ForEach(viewModel.folders) { folder in
+                    HStack(spacing: 4) {
+                        FolderEmojiButton(name: folder.name) {
+                            pickingFolder = FolderIconTarget(name: folder.name)
                         }
-                    } header: {
-                        GallerySectionHeader(text: "Folders")
+                        NavigationLink {
+                            FolderFeedsView(
+                                folderID: folder.folderID,
+                                viewModel: viewModel,
+                                onAddInFolder: {
+                                    addPreferredFolder = folder.folderID == .unfiled ? nil : folder.name
+                                    viewModel.isPresentingAddSource = true
+                                }
+                            )
+                        } label: {
+                            FolderRow(folder: folder)
+                        }
+                    }
+                    .accessibilityIdentifier("folder-\(folder.name)")
+                    .sourceManageRow()
+                    .contextMenu {
+                        Button("Change icon", systemImage: "face.smiling") {
+                            pickingFolder = FolderIconTarget(name: folder.name)
+                        }
                     }
                 }
-                .oneFeedGroupedListStyle()
             }
         }
+        .oneFeedGroupedListStyle()
         .navigationTitle("Sources")
-        .oneFeedInlineTitle()
+        .oneFeedLargeTitle()
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
-                    Button("Add Sources", systemImage: "plus") { presentAdd() }
-                    Button("New Folder", systemImage: "folder.badge.plus") {
-                        viewModel.newFolderName = ""
-                        viewModel.isPresentingNewFolder = true
-                    }
-                    Divider()
                     Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
                         viewModel.importAllSeededSources()
                     }
                     .disabled(viewModel.isImportingPack)
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: "ellipsis.circle")
                 }
-                .accessibilityLabel("Add")
+                .accessibilityLabel("More")
             }
         }
         .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: {
@@ -111,27 +100,65 @@ struct SourcesView: View {
     }
 }
 
+private struct SourceManageAction: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .frame(width: 36, height: 36)
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(OneFeedTheme.ink)
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 44)
+        }
+    }
+}
+
 private struct FolderRow: View {
     let folder: FeedFolderGroup
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(folder.name)
-                .font(.body.weight(.medium))
-                .foregroundStyle(OneFeedTheme.ink)
-            Text(sourceCount)
-                .font(.caption)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(folder.name)
+                    .font(.body)
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .lineLimit(1)
+                if let preview {
+                    Text(preview)
+                        .font(.subheadline)
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(folder.feeds.count)")
+                .font(.body.monospacedDigit())
                 .foregroundStyle(OneFeedTheme.graphite)
+                .accessibilityLabel(sourceCount)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
+        .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens feeds in this folder")
     }
 
+    private var preview: String? {
+        let titles = folder.feeds.prefix(3).map(\.title)
+        guard !titles.isEmpty else { return nil }
+        return titles.joined(separator: ", ")
+    }
+
     private var sourceCount: String {
         switch folder.feeds.count {
-        case 0: "Empty · add sources"
         case 1: "1 source"
         default: "\(folder.feeds.count) sources"
         }
@@ -146,45 +173,33 @@ private struct FolderFeedsView: View {
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
-        Group {
-            if viewModel.feeds(in: folderID).isEmpty {
-                EmptyLibraryState(
-                    title: "No feeds",
-                    systemImage: "dot.radiowaves.left.and.right",
-                    description: "Add sources directly into \(folderID.title).",
-                    actionTitle: "Add Sources",
-                    action: { onAddInFolder() }
-                )
-            } else {
-                List {
-                    ForEach(viewModel.feeds(in: folderID)) { feed in
-                        NavigationLink {
-                            SourceDetailView(feed: feed, context: modelContext)
-                        } label: {
-                            SourceRow(feed: feed)
-                        }
-                        .listRowBackground(OneFeedTheme.paper)
-                        .listRowSeparatorTint(OneFeedTheme.sand)
-                        .contextMenu {
-                            Menu("Move to Folder") {
-                                Button("Unfiled") { viewModel.move(feed, to: nil) }
-                                ForEach(viewModel.folderNames, id: \.self) { name in
-                                    Button(name) { viewModel.move(feed, to: name) }
-                                }
+        List {
+            Section {
+                SourceManageAction(title: "Add Source...", systemImage: "plus") {
+                    onAddInFolder()
+                }
+                .sourceManageRow()
+                ForEach(viewModel.feeds(in: folderID)) { feed in
+                    NavigationLink {
+                        SourceDetailView(feed: feed, context: modelContext)
+                    } label: {
+                        SourceRow(feed: feed)
+                    }
+                    .sourceManageRow()
+                    .contextMenu {
+                        Menu("Move to Folder") {
+                            Button("Unfiled") { viewModel.move(feed, to: nil) }
+                            ForEach(viewModel.folderNames, id: \.self) { name in
+                                Button(name) { viewModel.move(feed, to: name) }
                             }
                         }
                     }
                 }
-                .oneFeedGroupedListStyle()
             }
         }
+        .oneFeedGroupedListStyle()
         .navigationTitle(folderID.title)
-        .oneFeedInlineTitle()
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button("Add", systemImage: "plus") { onAddInFolder() }
-            }
-        }
+        .oneFeedLargeTitle()
     }
 }
 
@@ -192,43 +207,45 @@ private struct SourceRow: View {
     let feed: Feed
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(feed.title)
-                .font(.headline)
-                .foregroundStyle(OneFeedTheme.ink)
-            ViewThatFits(in: .horizontal) {
-                sourceDetails
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !feed.isEnabled {
-                        Text("Paused")
-                    } else if feed.remoteID != nil {
-                        Text("Synced")
-                    }
-                }
+        HStack(spacing: 12) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.body.weight(.medium))
+                .foregroundStyle(OneFeedTheme.graphite)
+                .frame(width: 36, height: 36)
+                .background(OneFeedTheme.warm1, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(feed.title)
+                    .font(.body)
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(OneFeedTheme.graphite)
+                    .lineLimit(2)
             }
-            .font(.caption)
-            .foregroundStyle(OneFeedTheme.graphite)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 6)
+        .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
         .accessibilityHint(feed.isEnabled ? "Opens source details" : "Paused. Opens source details")
     }
 
-    private var sourceDetails: some View {
-        HStack(spacing: 5) {
-            Text(feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString)
-                .lineLimit(1)
-            if !feed.isEnabled {
-                Text("·")
-                Text("Paused")
-            } else if feed.remoteID != nil {
-                Text("·")
-                Text("Synced")
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
+    private var subtitle: String {
+        let host = feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString
+        if !feed.isEnabled { return "\(host) · Paused" }
+        if feed.remoteID != nil { return "\(host) · Synced" }
+        return host
+    }
+
+}
+
+private extension View {
+    func sourceManageRow() -> some View {
+        listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowSeparator(.visible, edges: .bottom)
+            .listRowSeparatorTint(OneFeedTheme.sand)
+            .listRowBackground(OneFeedTheme.paper)
     }
 }
 

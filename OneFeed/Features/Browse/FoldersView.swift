@@ -231,6 +231,22 @@ struct ArticleCollectionView: View {
     }
 
     var body: some View {
+        OneFeedReadingSplit(article: $selectedArticle) {
+            collectionColumn
+        } reader: { article in
+            ReaderView(article: article, onFinish: { state in
+                selectedArticle = nil
+                guard article.isStored else { return }
+                ArticleActions.apply(state, to: article, in: modelContext)
+            }, onClose: {
+                selectedArticle = nil
+            })
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+    }
+
+    private var collectionColumn: some View {
         Group {
             if items.isEmpty {
                 EmptyLibraryState(
@@ -245,7 +261,7 @@ struct ArticleCollectionView: View {
                             ArticleRow(article: article)
                         }
                         .buttonStyle(DirectoryRowButtonStyle())
-                        .articleListRow(isCurrent: article.isCurrentReading)
+                        .articleListRow(isCurrent: article.isCurrentReading, isSelected: selectedArticle?.id == article.id)
                         .articleActions(for: article, in: modelContext)
                     }
                 }
@@ -256,15 +272,6 @@ struct ArticleCollectionView: View {
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
-        .oneFeedArticleCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { state in
-                selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
-            }
-            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
-            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
-        }
     }
 
     private var emptyTitle: String {

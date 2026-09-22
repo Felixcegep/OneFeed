@@ -15,6 +15,18 @@ struct HistoryView: View {
     }
 
     var body: some View {
+        OneFeedReadingSplit(article: $selectedArticle) {
+            historyColumn
+        } reader: { article in
+            ReaderView(article: article, onFinish: { _ in
+                selectedArticle = nil
+            }, onClose: {
+                selectedArticle = nil
+            })
+        }
+    }
+
+    private var historyColumn: some View {
         Group {
             if days.isEmpty && notInterested.isEmpty {
                 EmptyLibraryState(
@@ -50,7 +62,7 @@ struct HistoryView: View {
                                     ArticleRow(article: article, status: article.historyStatus)
                                 }
                                 .buttonStyle(DirectoryRowButtonStyle())
-                                .articleListRow()
+                                .articleListRow(isSelected: selectedArticle?.id == article.id)
                             }
                         } header: {
                             GallerySectionHeader(text: group.label)
@@ -64,8 +76,5 @@ struct HistoryView: View {
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
-        .oneFeedArticleCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { _ in selectedArticle = nil }
-        }
     }
 }

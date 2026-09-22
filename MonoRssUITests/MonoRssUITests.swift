@@ -177,7 +177,7 @@ final class MonoRssUITests: XCTestCase {
             }
             if title == "Experimental" {
                 XCTAssertTrue(
-                    app.staticTexts["Gemini can add, move, pause, or remove sources. This page is experimental — check Sources after it acts."]
+                    app.staticTexts["Gemini can add, move, archive, pause, or remove sources. This page is experimental — check Sources after it acts."]
                         .waitForExistence(timeout: 2)
                 )
             }
