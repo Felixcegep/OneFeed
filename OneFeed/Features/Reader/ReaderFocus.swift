@@ -121,8 +121,7 @@ enum ReaderFocus {
 
     static let pageCSS = """
         #onefeed-article { padding-bottom: max(88px, 52vh); }
-        .onefeed-block { transition: opacity 180ms ease; }
-        html.onefeed-reduce-motion .onefeed-block { transition: none; }
+        .onefeed-block { transition: none; }
         html.onefeed-focus-hidden .onefeed-block { opacity: 1 !important; }
         #onefeed-marker {
           position: fixed;
@@ -136,7 +135,7 @@ enum ReaderFocus {
           touch-action: none;
           z-index: 4;
           will-change: transform, height;
-          transition: opacity 160ms ease, height 160ms ease, transform 160ms ease;
+          transition: opacity 160ms ease;
         }
         #onefeed-marker::before {
           content: "";
@@ -184,13 +183,8 @@ enum ReaderFocus {
             reduceMotion: false,
             hidden: true,
             dragging: false,
-            touching: false,
             programmatic: false,
             pinned: null,
-            lastY: 0,
-            lastT: 0,
-            velocity: 0,
-            settleTimer: 0,
             currentBlock: 0,
             ticking: false
           };
@@ -274,32 +268,11 @@ enum ReaderFocus {
             update();
           }
 
-          function scheduleSettle() {
-            if (state.settleTimer) window.clearTimeout(state.settleTimer);
-            state.settleTimer = window.setTimeout(function () {
-              if (state.touching || state.dragging) return;
-              if (Math.abs(state.velocity) > 0.9) return;
-              reveal();
-            }, 260);
-          }
-
           function onScroll() {
-            var y = window.scrollY || 0;
-            var t = performance.now();
-            var dt = Math.max(1, t - state.lastT);
-            state.velocity = (y - state.lastY) / dt;
-            state.lastY = y;
-            state.lastT = t;
             if (state.dragging || state.programmatic) return;
             if (state.pinned) state.pinned = null;
-            var fast = Math.abs(state.velocity) > 0.9;
-            if (fast || state.touching) {
-              hide();
-              scheduleSettle();
-              return;
-            }
-            if (!state.hidden) requestUpdate();
-            scheduleSettle();
+            if (state.hidden) reveal();
+            else requestUpdate();
           }
 
           function requestUpdate() {
@@ -538,8 +511,7 @@ enum ReaderFocus {
               return;
             }
             if (cfg.trail) restore(cfg.trail);
-            else if (!state.hidden) update();
-            else scheduleSettle();
+            else reveal();
           }
 
           function snapshot() {
@@ -556,14 +528,6 @@ enum ReaderFocus {
           }
 
           document.addEventListener("click", onTap, true);
-          document.addEventListener("touchstart", function () {
-            state.touching = true;
-            if (!state.dragging && state.mode !== "off") hide();
-          }, { passive: true });
-          document.addEventListener("touchend", function () {
-            state.touching = false;
-            scheduleSettle();
-          }, { passive: true });
           window.addEventListener("scroll", onScroll, { passive: true });
           ensureChrome();
 

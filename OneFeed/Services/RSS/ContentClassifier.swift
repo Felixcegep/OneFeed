@@ -42,6 +42,25 @@ nonisolated enum ContentClassifier: Sendable {
         return String(plain[..<limit]) + "…"
     }
 
+    /// Drops Hacker News link dumps and bare URLs so a card never leads with "Article URL:".
+    static func proseExcerpt(_ html: String, maxCharacters: Int = 220) -> String? {
+        let plain = plainExcerpt(html, maxCharacters: maxCharacters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !plain.isEmpty, !isLinkDump(plain) else { return nil }
+        return plain
+    }
+
+    static func isLinkDump(_ plain: String) -> Bool {
+        let trimmed = plain.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("article url:") || lower.hasPrefix("comments url:") { return true }
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") { return true }
+        let urls = lower.components(separatedBy: "http").count - 1
+        guard urls > 0 else { return false }
+        let letters = trimmed.filter(\.isLetter).count
+        return letters < 40
+    }
+
     private static let namedEntities: [(String, String)] = [
         ("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
         ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"),

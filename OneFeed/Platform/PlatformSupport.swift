@@ -151,9 +151,9 @@ extension View {
             .scrollContentBackground(.hidden)
             .background(OneFeedTheme.plaster)
             .listSectionSpacing(22)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: 96)
-            }
+            .scrollIndicators(.hidden, axes: .vertical)
+            .contentMargins(.bottom, 132, for: .scrollContent)
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
         #endif
     }
 

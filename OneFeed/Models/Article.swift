@@ -122,13 +122,11 @@ final class Article {
     var displayImageURL: URL? { FeedImageURL.displayable(imageURL) }
 
     var displayExcerpt: String? {
-        if let aiSummary {
-            let plain = ContentClassifier.plainExcerpt(aiSummary, maxCharacters: 280)
-            if !plain.isEmpty { return plain }
+        if let aiSummary, let prose = ContentClassifier.proseExcerpt(aiSummary, maxCharacters: 280) {
+            return prose
         }
-        guard let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let plain = ContentClassifier.plainExcerpt(summary)
-        return plain.isEmpty ? nil : plain
+        guard let summary else { return nil }
+        return ContentClassifier.proseExcerpt(summary)
     }
 
     init(

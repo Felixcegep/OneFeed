@@ -11,7 +11,7 @@ struct ReaderFocusSheet: View {
             VStack(alignment: .leading, spacing: 22) {
                 modeRow
                 intensityRow
-                Text("Focus hides while you scroll, then settles on the paragraph in the reading area. Tap a sentence to recover your place.")
+                Text("Focus follows the line in the reading area while you scroll. Tap a sentence to hold your place.")
                     .font(.footnote)
                     .foregroundStyle(OneFeedTheme.graphite)
                     .fixedSize(horizontal: false, vertical: true)

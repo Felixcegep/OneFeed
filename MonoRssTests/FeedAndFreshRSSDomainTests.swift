@@ -300,6 +300,9 @@ struct FeedAndFreshRSSDomainTests {
         #expect(article.estimatedMinutes == 2)
         #expect(ContentClassifier.readingMinutes(words: 221) == 2)
         #expect(ContentClassifier.readingMinutes(words: 50) == 1)
+        #expect(ContentClassifier.proseExcerpt("Article URL: https://dfarq.homeip.net/nec-v20") == nil)
+        #expect(ContentClassifier.proseExcerpt("https://example.test/story") == nil)
+        #expect(ContentClassifier.proseExcerpt("<p>A short claim about isolation.</p>") == "A short claim about isolation.")
     }
 
     @Test func skipShortYouTubeDetectsShortsPathAndHashTag() {
