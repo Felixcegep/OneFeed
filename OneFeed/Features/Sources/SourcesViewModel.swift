@@ -163,7 +163,7 @@ final class AddSourceViewModel {
         guard !isAdding else { return false }
         let inputs = addresses
         guard !inputs.isEmpty else {
-            presentedError = "Paste at least one website or feed URL."
+            presentedError = "Paste at least one website, article, or file URL."
             return false
         }
 
@@ -181,7 +181,7 @@ final class AddSourceViewModel {
         for (index, input) in inputs.enumerated() {
             progressLabel = inputs.count == 1 ? "Adding…" : "Adding \(index + 1) of \(inputs.count)…"
             do {
-                if useFreshRSS {
+                if useFreshRSS, !FeedService.importsWithoutRSS(input) {
                     _ = try await freshRSSService.addSubscription(from: input, folderName: folder, in: context)
                 } else {
                     _ = try await feedService.addSource(from: input, folderName: folder, in: context)

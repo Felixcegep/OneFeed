@@ -139,10 +139,11 @@ final class FreshRSSSyncService {
         guard let account = try enabledAccount(in: context) else { return }
         let (client, token) = try await authorizedClient(for: account)
         let locals = try context.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.remoteID == nil }))
-        for feed in locals {
+        let subscriptions = locals.filter(\.refreshesOverRSS)
+        for feed in subscriptions {
             _ = try await client.quickAdd(url: feed.feedURL.absoluteString, authToken: token)
         }
-        if !locals.isEmpty {
+        if !subscriptions.isEmpty {
             try await sync(account: account, in: context, progress: nil)
         }
     }

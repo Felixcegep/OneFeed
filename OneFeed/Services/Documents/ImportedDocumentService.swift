@@ -16,8 +16,8 @@ nonisolated struct PreparedImport: Sendable {
 
 @MainActor
 struct ImportedDocumentService {
-    static let maxImportBytes = 200 * 1_024 * 1_024
-    static let persistedHTMLLimit = 1_500_000
+    nonisolated static let maxImportBytes = 200 * 1_024 * 1_024
+    nonisolated static let persistedHTMLLimit = 1_500_000
 
     var store: ImportedDocumentStore
     var session: URLSession
@@ -34,6 +34,29 @@ struct ImportedDocumentService {
             try Self.prepare(from: url, store: store, sourceURL: url.isFileURL ? nil : url)
         }.value
         return try upsert(prepared, in: context)
+    }
+
+    /// Imports bytes already downloaded by the source adder. Queue imports leave `feed` nil and park the article.
+    @discardableResult
+    func importData(
+        _ data: Data,
+        kind: ImportedDocumentKind,
+        sourceURL: URL,
+        in context: ModelContext,
+        feed: Feed? = nil,
+        state: ArticleState = .saved,
+        parkExisting: Bool = true
+    ) async throws -> Article {
+        guard data.count <= Self.maxImportBytes else { throw ImportedDocumentError.tooLarge }
+        let store = self.store
+        let prepared = try await Task.detached {
+            let file = FileManager.default.temporaryDirectory
+                .appending(path: "onefeed-import-\(UUID().uuidString).\(kind.fileExtension)")
+            try data.write(to: file, options: .atomic)
+            defer { try? FileManager.default.removeItem(at: file) }
+            return try Self.prepare(from: file, store: store, sourceURL: sourceURL)
+        }.value
+        return try upsert(prepared, in: context, feed: feed, state: state, parkExisting: parkExisting)
     }
 
     @discardableResult
@@ -98,6 +121,8 @@ struct ImportedDocumentService {
         switch kind {
         case .pdf:
             let info = try pdfInfo(from: stored)
+            let html = persistedHTML((try? pdfHTML(from: stored)) ?? "")
+            let words = html.map { ContentClassifier.wordCount(in: $0) } ?? 0
             return PreparedImport(
                 kind: kind,
                 hash: hash,
@@ -105,13 +130,13 @@ struct ImportedDocumentService {
                 sourceURL: httpURL(sourceURL),
                 title: info.title ?? filenameTitle,
                 author: info.author,
-                html: nil,
+                html: html,
                 summary: info.summary,
-                minutes: max(1, info.pages)
+                minutes: max(max(1, info.pages), ContentClassifier.readingMinutes(words: words))
             )
         case .epub:
             let book = try EPUBReader.load(epub: stored, extractedTo: store.extractedDirectory(hash: hash))
-            let html = book.html.utf8.count <= persistedHTMLLimit ? book.html : nil
+            let html = persistedHTML(book.html)
             return PreparedImport(
                 kind: kind,
                 hash: hash,
@@ -126,18 +151,31 @@ struct ImportedDocumentService {
         }
     }
 
-    private func upsert(_ prepared: PreparedImport, in context: ModelContext) throws -> Article {
+    private func upsert(
+        _ prepared: PreparedImport,
+        in context: ModelContext,
+        feed: Feed? = nil,
+        state: ArticleState = .saved,
+        parkExisting: Bool = true
+    ) throws -> Article {
         let guid = prepared.kind.guid(hash: prepared.hash)
-        if let existing = existing(guid: guid, in: context) {
+        if let existing = existing(guid: guid, in: context) ?? prepared.sourceURL.flatMap({ existing(url: $0, in: context) }) {
             if existing.enclosureURL == nil {
                 existing.enclosureURL = prepared.fileURL
                 existing.enclosureMIME = prepared.kind.mimeType
             }
-            try QueueLinkService().park(existing, in: context)
-            return existing
-        }
-        if let source = prepared.sourceURL, let existing = existing(url: source, in: context) {
-            try QueueLinkService().park(existing, in: context)
+            if existing.contentKind != prepared.kind.rawValue {
+                existing.contentKind = prepared.kind.rawValue
+            }
+            if let feed, existing.feed == nil {
+                existing.feed = feed
+            }
+            if parkExisting {
+                try QueueLinkService().park(existing, in: context)
+            } else {
+                LibraryChange.note(existing)
+                try context.save()
+            }
             return existing
         }
 
@@ -150,14 +188,17 @@ struct ImportedDocumentService {
             summary: prepared.summary,
             contentHTML: prepared.html,
             estimatedReadingMinutes: prepared.minutes,
-            state: .saved,
-            isRemoteStarred: true,
+            state: state,
+            isRemoteStarred: state == .saved,
             contentKind: prepared.kind.rawValue,
             enclosureURL: prepared.fileURL,
             enclosureMIME: prepared.kind.mimeType,
-            libraryUpdatedAt: .now
+            libraryUpdatedAt: .now,
+            feed: feed
         )
-        article.completedAt = .now
+        if state == .saved {
+            article.completedAt = .now
+        }
         context.insert(article)
         LibraryChange.note(article)
         try context.save()
@@ -189,6 +230,79 @@ struct ImportedDocumentService {
             .replacingOccurrences(of: "_", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return cleaned.isEmpty ? name : cleaned
+    }
+
+    /// Selectable text from every page, as the same HTML the article reader uses.
+    nonisolated static func pdfHTML(from url: URL) throws -> String {
+        guard let document = PDFDocument(url: url), document.pageCount > 0 else {
+            throw ImportedDocumentError.invalidPDF
+        }
+        var blocks: [String] = []
+        for index in 0..<document.pageCount {
+            let page = document.page(at: index)?.string ?? ""
+            blocks.append(contentsOf: textBlocks(from: page))
+        }
+        return blocks.map { block in
+            let escaped = escapeHTML(block)
+            return isPDFHeading(block) ? "<h2>\(escaped)</h2>" : "<p>\(escaped)</p>"
+        }.joined()
+    }
+
+    nonisolated static func textBlocks(from pageText: String) -> [String] {
+        let normalized = pageText
+            .replacingOccurrences(of: "\u{00ad}", with: "")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let chunks = normalized.components(separatedBy: "\n\n")
+        let pieces = chunks.count > 1 ? chunks : [normalized]
+        return pieces.compactMap { chunk in
+            let lines = chunk
+                .components(separatedBy: "\n")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            guard !lines.isEmpty else { return nil }
+            var text = ""
+            for line in lines {
+                if text.isEmpty {
+                    text = line
+                    continue
+                }
+                if text.hasSuffix("-"), line.first?.isLowercase == true {
+                    text.removeLast()
+                    text += line
+                } else {
+                    text += " " + line
+                }
+            }
+            let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? nil : cleaned
+        }
+    }
+
+    nonisolated static func persistedHTML(_ html: String) -> String? {
+        let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.utf8.count > persistedHTMLLimit else { return trimmed }
+        let prefix = String(decoding: trimmed.utf8.prefix(persistedHTMLLimit), as: UTF8.self)
+        if let range = prefix.range(of: "</p>", options: .backwards) ?? prefix.range(of: "</h2>", options: .backwards) {
+            return String(prefix[..<range.upperBound])
+        }
+        return prefix
+    }
+
+    private nonisolated static func isPDFHeading(_ text: String) -> Bool {
+        guard (4...80).contains(text.count), !text.contains("."), !text.contains(",") else { return false }
+        let letters = text.filter(\.isLetter)
+        guard letters.count >= 4 else { return false }
+        let uppercase = letters.filter(\.isUppercase).count
+        return uppercase == letters.count
+    }
+
+    private nonisolated static func escapeHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 
     private nonisolated static func pdfInfo(from url: URL) throws -> (title: String?, author: String?, pages: Int, summary: String?) {

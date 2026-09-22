@@ -61,6 +61,25 @@ struct ImportedDocumentTests {
         #expect(article.summary?.contains("Finding a good join order") == true)
         #expect(article.contentKind == "pdf")
         #expect(article.state == .saved)
+        #expect(article.contentHTML?.contains("Finding a good join order") == true)
+        #expect(article.contentHTML?.contains("<p>") == true)
+    }
+
+    @Test func pdfTextBlocksJoinWrappedLinesAndKeepParagraphs() {
+        let blocks = ImportedDocumentService.textBlocks(from: """
+        Finding a good join order is crucial
+        for query performance.
+
+        ABSTRACT
+        opti-
+        mizers really matter.
+        """)
+        #expect(blocks.count == 2)
+        #expect(blocks[0] == "Finding a good join order is crucial for query performance.")
+        #expect(blocks[1].contains("ABSTRACT"))
+        #expect(blocks[1].contains("optimizers really matter."))
+        let html = blocks.map { ImportedDocumentService.persistedHTML("<p>\($0)</p>") ?? "" }.joined()
+        #expect(html.contains("<p>Finding a good join order"))
     }
 
     @Test func importingAPDFParksItInTheQueue() async throws {
@@ -192,6 +211,153 @@ struct ImportedDocumentTests {
         #expect(!FileManager.default.fileExists(atPath: stored.path))
     }
 
+    @Test func addingAPDFURLCreatesAReadableSource() async throws {
+        let context = try InMemoryStore.makeContext()
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let address = "https://www.vldb.org/pvldb/vol9/p204-leis.pdf"
+        let pdf = try writePDF(title: "How Good Are Query Optimizers, Really?", to: root.appending(path: "p204-leis.pdf"))
+        let bytes = try Data(contentsOf: pdf)
+        let url = try #require(URL(string: address))
+        SourceImportURLProtocol.setResponse(bytes, for: url, mime: "application/pdf")
+        let service = FeedService(
+            session: SourceImportURLProtocol.session(),
+            youtubeMetadata: YouTubeMetadataService(session: SourceImportURLProtocol.session()),
+            documentSession: SourceImportURLProtocol.session(),
+            documents: ImportedDocumentStore(rootURL: root)
+        )
+
+        #expect(FeedService.importsWithoutRSS(address))
+        let feed = try await service.addSource(from: address, folderName: "Papers", in: context)
+        let again = try await service.addSource(from: address, in: context)
+
+        #expect(again.id == feed.id)
+        #expect(feed.contentKind == "pdf")
+        #expect(feed.folderName == "Papers")
+        #expect(feed.title == "How Good Are Query Optimizers, Really?")
+        #expect(!feed.refreshesOverRSS)
+        let articles = try context.fetch(FetchDescriptor<Article>())
+        #expect(articles.count == 1)
+        let article = try #require(articles.first)
+        #expect(article.contentKind == "pdf")
+        #expect(article.state == .queued)
+        #expect(article.feed?.id == feed.id)
+        #expect(article.url?.absoluteString == address)
+        #expect(FileManager.default.fileExists(atPath: try #require(article.enclosureURL).path))
+        #expect(try context.fetchCount(FetchDescriptor<Feed>()) == 1)
+    }
+
+    @Test func addingASourceLinksAnExistingQueuedPDF() async throws {
+        let context = try InMemoryStore.makeContext()
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pdf = try writePDF(title: "Queued Paper", to: root.appending(path: "queued.pdf"))
+        let store = ImportedDocumentStore(rootURL: root)
+        let queued = try await ImportedDocumentService(store: store).importFile(at: pdf, in: context)
+        let address = "https://example.com/queued.pdf"
+        let url = try #require(URL(string: address))
+        SourceImportURLProtocol.setResponse(try Data(contentsOf: pdf), for: url, mime: "application/pdf")
+        let service = FeedService(
+            session: SourceImportURLProtocol.session(),
+            documentSession: SourceImportURLProtocol.session(),
+            documents: store
+        )
+
+        let feed = try await service.addSource(from: address, in: context)
+        let articles = try context.fetch(FetchDescriptor<Article>())
+
+        #expect(articles.count == 1)
+        #expect(articles[0].id == queued.id)
+        #expect(queued.state == .saved)
+        #expect(queued.feed?.id == feed.id)
+        #expect(feed.contentKind == "pdf")
+    }
+
+    @Test func addingAnArticlePageWithoutAFeedCreatesAPageSource() async throws {
+        let context = try InMemoryStore.makeContext()
+        let address = "https://example.com/stories/join-order"
+        let url = try #require(URL(string: address))
+        let html = """
+        <!DOCTYPE html><html><head><title>Join Order</title></head>
+        <body><p>Finding a good join order is crucial for query performance.</p></body></html>
+        """
+        SourceImportURLProtocol.setResponse(Data(html.utf8), for: url, mime: "text/html")
+        let service = FeedService(session: SourceImportURLProtocol.session())
+
+        let feed = try await service.addSource(from: address, in: context)
+        let article = try #require(try context.fetch(FetchDescriptor<Article>()).first)
+
+        #expect(feed.contentKind == "page")
+        #expect(feed.title == "Join Order")
+        #expect(!feed.refreshesOverRSS)
+        #expect(article.contentKind == "article")
+        #expect(article.state == .queued)
+        #expect(article.feed?.id == feed.id)
+        #expect(article.title == "Join Order")
+    }
+
+    @Test func addingAFeedStillCreatesASubscription() async throws {
+        let context = try InMemoryStore.makeContext()
+        let address = "https://example.com/rss.xml"
+        let url = try #require(URL(string: address))
+        let xml = """
+        <rss version="2.0"><channel><title>VLDB</title>
+        <item><guid>paper-1</guid><title>Optimizers</title><link>https://example.com/papers/1</link><description>Hello</description></item>
+        </channel></rss>
+        """
+        SourceImportURLProtocol.setResponse(Data(xml.utf8), for: url, mime: "application/rss+xml")
+        let service = FeedService(
+            session: SourceImportURLProtocol.session(),
+            youtubeMetadata: YouTubeMetadataService(session: SourceImportURLProtocol.session())
+        )
+
+        let feed = try await service.addSource(from: address, in: context)
+
+        #expect(feed.contentKind == "article")
+        #expect(feed.refreshesOverRSS)
+        #expect(feed.title == "VLDB")
+        #expect(try context.fetchCount(FetchDescriptor<Article>()) == 1)
+    }
+
+    @Test func plainTextWithoutAFeedStillFailsDiscovery() async throws {
+        let context = try InMemoryStore.makeContext()
+        let address = "https://example.com/notes"
+        let url = try #require(URL(string: address))
+        SourceImportURLProtocol.setResponse(Data("not a feed".utf8), for: url, mime: "text/plain")
+        let service = FeedService(session: SourceImportURLProtocol.session())
+
+        do {
+            _ = try await service.addSource(from: address, in: context)
+            Issue.record("Expected discovery to fail")
+        } catch {
+            #expect(error.localizedDescription == FeedServiceError.discoveryFailed.errorDescription)
+        }
+    }
+
+    @Test func refreshSkipsDocumentAndPageSources() async throws {
+        let context = try InMemoryStore.makeContext()
+        let pdf = Feed(
+            title: "Paper",
+            feedURL: URL(string: "https://skip-refresh.test/paper.pdf")!,
+            contentKind: "pdf"
+        )
+        let page = Feed(
+            title: "Essay",
+            feedURL: URL(string: "https://skip-refresh.test/essay")!,
+            contentKind: "page"
+        )
+        context.insert(pdf)
+        context.insert(page)
+        try context.save()
+        let service = FeedService(session: SourceImportURLProtocol.session())
+
+        try await service.refreshAll(in: context)
+
+        #expect(pdf.lastFetchedAt == nil)
+        #expect(page.lastFetchedAt == nil)
+        #expect(SourceImportURLProtocol.requests(forHost: "skip-refresh.test").isEmpty)
+    }
+
     @Test func rejectsUnsupportedFiles() async throws {
         let context = try InMemoryStore.makeContext()
         let root = try temporaryRoot()
@@ -281,4 +447,51 @@ struct ImportedDocumentTests {
         try ZipArchive.storedArchive(entries: entries).write(to: url)
         return url
     }
+}
+
+private final class SourceImportURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var responses: [String: (Data, HTTPURLResponse)] = [:]
+    nonisolated(unsafe) private static var requested: [URL] = []
+
+    static func setResponse(_ data: Data, for url: URL, status: Int = 200, mime: String? = nil) {
+        var headers: [String: String] = [:]
+        if let mime { headers["Content-Type"] = mime }
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: headers)!
+        lock.lock()
+        responses[url.absoluteString] = (data, response)
+        lock.unlock()
+    }
+
+    static func requests(forHost host: String) -> [URL] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requested.filter { $0.host() == host }
+    }
+
+    static func session() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SourceImportURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let client, let url = request.url else { return }
+        Self.lock.lock()
+        Self.requested.append(url)
+        let response = Self.responses[url.absoluteString]
+        Self.lock.unlock()
+        guard let response else {
+            client.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client.urlProtocol(self, didReceive: response.1, cacheStoragePolicy: .notAllowed)
+        client.urlProtocol(self, didLoad: response.0)
+        client.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

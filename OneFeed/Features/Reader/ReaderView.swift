@@ -7,10 +7,11 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
     case website
 
     var id: Self { self }
-    var title: String {
+
+    func title(for contentKind: String) -> String {
         switch self {
         case .reader: "Reader"
-        case .website: "Website"
+        case .website: contentKind == "pdf" ? "PDF" : "Website"
         }
     }
 }
@@ -317,18 +318,18 @@ struct ReaderView: View {
             Menu {
                 Picker("View", selection: $mode) {
                     ForEach(ReaderDisplayMode.allCases) { option in
-                        Text(option.title).tag(option)
+                        Text(option.title(for: article.contentKind)).tag(option)
                     }
                 }
             } label: {
-                Text(mode.title)
+                Text(mode.title(for: article.contentKind))
                     .font(.body.weight(.medium))
             }
-            .accessibilityLabel("Reading mode, \(mode.title)")
+            .accessibilityLabel("Reading mode, \(mode.title(for: article.contentKind))")
         } else {
             Picker("View", selection: $mode) {
                 ForEach(ReaderDisplayMode.allCases) { option in
-                    Text(option.title).tag(option)
+                    Text(option.title(for: article.contentKind)).tag(option)
                 }
             }
             .pickerStyle(.tabs)
@@ -502,7 +503,7 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var articleCanvas: some View {
-        if article.contentKind == "pdf" {
+        if article.contentKind == "pdf", mode == .website {
             if let url = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
                 PDFReaderPane(url: url)
             } else {
@@ -541,11 +542,15 @@ struct ReaderView: View {
     }
 
     private var showsModePicker: Bool {
-        !article.isImportedDocument && article.url != nil
+        if article.contentKind == "pdf" {
+            return ImportedDocumentStore.shared.resolvedFileURL(for: article) != nil
+        }
+        return !article.isImportedDocument && article.url != nil
     }
 
     private var showsReadingOptions: Bool {
-        article.contentKind != "pdf"
+        if article.contentKind == "pdf" { return mode == .reader }
+        return true
     }
 
     private var shareURL: URL? {
@@ -564,6 +569,9 @@ struct ReaderView: View {
     }
 
     private static func initialMode(for article: Article) -> ReaderDisplayMode {
+        if article.contentKind == "pdf" {
+            return article.readableHTML == nil ? .website : .reader
+        }
         if article.isImportedDocument { return .reader }
         if article.contentKind == "youtube", article.videoID != nil || article.url != nil { return .website }
         if article.readableHTML == nil, article.url != nil { return .website }

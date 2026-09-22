@@ -309,12 +309,12 @@ final class GeminiLibrarian {
 
     private func addSource(_ call: GeminiFunctionCall, in context: ModelContext) async -> GeminiToolResult {
         guard let url = call.string("url") else {
-            return .init(ok: false, message: "A website or feed URL is required.")
+            return .init(ok: false, message: "A website, article, or file URL is required.")
         }
         let folder = call.string("folder")
         do {
             let feed: Feed
-            if usesFreshRSS(in: context) {
+            if usesFreshRSS(in: context), !FeedService.importsWithoutRSS(url) {
                 feed = try await freshRSSService.addSubscription(from: url, folderName: folder, in: context)
             } else {
                 feed = try await feedService.addSource(from: url, folderName: folder, in: context)

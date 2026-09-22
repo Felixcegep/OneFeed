@@ -208,7 +208,7 @@ private struct SourceRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "dot.radiowaves.left.and.right")
+            Image(systemName: symbol)
                 .font(.body.weight(.medium))
                 .foregroundStyle(OneFeedTheme.graphite)
                 .frame(width: 36, height: 36)
@@ -231,11 +231,30 @@ private struct SourceRow: View {
         .accessibilityHint(feed.isEnabled ? "Opens source details" : "Paused. Opens source details")
     }
 
+    private var symbol: String {
+        switch feed.contentKind {
+        case "pdf": "doc.text"
+        case "epub": "book.closed"
+        case "page": "doc.plaintext"
+        default: "dot.radiowaves.left.and.right"
+        }
+    }
+
     private var subtitle: String {
         let host = feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString
-        if !feed.isEnabled { return "\(host) · Paused" }
+        let kind = kindLabel
+        if !feed.isEnabled { return kind.map { "\(host) · \($0) · Paused" } ?? "\(host) · Paused" }
         if feed.remoteID != nil { return "\(host) · Synced" }
-        return host
+        return kind.map { "\(host) · \($0)" } ?? host
+    }
+
+    private var kindLabel: String? {
+        switch feed.contentKind {
+        case "pdf": "PDF"
+        case "epub": "EPUB"
+        case "page": "Article"
+        default: nil
+        }
     }
 
 }
@@ -251,9 +270,11 @@ private extension View {
 
 private struct SourceDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var viewModel: SourceDetailViewModel
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
+    @State private var selectedArticle: Article?
 
     init(feed: Feed, context: ModelContext) {
         _viewModel = State(initialValue: SourceDetailViewModel(feed: feed, context: context))
@@ -263,7 +284,7 @@ private struct SourceDetailView: View {
         Form {
             Section {
                 StackedLabeledValue(title: "Website", value: viewModel.feed.websiteURL?.host() ?? "—")
-                StackedLabeledValue(title: "Feed", value: viewModel.feed.feedURL.absoluteString)
+                StackedLabeledValue(title: addressTitle, value: viewModel.feed.feedURL.absoluteString)
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
@@ -280,23 +301,34 @@ private struct SourceDetailView: View {
             Section {
                 Toggle("Included in Feed", isOn: $viewModel.isEnabled)
                 Toggle("Included in Today", isOn: $viewModel.includeInToday)
-                Toggle("Include videos", isOn: $viewModel.includeVideos)
-                Toggle("Include Shorts", isOn: $viewModel.includeShorts)
+                if viewModel.feed.refreshesOverRSS {
+                    Toggle("Include videos", isOn: $viewModel.includeVideos)
+                    Toggle("Include Shorts", isOn: $viewModel.includeShorts)
+                }
             } footer: {
-                Text("Today is a small daily stack. Videos shorter than 3 minutes are skipped unless you allow Shorts.")
+                Text(viewModel.feed.refreshesOverRSS
+                    ? "Today is a small daily stack. Videos shorter than 3 minutes are skipped unless you allow Shorts."
+                    : "This source is one article or file. It opens in the reader on this device.")
             }
-            Section {
-                TextField("AI, Sponsored…", text: $viewModel.blockedWords, axis: .vertical)
-                    .lineLimit(2...4)
-            } header: {
-                Text("Blocked words")
-            } footer: {
-                Text("Comma or new-line separated. Matching items never enter Today or Feed.")
+            if viewModel.feed.refreshesOverRSS {
+                Section {
+                    TextField("AI, Sponsored…", text: $viewModel.blockedWords, axis: .vertical)
+                        .lineLimit(2...4)
+                } header: {
+                    Text("Blocked words")
+                } footer: {
+                    Text("Comma or new-line separated. Matching items never enter Today or Feed.")
+                }
             }
             if !viewModel.recentArticles.isEmpty {
-                Section("Recent") {
+                Section(viewModel.feed.refreshesOverRSS ? "Recent" : "Read") {
                     ForEach(viewModel.recentArticles) { article in
-                        ArticleRow(article: article)
+                        Button {
+                            selectedArticle = article
+                        } label: {
+                            ArticleRow(article: article)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -307,6 +339,15 @@ private struct SourceDetailView: View {
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
+        .oneFeedArticleCover(item: $selectedArticle) { article in
+            ReaderView(article: article) { state in
+                selectedArticle = nil
+                guard article.isStored else { return }
+                ArticleActions.apply(state, to: article, in: modelContext)
+            }
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
@@ -324,6 +365,15 @@ private struct SourceDetailView: View {
                 dismiss()
                 Task { @MainActor in await viewModel.remove() }
             }
+        }
+    }
+
+    private var addressTitle: String {
+        switch viewModel.feed.contentKind {
+        case "pdf": "PDF"
+        case "epub": "EPUB"
+        case "page": "Article"
+        default: "Feed"
         }
     }
 }
@@ -344,7 +394,7 @@ struct AddSourceView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("example.com\nsecond.com/feed", text: $viewModel.addressList, axis: .vertical)
+                    TextField("example.com/feed\nexample.com/paper.pdf", text: $viewModel.addressList, axis: .vertical)
                         .textContentType(.URL)
                         .oneFeedURLKeyboard()
                         .oneFeedAutocapitalizationNever()
@@ -353,9 +403,9 @@ struct AddSourceView: View {
                         .oneFeedSubmitGo()
                         .onSubmit { add() }
                 } header: {
-                    Text("Websites or RSS URLs")
+                    Text("Websites, articles, or files")
                 } footer: {
-                    Text("One per line. Paste several to add them all into the same folder.")
+                    Text("One per line. Feeds, articles, PDFs, and EPUBs can share a folder.")
                 }
                 .listRowBackground(OneFeedTheme.paper)
 

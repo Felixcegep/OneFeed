@@ -10,6 +10,7 @@ extension LibraryIngestActor {
     ) async throws {
         modelContext.autosaveEnabled = false
         let feeds = try modelContext.fetch(FetchDescriptor<Feed>(predicate: #Predicate { $0.isEnabled && $0.remoteID == nil }))
+            .filter(\.refreshesOverRSS)
         await progress.begin(phase: .sources, total: feeds.count)
         let requests = feeds.map {
             FeedService.RemoteFeedRequest(id: $0.id, url: $0.feedURL, etag: $0.etag, lastModified: $0.lastModified)

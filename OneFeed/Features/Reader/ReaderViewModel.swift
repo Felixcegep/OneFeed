@@ -40,6 +40,10 @@ final class ReaderViewModel {
             await loadEPUBIfNeeded()
             return
         }
+        if article.contentKind == "pdf" {
+            await loadPDFTextIfNeeded()
+            return
+        }
         guard article.contentKind == "article" else { return }
         let existing = article.contentHTML ?? article.summary
         guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
@@ -95,9 +99,14 @@ final class ReaderViewModel {
     }
 
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
-        let fallback = article.contentKind == "epub"
-            ? "<p>This book couldn’t be opened. Import the EPUB again.</p>"
-            : "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        let fallback = switch article.contentKind {
+        case "epub":
+            "<p>This book couldn’t be opened. Import the EPUB again.</p>"
+        case "pdf":
+            "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
+        default:
+            "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        }
         let rawBody = article.readableHTML ?? fallback
         #if canImport(UIKit)
         let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
@@ -224,6 +233,26 @@ final class ReaderViewModel {
         """
         cachedDocument = (key, html)
         return html
+    }
+
+    private func loadPDFTextIfNeeded() async {
+        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return
+        }
+        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) else { return }
+        isExtracting = true
+        defer { isExtracting = false }
+        let html = await Task.detached {
+            (try? ImportedDocumentService.pdfHTML(from: file)) ?? ""
+        }.value
+        let persisted = ImportedDocumentService.persistedHTML(html)
+        guard let persisted else { return }
+        article.contentHTML = persisted
+        let minutes = ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
+        if minutes > article.estimatedReadingMinutes {
+            article.estimatedReadingMinutes = minutes
+        }
+        try? article.modelContext?.save()
     }
 
     private func loadEPUBIfNeeded() async {

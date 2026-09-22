@@ -14,7 +14,8 @@ final class Feed {
     var remoteID: String?
     /// GReader/FreshRSS folder label, for example `Philosophy`. Nil means unfiled.
     var folderName: String?
-    /// tiny-rss `contentType`: article, youtube, music, podcast.
+    /// `article`, `youtube`, `music`, or `podcast` refresh over RSS.
+    /// `pdf`, `epub`, and `page` are imported once and read locally.
     var contentKind: String = "article"
     var includeInToday: Bool = true
     var includeVideos: Bool = true
@@ -68,5 +69,13 @@ final class Feed {
 
     func touchLibrary() {
         libraryUpdatedAt = .now
+    }
+
+    /// RSS and Atom subscriptions refresh in place. A PDF, EPUB, or single page is imported once.
+    var refreshesOverRSS: Bool {
+        switch contentKind {
+        case "pdf", "epub", "page": false
+        default: true
+        }
     }
 }
