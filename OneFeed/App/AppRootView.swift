@@ -97,11 +97,7 @@ struct AppRootView: View {
 
     @ViewBuilder
     private var root: some View {
-        #if os(macOS)
-        MacRootView(selectedTab: $selectedTab)
-        #else
-        PhoneRootView(selectedTab: $selectedTab)
-        #endif
+        AppShell(selectedTab: $selectedTab)
     }
 
     private func handleIncomingURL(_ url: URL) {

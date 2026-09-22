@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import SwiftData
 
 enum ReaderDisplayMode: String, CaseIterable, Identifiable {
     case reader
@@ -320,7 +321,7 @@ struct ReaderView: View {
                     Text(option.title).tag(option)
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.tabs)
             .accessibilityLabel("Reading mode")
         }
     }

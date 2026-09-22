@@ -4,7 +4,7 @@ enum AppTab: Hashable {
     case queue, feed, today, settings
 }
 
-/// The four sections, shared by the iPhone tabs and the Mac sidebar.
+/// The four sections. Compact width shows them as tabs; a wide window shows them as a sidebar.
 struct AppTabRoot: View {
     let tab: AppTab
 

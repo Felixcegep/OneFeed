@@ -85,11 +85,17 @@ struct FoldersView: View {
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {
-            ToolbarItemGroup(placement: .oneFeedTrailing) {
+            ToolbarItem(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
                     Task { await refresh.refresh(in: modelContext) }
                 }
+            }
+            .visibilityPriority(.high)
+            ToolbarItem(placement: .oneFeedPinnedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
+            }
+            .visibilityPriority(.high)
+            ToolbarItem(placement: .oneFeedTrailing) {
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
                         toolbarDestination = .sources
@@ -102,6 +108,7 @@ struct FoldersView: View {
                 }
                 .accessibilityLabel("More")
             }
+            .visibilityPriority(.low)
         }
         .navigationDestination(item: $toolbarDestination) { destination in
             switch destination {

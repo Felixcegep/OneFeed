@@ -65,6 +65,15 @@ extension ToolbarItemPlacement {
         #endif
     }
 
+    /// Stays visible when the navigation bar collapses or items move into overflow.
+    static var oneFeedPinnedTrailing: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarPinnedTrailing
+        #else
+        .primaryAction
+        #endif
+    }
+
     static var oneFeedBottomBar: ToolbarItemPlacement {
         #if os(macOS)
         .automatic
@@ -216,6 +225,16 @@ extension View {
     func oneFeedFloatingTabClearance() -> some View {
         #if os(iOS)
         safeAreaPadding(.bottom, 88)
+        #else
+        self
+        #endif
+    }
+
+    /// Sidebar when the window is wide enough, including a resizable iPhone. Compact width stays a tab bar.
+    @ViewBuilder
+    func oneFeedPreferredSidebar() -> some View {
+        #if os(iOS)
+        defaultTabBarPlacement(.sidebar)
         #else
         self
         #endif
