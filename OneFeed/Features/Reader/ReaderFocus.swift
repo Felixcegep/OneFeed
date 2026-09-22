@@ -121,7 +121,8 @@ enum ReaderFocus {
 
     static let pageCSS = """
         #onefeed-article { padding-bottom: max(88px, 52vh); }
-        .onefeed-block { transition: none; }
+        .onefeed-block { transition: opacity 160ms ease-out; }
+        html.onefeed-reduce-motion .onefeed-block { transition: none; }
         html.onefeed-focus-hidden .onefeed-block { opacity: 1 !important; }
         #onefeed-marker {
           position: fixed;
@@ -188,6 +189,9 @@ enum ReaderFocus {
             currentBlock: 0,
             ticking: false
           };
+          var chromeFrame = 0;
+          var markerPosition = null;
+          var underlinePosition = null;
 
           function articleRoot() {
             return document.getElementById("onefeed-article") || document.body;
@@ -258,6 +262,44 @@ enum ReaderFocus {
             document.documentElement.classList.add("onefeed-focus-hidden");
             document.documentElement.classList.remove("onefeed-focus-active");
             placeChrome(null, []);
+            if (chromeFrame) cancelAnimationFrame(chromeFrame);
+            chromeFrame = 0;
+            markerPosition = null;
+            underlinePosition = null;
+          }
+
+          function animateChrome() {
+            chromeFrame = 0;
+            if (state.hidden || !markerPosition) return;
+            var marker = document.getElementById("onefeed-marker");
+            var underline = document.getElementById("onefeed-line");
+            if (!marker) return;
+            var target = markerPosition.target;
+            var current = markerPosition.current;
+            var factor = state.reduceMotion || state.dragging ? 1 : 0.34;
+            current.top += (target.top - current.top) * factor;
+            current.height += (target.height - current.height) * factor;
+            marker.style.transform = "translateY(" + current.top.toFixed(1) + "px)";
+            marker.style.height = Math.max(16, current.height).toFixed(1) + "px";
+            if (underline && underlinePosition) {
+              var lineTarget = underlinePosition.target;
+              var lineCurrent = underlinePosition.current;
+              lineCurrent.left += (lineTarget.left - lineCurrent.left) * factor;
+              lineCurrent.top += (lineTarget.top - lineCurrent.top) * factor;
+              lineCurrent.width += (lineTarget.width - lineCurrent.width) * factor;
+              underline.style.transform = "translate(" + lineCurrent.left.toFixed(1) + "px," + lineCurrent.top.toFixed(1) + "px)";
+              underline.style.width = Math.max(0, lineCurrent.width).toFixed(1) + "px";
+            }
+            if (Math.abs(target.top - current.top) > 0.5 || Math.abs(target.height - current.height) > 0.5 ||
+                (underlinePosition && (Math.abs(underlinePosition.target.top - underlinePosition.current.top) > 0.5 ||
+                  Math.abs(underlinePosition.target.left - underlinePosition.current.left) > 0.5 ||
+                  Math.abs(underlinePosition.target.width - underlinePosition.current.width) > 0.5))) {
+              chromeFrame = requestAnimationFrame(animateChrome);
+            }
+          }
+
+          function requestChromeFrame() {
+            if (!chromeFrame) chromeFrame = requestAnimationFrame(animateChrome);
           }
 
           function reveal() {
@@ -415,15 +457,19 @@ enum ReaderFocus {
               height = box.height;
             }
             marker.style.opacity = "1";
-            marker.style.transform = "translateY(" + Math.round(top) + "px)";
-            marker.style.height = Math.max(16, Math.round(height)) + "px";
+            var markerTarget = { top: top, height: Math.max(16, height) };
+            if (!markerPosition) markerPosition = { current: { top: top, height: markerTarget.height }, target: markerTarget };
+            else markerPosition.target = markerTarget;
             if (underline && (state.mode === "smart" || state.mode === "lines1") && lines && lines[0]) {
               underline.style.opacity = "0.7";
-              underline.style.transform = "translate(" + Math.round(lines[0].left) + "px," + Math.round(lines[0].bottom - 1) + "px)";
-              underline.style.width = Math.round(lines[0].width) + "px";
+              var lineTarget = { left: lines[0].left, top: lines[0].bottom - 1, width: lines[0].width };
+              if (!underlinePosition) underlinePosition = { current: { left: lineTarget.left, top: lineTarget.top, width: lineTarget.width }, target: lineTarget };
+              else underlinePosition.target = lineTarget;
             } else if (underline) {
               underline.style.opacity = "0";
+              underlinePosition = null;
             }
+            requestChromeFrame();
           }
 
           function update() {

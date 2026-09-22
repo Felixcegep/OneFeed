@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Hairline under the nav bar. Always occupies 1pt so a short refresh does not shove the list.
+/// A slim progress line pinned to the top of the current screen.
 struct RefreshProgressBanner: View {
     var progress: RefreshProgress
 
@@ -11,7 +11,7 @@ struct RefreshProgressBanner: View {
             .transaction { $0.animation = nil }
             .opacity(progress.isActive ? 1 : 0)
             .animation(OneFeedMotion.overlay, value: progress.isActive)
-            .frame(height: 1)
+            .frame(height: 2)
             .accessibilityHidden(!progress.isActive)
             .accessibilityLabel(progress.accessibilityText())
             .accessibilityAddTraits(progress.isActive ? .updatesFrequently : [])
@@ -20,8 +20,9 @@ struct RefreshProgressBanner: View {
 
 extension View {
     func refreshProgressBanner(_ progress: RefreshProgress) -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
+        overlay(alignment: .top) {
             RefreshProgressBanner(progress: progress)
+                .allowsHitTesting(false)
         }
     }
 }
