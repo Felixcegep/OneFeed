@@ -2,16 +2,12 @@ import SwiftData
 import SwiftUI
 
 enum FeedBrowseDestination: Hashable {
-    case today
     case unread
-    case saved
     case folder(FeedFolderID)
 
     var title: String {
         switch self {
-        case .today: String(localized: "Today")
-        case .unread: String(localized: "All Unread")
-        case .saved: String(localized: "Queue")
+        case .unread: String(localized: "New articles")
         case .folder(let id): id.title
         }
     }
@@ -25,19 +21,12 @@ struct FoldersView: View {
         order: .reverse
     ) private var openQuery: [Article]
     @Query(sort: \Feed.title) private var feeds: [Feed]
-    @Query private var accounts: [SyncAccount]
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var folderSectionTitle: String {
-        accounts.contains(where: { $0.provider == .freshRSS && $0.isEnabled })
-            ? String(localized: "FreshRSS")
-            : String(localized: "Folders")
-    }
 
     private var showsSourceRefreshCover: Bool {
         refresh.isRefreshing && !ReaderWebWarmup.skipsOpeningCover
@@ -48,12 +37,26 @@ struct FoldersView: View {
         let _ = iconTick
         List {
             Section {
-                smartLink(.unread, systemImage: "tray", count: directory.unreadCount)
-                smartLink(.today, systemImage: "sun.max", count: directory.todayCount)
+                NavigationLink {
+                    ArticleCollectionView(destination: .unread)
+                } label: {
+                    FeedDirectoryRow(title: "New articles", systemImage: "text.alignleft", detail: "From all your sources")
+                }
+                .oneFeedDirectoryRow()
             } header: {
-                GallerySectionHeader(text: "Smart Feeds")
+                GallerySectionHeader(text: "Browse")
             }
             Section {
+                NavigationLink {
+                    SourcesView()
+                } label: {
+                    FeedDirectoryRow(
+                        title: "Manage sources",
+                        systemImage: "dot.radiowaves.left.and.right",
+                        detail: "Add, move, or pause subscriptions"
+                    )
+                }
+                .oneFeedDirectoryRow()
                 if directory.summaries.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Bring your favorite publications together.")
@@ -72,7 +75,7 @@ struct FoldersView: View {
                     }
                 }
             } header: {
-                GallerySectionHeader(text: folderSectionTitle)
+                GallerySectionHeader(text: "Your sources")
             }
         }
         .oneFeedGroupedListStyle()
@@ -102,25 +105,9 @@ struct FoldersView: View {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
             }
             .visibilityPriority(.high)
-            ToolbarItem(placement: .oneFeedTrailing) {
-                Menu {
-                    Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
-                        toolbarDestination = .sources
-                    }
-                    Button("History", systemImage: "clock") {
-                        toolbarDestination = .history
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .accessibilityLabel("More")
-            }
-            .visibilityPriority(.low)
         }
         .navigationDestination(item: $toolbarDestination) { destination in
             switch destination {
-            case .sources: SourcesView()
-            case .history: HistoryView()
             case .notInterested: NotInterestedView()
             }
         }
@@ -147,22 +134,6 @@ struct FoldersView: View {
         }
     }
 
-    private func smartLink(_ destination: FeedBrowseDestination, systemImage: String, count: Int) -> some View {
-        NavigationLink {
-            ArticleCollectionView(destination: destination)
-        } label: {
-            FeedDirectoryRow(
-                title: destination.title,
-                systemImage: systemImage,
-                count: count,
-                detail: destination == .today
-                    ? String(localized: "Published today")
-                    : String(localized: "Across all your sources")
-            )
-        }
-        .oneFeedDirectoryRow()
-    }
-
     private func folderRow(_ summary: FolderSummary) -> some View {
         HStack(spacing: 4) {
             FolderEmojiButton(name: summary.name) {
@@ -172,8 +143,7 @@ struct FoldersView: View {
                 ArticleCollectionView(destination: .folder(summary.folderID))
             } label: {
                 FeedDirectoryRow(
-                    title: summary.name,
-                    count: summary.unreadCount
+                    title: summary.name
                 )
             }
         }
@@ -189,21 +159,15 @@ struct FoldersView: View {
 }
 
 private enum FeedToolbarDestination: Hashable, Identifiable {
-    case sources, history, notInterested
+    case notInterested
     var id: Self { self }
 }
 
 private struct FeedRootDirectory {
-    let unreadCount: Int
-    let todayCount: Int
     let summaries: [FolderSummary]
 
     init(feeds: [Feed], articles: [Article]) {
         let open = FeedFolderGrouping.openArticles(from: articles)
-        unreadCount = open.count
-        todayCount = open.reduce(into: 0) { count, article in
-            if Calendar.current.isDateInToday(article.publishedAt) { count += 1 }
-        }
         summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open)
     }
 }
@@ -213,34 +177,31 @@ struct ArticleCollectionView: View {
     @Query private var articles: [Article]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
+    @State private var searchText = ""
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
-        switch destination {
-        case .saved:
-            _articles = Query(
-                filter: #Predicate<Article> { $0.stateRawValue == "saved" },
-                sort: \Article.completedAt,
-                order: .reverse
-            )
-        default:
-            _articles = Query(
-                filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-                sort: \Article.publishedAt,
-                order: .reverse
-            )
-        }
+        _articles = Query(
+            filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
+            sort: \Article.publishedAt,
+            order: .reverse
+        )
     }
 
     private var items: [Article] {
-        switch destination {
-        case .today: FeedFolderGrouping.todayArticles(from: articles)
+        let candidates: [Article] = switch destination {
         case .unread: FeedFolderGrouping.openArticles(from: articles)
-        case .saved: FeedFolderGrouping.savedArticles(from: articles)
         case .folder(let folderID):
             FeedFolderGrouping.folderArticleGroups(from: articles)
                 .first(where: { $0.folderID == folderID })?
                 .articles ?? []
+        }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return candidates }
+        return candidates.filter {
+            $0.title.localizedStandardContains(query)
+                || ($0.feed?.title.localizedStandardContains(query) ?? false)
+                || ($0.displayExcerpt?.localizedStandardContains(query) ?? false)
         }
     }
 
@@ -286,31 +247,29 @@ struct ArticleCollectionView: View {
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
+        .searchable(text: $searchText, prompt: "Search articles")
     }
 
     private var emptyTitle: String {
-        switch destination {
-        case .today: "Nothing today"
+        if !searchText.isEmpty { return "No matches" }
+        return switch destination {
         case .unread: "You're caught up"
-        case .saved: "Nothing in Queue"
         case .folder: "Caught up"
         }
     }
 
     private var emptyImage: String {
-        switch destination {
-        case .today: "sun.max"
+        if !searchText.isEmpty { return "magnifyingglass" }
+        return switch destination {
         case .unread: "checkmark.circle"
-        case .saved: "square.stack"
         case .folder: "checkmark.circle"
         }
     }
 
     private var emptyDescription: String {
-        switch destination {
-        case .today: "Stories published today will collect here."
+        if !searchText.isEmpty { return "Try a different title or source name." }
+        return switch destination {
         case .unread: "New stories from your sources will land here."
-        case .saved: "Add a link or file, or pick a story from Feed."
         case .folder: "No unread stories in this folder."
         }
     }

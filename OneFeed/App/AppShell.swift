@@ -8,14 +8,14 @@ struct AppShell: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             TabSection {
+                Tab("Today", systemImage: "sun.max", value: AppTab.today) {
+                    AppTabRoot(tab: .today)
+                }
                 Tab("Queue", systemImage: "square.stack", value: AppTab.queue) {
                     AppTabRoot(tab: .queue)
                 }
                 Tab("Feed", systemImage: "square.grid.2x2", value: AppTab.feed) {
                     AppTabRoot(tab: .feed)
-                }
-                Tab("Today", systemImage: "sun.max", value: AppTab.today) {
-                    AppTabRoot(tab: .today)
                 }
             } header: {
                 EmptyView()

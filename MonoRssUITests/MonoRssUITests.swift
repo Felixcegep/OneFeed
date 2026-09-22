@@ -28,7 +28,8 @@ final class MonoRssUITests: XCTestCase {
 
         app.tabBars.buttons["Feed"].tap()
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["All Unread"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.staticTexts["New articles"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.staticTexts["Smart Feeds"].exists)
         XCTAssertTrue(app.staticTexts["Development"].exists || app.staticTexts["Security"].exists)
 
         app.tabBars.buttons["Today"].tap()
@@ -70,9 +71,9 @@ final class MonoRssUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Feed"].waitForExistence(timeout: 3))
         capture("05-Feed", app: app)
 
-        app.staticTexts["All Unread"].tap()
-        XCTAssertTrue(app.navigationBars["All Unread"].waitForExistence(timeout: 3))
-        capture("06-AllUnread", app: app)
+        app.staticTexts["New articles"].tap()
+        XCTAssertTrue(app.navigationBars["New articles"].waitForExistence(timeout: 3))
+        capture("06-NewArticles", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
         // The row identifier is inherited by its icon and navigation buttons.
@@ -86,16 +87,13 @@ final class MonoRssUITests: XCTestCase {
         capture("07-Folder-Articles", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        app.navigationBars["Feed"].buttons["More"].tap()
-        XCTAssertTrue(app.buttons["Sources"].waitForExistence(timeout: 2))
-        app.buttons["Sources"].tap()
+        app.staticTexts["Manage sources"].tap()
         XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 3))
         capture("08-Sources", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        app.navigationBars["Feed"].buttons["More"].tap()
-        XCTAssertTrue(app.buttons["History"].waitForExistence(timeout: 2))
-        app.buttons["History"].tap()
+        app.tabBars.buttons["Queue"].tap()
+        app.navigationBars["Queue"].buttons["History"].tap()
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
         capture("09-History", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -159,7 +157,7 @@ final class MonoRssUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Settings"].waitForExistence(timeout: 5))
         app.tabBars.buttons["Settings"].tap()
 
-        let destinations = ["Reading", "Sources & Import", "Sync", "Storage", "Video summaries", "Experimental", "About"]
+        let destinations = ["Reading", "Accounts & Sync", "Storage", "Video & AI", "Import & Export", "About"]
         for (index, title) in destinations.enumerated() {
             let destination = app.staticTexts[title].firstMatch
             for _ in 0..<12 {
@@ -172,24 +170,21 @@ final class MonoRssUITests: XCTestCase {
             if title == "Reading" {
                 XCTAssertTrue(app.staticTexts["Reading preview"].waitForExistence(timeout: 2))
             }
-            if title == "Sources & Import" {
-                XCTAssertTrue(app.buttons["Manage sources"].waitForExistence(timeout: 2))
+            if title == "Import & Export" {
+                XCTAssertTrue(app.buttons["Import OPML"].waitForExistence(timeout: 2))
             }
-            if title == "Experimental" {
-                XCTAssertTrue(
-                    app.staticTexts["Gemini can add, move, archive, pause, or remove sources. This page is experimental — check Sources after it acts."]
-                        .waitForExistence(timeout: 2)
-                )
+            if title == "Video & AI" {
+                XCTAssertTrue(app.buttons["Experimental librarian"].waitForExistence(timeout: 2))
             }
             capture("\(17 + index)-Settings-\(title.replacingOccurrences(of: " & ", with: "-").replacingOccurrences(of: " ", with: "-"))", app: app)
-            if title == "Sync" {
+            if title == "Accounts & Sync" {
                 let connect = app.buttons["Connect FreshRSS"]
                 XCTAssertTrue(connect.waitForExistence(timeout: 3))
                 connect.tap()
                 XCTAssertTrue(app.navigationBars["Connect FreshRSS"].waitForExistence(timeout: 3))
                 capture("24-Connect-FreshRSS", app: app)
                 app.buttons["Cancel"].tap()
-                XCTAssertTrue(app.navigationBars["Sync"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.navigationBars["Accounts & Sync"].waitForExistence(timeout: 3))
             }
             app.navigationBars[title].buttons.element(boundBy: 0).tap()
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))

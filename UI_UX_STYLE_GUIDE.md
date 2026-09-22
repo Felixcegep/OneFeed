@@ -64,6 +64,15 @@ L'appui d'une carte modifie sa surface dans le même contour arrondi et utilise 
 
 ## 4. Parcours : contrat visuel et travail restant
 
+### Architecture de navigation actuelle — 22 septembre
+
+- Onglets : **Today → Queue → Feed → Settings**. Today reste l'écran d'ouverture.
+- Today porte la sélection quotidienne et ne montre que l'actualisation dans sa barre d'outils. Quand il n'y a aucune source, son action « Add Source » ouvre directement le formulaire d'ajout.
+- Queue contient les pièces sauvegardées et donne accès à **History** dans sa barre d'outils.
+- Feed présente **New articles** et les dossiers de sources ; la recherche filtre les titres, sources et extraits dans chaque collection. Une ligne **Manage sources** avant les dossiers ouvre la gestion des abonnements. Le second raccourci « Today » et les comptes d'articles non lus ont été retirés du répertoire.
+- Settings contient les préférences de lecture, comptes et synchronisation, stockage, vidéo et IA, puis l'import/export OPML et About. La gestion des sources et la restauration du catalogue habitent l'écran Sources ; le laboratoire expérimental est sous Video & AI.
+- Vérification de cette réorganisation : build Simulator, `testExample` et `testCaptureSettingsDestinations` réussis sur iPhone 17 / iOS 27. Le tour `testCaptureAllScreens` a capturé Today à Sources, puis a expiré en ouvrant History depuis Queue ; ce parcours reste à vérifier séparément.
+
 Ces descriptions résument le code actuel et les intentions de présentation. Elles n'autorisent pas une modification des transitions métier.
 
 | Parcours | Présentation attendue | À vérifier ou confier à la logique |
@@ -133,6 +142,14 @@ Les captures temporaires sont sous `/tmp/onefeed-uitest-screenshots/`. Leur nom 
 Le chantier complet reste ouvert jusqu'à inspection des nouvelles captures. Les changements de logique du plan d'audit restent hors périmètre de cette passe.
 
 ## 6. Priorités suivantes
+
+### Passe du 22 septembre — navigation des sources et repère de lecture
+
+- Sources : les dossiers contenant des abonnements précèdent les dossiers vides ; recherche sur les noms de dossiers et de sources ; création depuis le menu d'ajout dans la barre d'outils.
+- Un dossier vide propose directement d'ajouter une source. Dans un dossier rempli, l'ajout reste dans la barre d'outils et une recherche filtre les abonnements.
+- Le repère du lecteur interpole la position et la longueur des lignes sur les images suivantes ; le texte proche change d'opacité brièvement. Reduce Motion garde des changements immédiats.
+- La progression de rafraîchissement est superposée au bord supérieur de l'écran (2 points) pour rester à une position stable sans déplacer la liste.
+- Vérification : build iOS Simulator, syntaxe du script de lecture et `testCaptureAllScreens` sur iPhone 17 / iOS 27 (10 captures). La capture Sources confirme les deux sections et leurs actions. Le lecteur était encore en chargement sur sa capture immédiate ; l'animation du repère et la position de la progression pendant un rafraîchissement restent à vérifier visuellement.
 
 1. Recapturer en mode sombre et à très grande taille l'aperçu de lecture et `Manage sources` (absents des PNG AX du matin).
 2. Grand format / iPad : encore ouvert.

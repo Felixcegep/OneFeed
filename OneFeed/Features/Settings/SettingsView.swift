@@ -20,36 +20,27 @@ struct SettingsView: View {
                 settingsLink("Reading", summary: "\(ReaderFontChoice(rawValue: readerFont)?.label ?? "Serif") · \(ReaderTextSize(rawValue: readerTextSize)?.label ?? "Default") · \(ReaderFocusMode(rawValue: readerFocusMode)?.label ?? "Smart")") {
                     readingSection
                 }
-                settingsLink("Sources & Import", summary: "Subscriptions and OPML") {
-                    sourcesSection
-                }
-                settingsLink("Sync", summary: "FreshRSS, iCloud or Google Drive") {
+                settingsLink("Accounts & Sync", summary: "FreshRSS, iCloud or Google Drive") {
                     freshRSSSection
                     cloudSection
                 }
                 settingsLink("Storage", summary: "Keep articles · \(ArticleRetentionChoice(rawValue: retentionDays)?.label ?? "\(retentionDays) days")") {
                     storageSection
                 }
-                settingsLink("Video summaries", summary: geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Not configured" : "API key configured") {
+                settingsLink("Video & AI", summary: geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Summaries off" : "Summaries available") {
                     videoSection
                 }
-                NavigationLink {
-                    ExperimentalLibrarianView()
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Experimental")
-                            .font(.body)
-                            .foregroundStyle(OneFeedTheme.ink)
-                        Text(geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Needs API key" : "Gemini can change sources")
-                            .font(.subheadline)
-                            .foregroundStyle(OneFeedTheme.graphite)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
+            }
+            .listRowBackground(OneFeedTheme.paper)
+            Section {
+                settingsLink("Import & Export", summary: "Move subscriptions with OPML") {
+                    dataTransferSection
                 }
                 settingsLink("About", summary: "OneFeed · 1.0") {
                     aboutSection
                 }
+            } header: {
+                GallerySectionHeader(text: "Data")
             }
             .listRowBackground(OneFeedTheme.paper)
         }
@@ -163,6 +154,9 @@ struct SettingsView: View {
                     GeminiAPIKeyStore.delete()
                 }
             }
+            NavigationLink("Experimental librarian") {
+                ExperimentalLibrarianView()
+            }
         } header: {
             GallerySectionHeader(text: "Gemini")
         } footer: {
@@ -207,22 +201,12 @@ struct SettingsView: View {
         .listRowBackground(OneFeedTheme.paper)
     }
 
-    private var sourcesSection: some View {
+    private var dataTransferSection: some View {
         Section {
-            NavigationLink {
-                SourcesView()
-            } label: {
-                Label("Manage sources", systemImage: "dot.radiowaves.left.and.right")
-            }
-            Button("Restore all seeded sources", systemImage: "arrow.triangle.2.circlepath") {
-                viewModel.seedAllCatalogSources()
-            }
             Button("Import OPML", systemImage: "square.and.arrow.down") { viewModel.isImportingOPML = true }
             Button("Export OPML", systemImage: "square.and.arrow.up") { viewModel.isExportingOPML = true }.disabled(viewModel.feeds.isEmpty)
-        } header: {
-            GallerySectionHeader(text: "Data")
         } footer: {
-            Text("Restores Must read, Builders, topic folders, À scanner, and Papers — then fetches them. OPML import keeps folder names.")
+            Text("Import keeps folder names. Export saves a copy of your subscriptions.")
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)

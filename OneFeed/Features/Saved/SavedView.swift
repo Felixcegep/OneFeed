@@ -78,6 +78,13 @@ struct SavedView: View {
                 Button("Add", systemImage: "plus") { isAdding = true }
                     .accessibilityHint("Paste a link, import a file, or pick a story from Feed")
             }
+            ToolbarItem(placement: .oneFeedTrailing) {
+                NavigationLink {
+                    HistoryView()
+                } label: {
+                    Label("History", systemImage: "clock")
+                }
+            }
         }
         .task {
             viewModel.configure(with: modelContext)

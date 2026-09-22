@@ -6,7 +6,7 @@ struct CurrentView: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
-    @State private var showingSources = false
+    @State private var showingAddSource = false
     @State private var celebrateClear = false
     @State private var keepReadingPaneClear = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -108,10 +108,6 @@ struct CurrentView: View {
                 }
             }
             .visibilityPriority(.high)
-            ToolbarItem(placement: .oneFeedPinnedTrailing) {
-                Button("Add Source", systemImage: "plus") { showingSources = true }
-            }
-            .visibilityPriority(.high)
         }
         .task {
             viewModel.configure(with: modelContext)
@@ -139,12 +135,9 @@ struct CurrentView: View {
             #endif
         }
         .refreshable { await viewModel.refresh() }
-        .sheet(isPresented: $showingSources) {
-            NavigationStack {
-                SourcesView()
-            }
-            .oneFeedMacSheet(idealWidth: 520, idealHeight: 640)
-        }
+        .sheet(isPresented: $showingAddSource, onDismiss: {
+            if !feeds.isEmpty { Task { await viewModel.refresh() } }
+        }) { AddSourceView() }
         .onChange(of: stories.count) { oldCount, newCount in
             if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
                 celebrateClear = true
@@ -213,20 +206,13 @@ struct CurrentView: View {
         } actions: {
             Button(viewModel.isRefreshing ? viewModel.progress.countText : feeds.isEmpty ? "Add a source" : "Refresh") {
                 if feeds.isEmpty {
-                    showingSources = true
+                    showingAddSource = true
                 } else {
                     Task { await viewModel.refresh() }
                 }
             }
             .buttonStyle(PrimaryActionStyle())
             .disabled(viewModel.isRefreshing)
-            if !feeds.isEmpty {
-                Button("Add a source") { showingSources = true }
-                    .font(.subheadline)
-                    .foregroundStyle(OneFeedTheme.graphite)
-                    .frame(minHeight: 44)
-                    .padding(.top, 8)
-            }
         }
         .oneFeedMacEmptyCanvas()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
