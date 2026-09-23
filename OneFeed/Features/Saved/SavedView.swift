@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct SavedView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query(
         filter: #Predicate<Article> { $0.stateRawValue == "saved" },
         sort: \Article.completedAt,
@@ -11,12 +12,29 @@ struct SavedView: View {
     ) private var savedQuery: [Article]
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
+    @State private var searchText = ""
 
     private var waiting: [Article] {
         ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
     }
 
-    private var upNext: Article? { waiting.first }
+    private var searchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// In-memory filter of `waiting`. An empty query returns the queue unchanged.
+    private var visibleQueue: [Article] {
+        let query = searchQuery
+        guard !query.isEmpty else { return waiting }
+        return waiting.filter { article in
+            article.title.localizedCaseInsensitiveContains(query)
+                || article.readingNote.localizedCaseInsensitiveContains(query)
+                || (article.readingTakeawayLine?.localizedCaseInsensitiveContains(query) ?? false)
+                || ArticlePresentation.sourceName(for: article).localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var upNext: Article? { visibleQueue.first }
 
     var body: some View {
         OneFeedReadingSplit(article: $viewModel.selectedArticle) {
@@ -30,12 +48,15 @@ struct SavedView: View {
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
+        .readingUndoBanner { viewModel.reload() }
     }
 
     private var queueColumn: some View {
         Group {
-            if waiting.isEmpty {
+            if waiting.isEmpty && searchQuery.isEmpty {
                 empty
+            } else if visibleQueue.isEmpty {
+                noMatches
             } else {
                 List {
                     if let upNext {
@@ -73,6 +94,7 @@ struct SavedView: View {
         .navigationSubtitle(waiting.isEmpty ? "" : waitingSubtitle)
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
+        .searchable(text: $searchText, prompt: "Search queue")
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add", systemImage: "plus") { isAdding = true }
@@ -121,6 +143,15 @@ struct SavedView: View {
         )
     }
 
+    @ViewBuilder
+    private var noMatches: some View {
+        EmptyLibraryState(
+            title: "No matches",
+            systemImage: "magnifyingglass",
+            description: "Try a title, reading note, or source name."
+        )
+    }
+
     private var waitingSubtitle: String {
         let videos = waiting.filter { $0.contentKind == "youtube" }.count
         let rest = waiting.count - videos
@@ -164,8 +195,8 @@ struct SavedView: View {
     }
 
     private var rest: [Article] {
-        guard let upNext else { return waiting }
-        return waiting.filter { $0.id != upNext.id }
+        guard let upNext else { return visibleQueue }
+        return visibleQueue.filter { $0.id != upNext.id }
     }
 
     @ViewBuilder
@@ -203,8 +234,12 @@ struct SavedView: View {
     }
 
     private func restore(_ article: Article) {
-        withAnimation(OneFeedMotion.list) {
+        if reduceMotion {
             viewModel.restore(article)
+        } else {
+            withAnimation(OneFeedMotion.list) {
+                viewModel.restore(article)
+            }
         }
     }
 

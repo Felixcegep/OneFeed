@@ -9,6 +9,50 @@ enum ArticleState: String, Codable, CaseIterable, Sendable {
     case saved
 }
 
+nonisolated enum ArticleReadingReaction: String, CaseIterable, Codable, Sendable {
+    case learned, why, connect, use
+
+    var label: String {
+        switch self {
+        case .learned: String(localized: "Learned")
+        case .why: String(localized: "Why")
+        case .connect: String(localized: "Connect")
+        case .use: String(localized: "Use")
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .learned: String(localized: "What is the one idea you want to remember?")
+        case .why: String(localized: "Why does that make sense?")
+        case .connect: String(localized: "What does this remind you of?")
+        case .use: String(localized: "What will you do with this?")
+        }
+    }
+
+    var glyph: String {
+        switch self {
+        case .learned: "\u{1F4A1}"
+        case .why: "\u{1F914}"
+        case .connect: "\u{1F517}"
+        case .use: "\u{1F4CC}"
+        }
+    }
+
+    /// Empty or unknown raw values are none.
+    static func clampedRawValue(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let reaction = ArticleReadingReaction(rawValue: trimmed) else { return "" }
+        return reaction.rawValue
+    }
+
+    init?(stored raw: String) {
+        let clamped = Self.clampedRawValue(raw)
+        guard !clamped.isEmpty else { return nil }
+        self.init(rawValue: clamped)
+    }
+}
+
 @Model
 final class Article {
     @Attribute(.unique) var id: UUID
@@ -37,10 +81,14 @@ final class Article {
     var notInterested: Bool = false
     var aiSummary: String?
     var declinedVideoSummary: Bool = false
+    var videoChatJSON: Data? = nil
+    var videoGeminiInteractionID: String? = nil
     /// Bumped only on user-facing state changes (read / skip / save / current).
     /// Fresh RSS inserts stay at `.distantPast` so another device’s reading
     /// state wins on first merge.
     var libraryUpdatedAt: Date = Date.distantPast
+    var readingReactionRawValue: String = ""
+    var readingNote: String = ""
     var feed: Feed?
 
     var state: ArticleState {
@@ -152,7 +200,11 @@ final class Article {
         notInterested: Bool = false,
         aiSummary: String? = nil,
         declinedVideoSummary: Bool = false,
+        videoChatJSON: Data? = nil,
+        videoGeminiInteractionID: String? = nil,
         libraryUpdatedAt: Date = .distantPast,
+        readingReactionRawValue: String = "",
+        readingNote: String = "",
         feed: Feed? = nil
     ) {
         self.id = id
@@ -177,7 +229,11 @@ final class Article {
         self.notInterested = notInterested
         self.aiSummary = aiSummary
         self.declinedVideoSummary = declinedVideoSummary
+        self.videoChatJSON = videoChatJSON
+        self.videoGeminiInteractionID = videoGeminiInteractionID
         self.libraryUpdatedAt = libraryUpdatedAt
+        self.readingReactionRawValue = readingReactionRawValue
+        self.readingNote = readingNote
         self.feed = feed
     }
 
@@ -187,6 +243,31 @@ final class Article {
 
     func setRating(_ value: Int) {
         rating = min(5, max(0, value))
+    }
+
+    var readingReaction: ArticleReadingReaction? {
+        get { ArticleReadingReaction(stored: readingReactionRawValue) }
+        set { readingReactionRawValue = newValue?.rawValue ?? "" }
+    }
+
+    var readingNoteText: String {
+        readingNote.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Choice word, then the sentence. Nil when both are empty.
+    var readingTakeawayLine: String? {
+        let note = readingNoteText
+        switch (readingReaction?.label, note.isEmpty) {
+        case (nil, true): return nil
+        case let (label?, true): return label
+        case (nil, false): return note
+        case let (label?, false): return "\(label) \u{00B7} \(note)"
+        }
+    }
+
+    func setReadingTakeaway(reaction: ArticleReadingReaction?, note: String) {
+        readingReaction = reaction
+        readingNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// SwiftData fatals if persisted properties are read after the row is gone.

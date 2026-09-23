@@ -101,14 +101,38 @@ struct GeminiGenerateResult: Equatable, Sendable {
     }
 }
 
+struct GeminiInteractionReply: Equatable, Sendable {
+    var id: String
+    var text: String
+}
+
 protocol GeminiConversing: Sendable {
     func generateLibrarian(contentsJSON: Data, systemInstruction: String) async throws -> GeminiGenerateResult
 }
 
+private enum GeminiVideoTransportError: Error {
+    case expiredInteraction
+}
+
 nonisolated struct GeminiClient: Sendable {
-    private static let models = ["gemini-2.5-flash", "gemini-2.0-flash"]
-    private static let prompt = """
-    Summarize this YouTube video in 4–6 short sentences. Cover the main claim, the important facts or steps, and the conclusion. Write in the same language as the video. Do not mention being an AI or that you watched a video.
+    private static let models = ["gemini-3.8-flash", "gemini-2.5-flash"]
+    private static let videoSystemInstruction = """
+    Answer only from the video, in the same language as the video. Cite timestamps as MM:SS. Do not invent facts. If the video does not cover the question, say so.
+    """
+    private static let summaryPrompt = """
+    Write a summary of this video in the same language as the video.
+
+    Make it short enough to read in a few minutes, and still carry every useful thing the video teaches. Keep the ideas, explanations, examples, names, and numbers that matter. Leave out repetition, asides, and filler.
+
+    Write in clear, finished prose, the way a good essay would. Not an outline, and not a transcript.
+
+    Use this shape:
+    - One short opening paragraph on what the video is about.
+    - Sections in the order of the video. Start each section with a heading line that begins with "## ", names the idea, and includes one MM:SS timestamp.
+    - Under each heading, one or two paragraphs that carry the reasoning, steps, or examples.
+    - A short closing paragraph for the conclusion.
+
+    Do not add anything that is not in the video.
     """
 
     private let session: URLSession
@@ -119,15 +143,81 @@ nonisolated struct GeminiClient: Sendable {
         self.apiKey = apiKey
     }
 
-    func summarizeYouTube(url: URL) async throws -> String {
+    func summarizeYouTube(url: URL) async throws -> GeminiInteractionReply {
         guard let key = apiKey(), !key.isEmpty else { throw GeminiClientError.missingAPIKey }
         var lastError: Error = GeminiClientError.api("Gemini could not summarize this video.")
         for model in Self.models {
             do {
-                return try await requestSummary(model: model, videoURL: url, apiKey: key)
+                let body = Self.summarizeYouTubeBody(model: model, videoURL: url)
+                return try await postInteraction(
+                    body: body,
+                    apiKey: key,
+                    previousInteractionIDSent: false,
+                    emptyError: .emptySummary
+                )
             } catch {
                 lastError = error
                 if case GeminiClientError.missingAPIKey = error { throw error }
+                guard Self.failureIsModelUnavailable(error) else { throw error }
+            }
+        }
+        throw lastError
+    }
+
+    func askYouTube(
+        url: URL,
+        question: String,
+        previousInteractionID: String?,
+        summary: String?,
+        recentTurns: [VideoChatMessage]
+    ) async throws -> GeminiInteractionReply {
+        guard let key = apiKey(), !key.isEmpty else { throw GeminiClientError.missingAPIKey }
+        let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuestion.isEmpty else {
+            throw GeminiClientError.api("Ask a question about the video.")
+        }
+
+        let storedID = previousInteractionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var sendVideoContext = storedID.isEmpty
+        var lastError: Error = GeminiClientError.api("Gemini could not complete that request.")
+
+        for model in Self.models {
+            do {
+                if !sendVideoContext {
+                    let followUp = Self.askYouTubeFollowUpBody(
+                        model: model,
+                        question: trimmedQuestion,
+                        previousInteractionID: storedID
+                    )
+                    do {
+                        return try await postInteraction(
+                            body: followUp,
+                            apiKey: key,
+                            previousInteractionIDSent: true,
+                            emptyError: .emptyReply
+                        )
+                    } catch GeminiVideoTransportError.expiredInteraction {
+                        sendVideoContext = true
+                    }
+                }
+
+                let fallback = Self.askYouTubeFallbackBody(
+                    model: model,
+                    videoURL: url,
+                    question: trimmedQuestion,
+                    summary: summary,
+                    recentTurns: recentTurns
+                )
+                return try await postInteraction(
+                    body: fallback,
+                    apiKey: key,
+                    previousInteractionIDSent: false,
+                    emptyError: .emptyReply
+                )
+            } catch {
+                lastError = error
+                if case GeminiClientError.missingAPIKey = error { throw error }
+                guard Self.failureIsModelUnavailable(error) else { throw error }
             }
         }
         throw lastError
@@ -152,6 +242,61 @@ nonisolated struct GeminiClient: Sendable {
         throw lastError
     }
 
+    static func summarizeYouTubeBody(model: String, videoURL: URL) -> [String: Any] {
+        videoBody(model: model, input: [
+            textPart(summaryPrompt),
+            videoPart(videoURL)
+        ], maxOutputTokens: 2048)
+    }
+
+    static func askYouTubeFollowUpBody(
+        model: String,
+        question: String,
+        previousInteractionID: String
+    ) -> [String: Any] {
+        var body = videoBody(model: model, input: question)
+        body["previous_interaction_id"] = previousInteractionID
+        return body
+    }
+
+    static func askYouTubeFallbackBody(
+        model: String,
+        videoURL: URL,
+        question: String,
+        summary: String?,
+        recentTurns: [VideoChatMessage]
+    ) -> [String: Any] {
+        var input: [[String: Any]] = []
+        let trimmedSummary = summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedSummary.isEmpty {
+            input.append(textPart(trimmedSummary))
+        }
+        for turn in recentTurns {
+            let text = turn.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let speaker = turn.role == .user ? "User" : "Model"
+            input.append(textPart("\(speaker): \(text)"))
+        }
+        input.append(textPart(question))
+        input.append(videoPart(videoURL))
+        return videoBody(model: model, input: input)
+    }
+
+    /// Previous id was sent, and this response means that interaction is gone.
+    /// A message that names a model is model-unavailable, including HTTP 404.
+    static func isExpiredInteraction(statusCode: Int, body: Data, previousInteractionIDSent: Bool) -> Bool {
+        guard previousInteractionIDSent else { return false }
+        let message = interactionErrorMessage(in: body).lowercased()
+        if message.contains("model") { return false }
+        if statusCode == 404 { return true }
+        if message.contains("previous_interaction") { return true }
+        if message.contains("interaction"),
+           message.contains("not found") || message.contains("expired") || message.contains("no longer") {
+            return true
+        }
+        return false
+    }
+
     static func parseSummary(from data: Data) throws -> String {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw GeminiClientError.emptySummary
@@ -169,6 +314,34 @@ nonisolated struct GeminiClient: Sendable {
         let summary = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !summary.isEmpty else { throw GeminiClientError.emptySummary }
         return summary
+    }
+
+    static func parseInteraction(from data: Data, emptyError: GeminiClientError) throws -> GeminiInteractionReply {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw emptyError
+        }
+        if let error = object["error"] as? [String: Any] {
+            let message = (error["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw GeminiClientError.api(message?.isEmpty == false ? message! : "Gemini could not summarize this video.")
+        }
+        let id = (object["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !id.isEmpty else { throw emptyError }
+
+        let steps = object["steps"] as? [[String: Any]] ?? []
+        var texts: [String] = []
+        for step in steps {
+            guard (step["type"] as? String) == "model_output" else { continue }
+            let content = step["content"] as? [[String: Any]] ?? []
+            for item in content {
+                guard (item["type"] as? String) == "text",
+                      let text = item["text"] as? String else { continue }
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { texts.append(trimmed) }
+            }
+        }
+        let text = texts.joined(separator: "\n")
+        guard !text.isEmpty else { throw emptyError }
+        return GeminiInteractionReply(id: id, text: text)
     }
 
     static func parseGenerate(from data: Data) throws -> GeminiGenerateResult {
@@ -207,32 +380,73 @@ nonisolated struct GeminiClient: Sendable {
         )
     }
 
-    private func requestSummary(model: String, videoURL: URL, apiKey: String) async throws -> String {
-        guard let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent") else {
+    private static func videoBody(model: String, input: Any, maxOutputTokens: Int = 2048) -> [String: Any] {
+        [
+            "model": model,
+            "system_instruction": videoSystemInstruction,
+            "input": input,
+            "generation_config": ["max_output_tokens": maxOutputTokens]
+        ]
+    }
+
+    private static func textPart(_ text: String) -> [String: Any] {
+        ["type": "text", "text": text]
+    }
+
+    private static func videoPart(_ url: URL) -> [String: Any] {
+        ["type": "video", "uri": url.absoluteString]
+    }
+
+    private static func interactionErrorMessage(in body: Data) -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return String(data: body, encoding: .utf8) ?? ""
+        }
+        guard let error = object["error"] as? [String: Any],
+              let message = error["message"] as? String else {
+            return ""
+        }
+        return message
+    }
+
+    private static func failureIsModelUnavailable(_ error: Error) -> Bool {
+        guard case GeminiClientError.api(let message) = error else { return false }
+        return message == "Model unavailable"
+    }
+
+    private func postInteraction(
+        body: [String: Any],
+        apiKey: String,
+        previousInteractionIDSent: Bool,
+        emptyError: GeminiClientError
+    ) async throws -> GeminiInteractionReply {
+        guard let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions") else {
             throw GeminiClientError.api("Invalid Gemini endpoint.")
         }
-        var request = URLRequest(url: endpoint, timeoutInterval: 90)
+        var request = URLRequest(url: endpoint, timeoutInterval: 120)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
-        let body: [String: Any] = [
-            "contents": [[
-                "parts": [
-                    ["text": Self.prompt],
-                    ["file_data": ["file_uri": videoURL.absoluteString]]
-                ]
-            ]],
-            "generationConfig": [
-                "temperature": 0.3,
-                "maxOutputTokens": 640
-            ]
-        ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if Self.isExpiredInteraction(
+            statusCode: status,
+            body: data,
+            previousInteractionIDSent: previousInteractionIDSent
+        ) {
+            throw GeminiVideoTransportError.expiredInteraction
+        }
+        if status == 404 {
             throw GeminiClientError.api("Model unavailable")
         }
-        return try Self.parseSummary(from: data)
+        if status >= 400 {
+            let message = Self.interactionErrorMessage(in: data).trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallback = emptyError == .emptySummary
+                ? "Gemini could not summarize this video."
+                : "Gemini could not complete that request."
+            throw GeminiClientError.api(message.isEmpty ? fallback : message)
+        }
+        return try Self.parseInteraction(from: data, emptyError: emptyError)
     }
 
     private func requestLibrarian(

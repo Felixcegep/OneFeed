@@ -15,6 +15,7 @@ struct AddToQueueView: View {
     @State private var presentedError: String?
     @State private var isPickingFile = false
     #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var sheetDetent: PresentationDetent = .large
     #endif
     var startWithFilePicker = false
@@ -130,7 +131,10 @@ struct AddToQueueView: View {
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
-        .presentationDetents([.medium, .large], selection: $sheetDetent)
+        .presentationDetents(
+            dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large],
+            selection: $sheetDetent
+        )
         #endif
     }
 

@@ -62,9 +62,18 @@ final class SavedViewModel {
             return
         }
         if state == .read || state == .skipped {
+            if state == .skipped {
+                ReadingUndo.begin(article, in: context)
+            }
             freshRSSService.enqueueMutation(for: article, transition: state, in: context)
-            do { _ = try queue.transition(article, to: state, in: context) }
-            catch { presentedError = error.localizedDescription }
+            do {
+                _ = try queue.transition(article, to: state, in: context)
+                if state == .skipped {
+                    ReadingUndo.commit(article, in: context)
+                }
+            } catch {
+                presentedError = error.localizedDescription
+            }
         }
         selectedArticle = nil
         reload()

@@ -75,4 +75,54 @@ struct ArticleQueueService {
         try context.save()
         _ = try ensureCurrent(in: context)
     }
+
+    /// Moves a finished article into Queue (`.saved`). Rating and the reading takeaway stay.
+    func moveToQueue(_ article: Article, in context: ModelContext) throws {
+        article.state = .saved
+        article.isRemoteStarred = true
+        if article.completedAt == nil {
+            article.completedAt = .now
+        }
+        if article.notInterested {
+            article.notInterested = false
+            try deleteNotInterestedEntries(matching: article, in: context)
+        }
+        try parkOnTodayDeck(article, in: context)
+        LibraryChange.note(article)
+        FreshRSSSyncService().enqueueMutation(for: article, transition: .saved, in: context)
+        try context.save()
+    }
+
+    private func deleteNotInterestedEntries(matching article: Article, in context: ModelContext) throws {
+        for entry in NotInterestedLog.entries(matching: article, in: context) {
+            context.delete(entry)
+        }
+    }
+
+    /// Saved deck items leave Today. A current item promotes the next queued item, the same way `DailyDeckService.advance` does.
+    private func parkOnTodayDeck(_ article: Article, in context: ModelContext) throws {
+        guard let deck = try DailyDeckService().todayDeck(in: context) else { return }
+        let matches = deck.items.filter { $0.article?.id == article.id }
+        guard !matches.isEmpty else { return }
+
+        let wasCurrent = matches.contains { $0.status == .current }
+        for match in matches {
+            match.status = .saved
+        }
+        guard wasCurrent else { return }
+
+        let nextItem = deck.items
+            .filter { $0.status == .queued && $0.article?.id != article.id }
+            .sorted { $0.position < $1.position }
+            .first
+        if let nextItem {
+            nextItem.status = .current
+            if let promoted = nextItem.article {
+                promoted.state = .current
+                promoted.firstDisplayedAt = .now
+                LibraryChange.note(promoted)
+            }
+        }
+        WidgetSnapshotStore.write(article: nextItem?.article)
+    }
 }

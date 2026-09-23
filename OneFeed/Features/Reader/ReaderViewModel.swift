@@ -11,7 +11,9 @@ final class ReaderViewModel {
     let article: Article
     private(set) var isExtracting = false
     private(set) var isSummarizing = false
+    private(set) var isAskingVideo = false
     var summaryError: String?
+    var askError: String?
     private let gemini: GeminiClient
 
     init(article: Article, gemini: GeminiClient = GeminiClient()) {
@@ -33,6 +35,10 @@ final class ReaderViewModel {
 
     var youtubeURL: URL? {
         article.videoID.flatMap { YouTubeProcessor.watchURL(for: $0) } ?? article.url
+    }
+
+    var videoChatMessages: [VideoChatMessage] {
+        VideoChatLog.decode(article.videoChatJSON)
     }
 
     func enrichReadableHTML() async {
@@ -76,15 +82,82 @@ final class ReaderViewModel {
         summaryError = nil
         defer { isSummarizing = false }
         do {
-            let text = try await gemini.summarizeYouTube(url: url)
+            let reply = try await gemini.summarizeYouTube(url: url)
             try Task.checkCancellation()
-            article.aiSummary = text
-            try? article.modelContext?.save()
+            article.aiSummary = reply.text
+            article.videoGeminiInteractionID = reply.id
+            var messages = VideoChatLog.decode(article.videoChatJSON)
+            if messages.isEmpty {
+                messages.append(
+                    VideoChatMessage(
+                        id: UUID(),
+                        role: .model,
+                        text: reply.text,
+                        createdAt: Date()
+                    )
+                )
+            }
+            persistVideoChat(messages)
         } catch is CancellationError {
             return
         } catch {
             summaryError = error.localizedDescription
         }
+    }
+
+    func askAboutVideo(_ question: String) async {
+        let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty else { return }
+        guard let url = youtubeURL else {
+            askError = GeminiClientError.missingVideo.localizedDescription
+            return
+        }
+
+        let recentTurns = videoChatMessages
+        var messages = recentTurns
+        messages.append(
+            VideoChatMessage(
+                id: UUID(),
+                role: .user,
+                text: question,
+                createdAt: Date()
+            )
+        )
+        persistVideoChat(messages)
+
+        isAskingVideo = true
+        askError = nil
+        defer { isAskingVideo = false }
+        do {
+            let reply = try await gemini.askYouTube(
+                url: url,
+                question: question,
+                previousInteractionID: article.videoGeminiInteractionID,
+                summary: article.aiSummary,
+                recentTurns: recentTurns
+            )
+            try Task.checkCancellation()
+            article.videoGeminiInteractionID = reply.id
+            var updated = videoChatMessages
+            updated.append(
+                VideoChatMessage(
+                    id: UUID(),
+                    role: .model,
+                    text: reply.text,
+                    createdAt: Date()
+                )
+            )
+            persistVideoChat(updated)
+        } catch is CancellationError {
+            return
+        } catch {
+            askError = error.localizedDescription
+        }
+    }
+
+    private func persistVideoChat(_ messages: [VideoChatMessage]) {
+        article.videoChatJSON = VideoChatLog.encode(VideoChatLog.trimmed(messages))
+        try? article.modelContext?.save()
     }
 
     private var cachedDocument: (key: String, html: String)?
@@ -104,16 +177,24 @@ final class ReaderViewModel {
             "<p>This book couldn’t be opened. Import the EPUB again.</p>"
         case "pdf":
             "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
+        case "youtube":
+            "<p>Summarize this video to read it here. The video stays available from the switcher above.</p>"
         default:
             "<p>This source only provided metadata. Open the original article to continue reading.</p>"
         }
-        let rawBody = article.readableHTML ?? fallback
+        let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawBody: String
+        if article.contentKind == "youtube", !summary.isEmpty {
+            rawBody = ReaderHTML.videoSummaryBody(from: summary)
+        } else {
+            rawBody = article.readableHTML ?? fallback
+        }
         #if canImport(UIKit)
         let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
         #else
         let typeSize = "standard"
         #endif
-        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)|focus\(ReaderFocus.engineVersion)"
+        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(summary.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)|focus\(ReaderFocus.engineVersion)"
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }

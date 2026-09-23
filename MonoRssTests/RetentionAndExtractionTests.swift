@@ -16,15 +16,43 @@ struct RetentionAndExtractionTests {
         let old = Article(guid: "old", title: "Old", publishedAt: .now.addingTimeInterval(-10 * 86_400), state: .queued, feed: feed)
         let kept = Article(guid: "saved", title: "Saved", publishedAt: .now.addingTimeInterval(-10 * 86_400), state: .saved, feed: feed)
         let fresh = Article(guid: "fresh", title: "Fresh", publishedAt: .now, state: .queued, feed: feed)
+        let noted = Article(
+            guid: "noted",
+            title: "Noted",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            state: .read,
+            readingReactionRawValue: "",
+            readingNote: "  The nonce repeats.  ",
+            feed: feed
+        )
+        let readBare = Article(
+            guid: "read",
+            title: "Read",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            state: .read,
+            readingReactionRawValue: "",
+            readingNote: "",
+            feed: feed
+        )
         context.insert(old)
         context.insert(kept)
         context.insert(fresh)
+        context.insert(noted)
+        context.insert(readBare)
         try context.save()
 
+        #expect(!noted.readingNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(noted.readingReactionRawValue.isEmpty)
+        #expect(readBare.readingNote.isEmpty)
+        #expect(readBare.readingReactionRawValue.isEmpty)
+        #expect(kept.state == .saved)
+
         let removed = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
-        #expect(removed == 1)
+        #expect(removed == 2)
         let remaining = try context.fetch(FetchDescriptor<Article>(sortBy: [SortDescriptor(\.guid)]))
-        #expect(remaining.map(\.guid) == ["fresh", "saved"])
+        #expect(remaining.map(\.guid) == ["fresh", "noted", "saved"])
+        #expect(remaining.first { $0.guid == "noted" }?.readingNote == "  The nonce repeats.  ")
+        #expect(remaining.first { $0.guid == "saved" }?.state == .saved)
     }
 
     @Test func purgeKeepsTodayDeckItemsAndHonorsForever() throws {

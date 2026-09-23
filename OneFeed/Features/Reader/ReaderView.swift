@@ -10,13 +10,21 @@ enum ReaderDisplayMode: String, CaseIterable, Identifiable {
 
     func title(for contentKind: String) -> String {
         switch self {
-        case .reader: "Reader"
-        case .website: contentKind == "pdf" ? "PDF" : "Website"
+        case .reader: contentKind == "youtube" ? "Summary" : "Reader"
+        case .website:
+            if contentKind == "pdf" { "PDF" }
+            else if contentKind == "youtube" { "Video" }
+            else { "Website" }
         }
     }
 }
 
 struct ReaderView: View {
+    private enum GeminiKeyFollowUp {
+        case summarize
+        case ask
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -29,21 +37,33 @@ struct ReaderView: View {
     @State private var mode: ReaderDisplayMode
     @State private var isPresentingBrowser = false
     @State private var showingFocusSheet = false
+    @State private var showingTakeaway = false
+    @State private var pendingReadFinish = false
     @State private var savePulse = 0
     @State private var donePulse = 0
     @State private var skipPulse = 0
     @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
     @State private var showingAPIKeySheet = false
+    @State private var showingVideoChat = false
     @State private var geminiKey = ""
+    @State private var geminiKeyFollowUp: GeminiKeyFollowUp?
+    @State private var openVideoChatAfterKey = false
     let onFinish: (ArticleState) -> Void
     var onClose: (() -> Void)?
+    var onPutInQueue: (() -> Void)?
 
-    init(article: Article, onFinish: @escaping (ArticleState) -> Void, onClose: (() -> Void)? = nil) {
+    init(
+        article: Article,
+        onFinish: @escaping (ArticleState) -> Void,
+        onClose: (() -> Void)? = nil,
+        onPutInQueue: (() -> Void)? = nil
+    ) {
         _viewModel = State(initialValue: ReaderViewModel(article: article))
         _mode = State(initialValue: Self.initialMode(for: article))
         self.onFinish = onFinish
         self.onClose = onClose
+        self.onPutInQueue = onPutInQueue
     }
 
     private func closeReader() {
@@ -60,7 +80,6 @@ struct ReaderView: View {
                 #if os(macOS)
                 readerTopBar
                 #endif
-                youtubeSummaryBanner
                 articleCanvas
                 #if os(macOS)
                 readerBottomBar
@@ -78,10 +97,15 @@ struct ReaderView: View {
                     OneFeedDecisionCurtain(state: decision)
                 }
             }
-            .animation(OneFeedMotion.decision, value: decision)
-            .animation(OneFeedMotion.overlay, value: viewModel.isExtracting)
-            .animation(OneFeedMotion.overlay, value: viewModel.isSummarizing)
-            .animation(OneFeedMotion.page, value: mode)
+            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isExtracting)
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isSummarizing)
+            .animation(reduceMotion ? nil : OneFeedMotion.page, value: mode)
+            .onChange(of: viewModel.hasAISummary) { _, ready in
+                if ready, article.contentKind == "youtube" {
+                    mode = .reader
+                }
+            }
             #if os(macOS)
             .toolbar(.hidden)
             #endif
@@ -104,8 +128,9 @@ struct ReaderView: View {
                 }
                 ToolbarItem(placement: .oneFeedTrailing) {
                     HStack(spacing: 10) {
-                        if viewModel.isExtracting {
+                        if viewModel.isExtracting || viewModel.isSummarizing {
                             OneFeedMarkPulse(isActive: true, size: 18)
+                                .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
                         }
                         if showsReadingOptions {
                             readingOptionsMenu
@@ -126,17 +151,13 @@ struct ReaderView: View {
             }
             .confirmationDialog("Summarize this video?", isPresented: $showingSummaryPrompt, titleVisibility: .visible) {
                 Button("Summarize") {
-                    if GeminiAPIKeyStore.load() == nil {
-                        showingAPIKeySheet = true
-                    } else {
-                        Task { await viewModel.summarizeYouTube() }
-                    }
+                    summarizeVideoIfReady()
                 }
                 Button("Not now", role: .cancel) {
                     viewModel.declineYouTubeSummary()
                 }
             } message: {
-                Text("Gemini can write a short summary from the YouTube link. This uses your Google AI Studio key.")
+                Text("Gemini writes a short article from the video, in this same reader. This uses your Google AI Studio key.")
             }
             .alert("Couldn’t summarize", isPresented: Binding(
                 get: { viewModel.summaryError != nil && !viewModel.isSummarizing },
@@ -150,15 +171,46 @@ struct ReaderView: View {
             .sheet(isPresented: $showingFocusSheet) {
                 ReaderFocusSheet(mode: $focusMode, intensity: $focusIntensity)
             }
-            .sheet(isPresented: $showingAPIKeySheet) {
+            .sheet(isPresented: $showingTakeaway, onDismiss: {
+                if pendingReadFinish {
+                    pendingReadFinish = false
+                    finish(.read)
+                }
+            }) {
+                ReadingTakeawaySheet(article: article)
+            }
+            .sheet(isPresented: $showingAPIKeySheet, onDismiss: {
+                guard openVideoChatAfterKey else { return }
+                openVideoChatAfterKey = false
+                showingVideoChat = true
+            }) {
                 GeminiAPIKeyForm(key: $geminiKey) {
                     GeminiAPIKeyStore.save(geminiKey)
                     showingAPIKeySheet = false
-                    if GeminiAPIKeyStore.load() != nil {
+                    let followUp = geminiKeyFollowUp
+                    geminiKeyFollowUp = nil
+                    guard GeminiAPIKeyStore.load() != nil else { return }
+                    switch followUp {
+                    case .summarize:
                         Task { await viewModel.summarizeYouTube() }
+                    case .ask:
+                        openVideoChatAfterKey = true
+                    case nil:
+                        break
                     }
                 }
                 .onAppear { geminiKey = GeminiAPIKeyStore.load() ?? "" }
+            }
+            .sheet(isPresented: $showingVideoChat) {
+                VideoChatSheet(viewModel: viewModel)
+                    .alert("Couldn’t ask", isPresented: Binding(
+                        get: { viewModel.askError != nil && !viewModel.isAskingVideo },
+                        set: { if !$0 { viewModel.askError = nil } }
+                    )) {
+                        Button("OK", role: .cancel) { viewModel.askError = nil }
+                    } message: {
+                        Text(viewModel.askError ?? "")
+                    }
             }
         }
     }
@@ -194,7 +246,7 @@ struct ReaderView: View {
     private var readerAccessibilityActions: some View {
         VStack(spacing: 8) {
             Button {
-                finish(.read)
+                beginFinishRead()
             } label: {
                 Label("Done", systemImage: "checkmark")
             }
@@ -228,7 +280,8 @@ struct ReaderView: View {
             readerBarItem(
                 "Queue",
                 systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: "Adds this to Queue"
+                hint: "Adds this to Queue",
+                accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
             ) {
                 finish(.saved)
             }
@@ -241,12 +294,12 @@ struct ReaderView: View {
                 }
             }
             readerBarItem("Done", systemImage: "checkmark", hint: "Marks this article done", emphasized: true) {
-                finish(.read)
+                beginFinishRead()
             }
             ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
                 ReaderBarItemLabel(title: "Share", systemImage: "square.and.arrow.up")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ReaderBarPressStyle())
             .disabled(shareURL == nil || decision != nil)
             .accessibilityLabel("Share")
             .frame(maxWidth: .infinity)
@@ -279,22 +332,30 @@ struct ReaderView: View {
         systemImage: String,
         hint: String,
         emphasized: Bool = false,
+        accessibilityLabel: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             ReaderBarItemLabel(title: title, systemImage: systemImage, emphasized: emphasized)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderBarPressStyle())
         .disabled(decision != nil)
-        .accessibilityLabel(title)
+        .accessibilityLabel(accessibilityLabel ?? title)
         .accessibilityHint(hint)
         .frame(maxWidth: .infinity)
     }
     #endif
 
     private func finishNotInterested() {
+        ReadingUndo.begin(article, in: modelContext)
         NotInterestedLog.record(article, in: modelContext)
         finish(.skipped)
+    }
+
+    private func beginFinishRead() {
+        guard decision == nil, !showingTakeaway else { return }
+        pendingReadFinish = true
+        showingTakeaway = true
     }
 
     private func finish(_ state: ArticleState) {
@@ -352,6 +413,16 @@ struct ReaderView: View {
                     Text(size.label).tag(size.rawValue)
                 }
             }
+            Divider()
+            if onPutInQueue != nil {
+                Button("Put in Queue", systemImage: "square.stack") {
+                    onPutInQueue?()
+                }
+            }
+            Button("Not interested", systemImage: "hand.thumbsdown") {
+                finishNotInterested()
+            }
+            .disabled(decision != nil)
             #if os(iOS)
             if dynamicTypeSize.isAccessibilitySize {
                 Divider()
@@ -372,16 +443,19 @@ struct ReaderView: View {
             if article.contentKind == "youtube" {
                 Divider()
                 Button("Summarize video", systemImage: "text.quote") {
-                    if GeminiAPIKeyStore.load() == nil {
-                        showingAPIKeySheet = true
-                    } else {
-                        Task { await viewModel.summarizeYouTube() }
-                    }
+                    summarizeVideoIfReady()
                 }
                 .disabled(viewModel.isSummarizing)
+                Button("Ask about this video", systemImage: "text.bubble") {
+                    askAboutVideoIfReady()
+                }
             }
         } label: {
             Image(systemName: "textformat.size")
+                #if os(macOS)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                #endif
         }
         .accessibilityLabel("Reading options")
     }
@@ -394,10 +468,12 @@ struct ReaderView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.body.weight(.semibold))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .keyboardShortcut(.cancelAction)
             .help("Close")
             .accessibilityLabel("Close")
@@ -415,11 +491,13 @@ struct ReaderView: View {
             if showsReadingOptions {
                 readingOptionsMenu
                     .menuStyle(.borderlessButton)
-                    .frame(width: 28, height: 28)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
             }
 
-            if viewModel.isExtracting {
+            if viewModel.isExtracting || viewModel.isSummarizing {
                 OneFeedMarkPulse(isActive: true, size: 18)
+                    .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
             }
         }
         .padding(.horizontal, 16)
@@ -437,7 +515,12 @@ struct ReaderView: View {
     private var readerBottomBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
-                readerBarButton("Queue", systemImage: "square.stack", help: "Add this to Queue") {
+                readerBarButton(
+                    "Queue",
+                    systemImage: "square.stack",
+                    help: "Add this to Queue",
+                    accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
+                ) {
                     finish(.saved)
                 }
                 .disabled(decision != nil)
@@ -453,7 +536,7 @@ struct ReaderView: View {
             }
             .frame(maxWidth: .infinity)
             readerBarButton("Done", systemImage: "checkmark", help: "Mark this article done", emphasized: true) {
-                finish(.read)
+                beginFinishRead()
             }
             .disabled(decision != nil)
             .frame(width: 88)
@@ -489,14 +572,15 @@ struct ReaderView: View {
         systemImage: String,
         help: String,
         emphasized: Bool = false,
+        accessibilityLabel: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             ReaderBarGlyph(title: title, systemImage: systemImage, emphasized: emphasized)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ReaderBarPressStyle())
         .help(help)
-        .accessibilityLabel(title)
+        .accessibilityLabel(accessibilityLabel ?? title)
         .accessibilityHint(help)
     }
     #endif
@@ -573,7 +657,10 @@ struct ReaderView: View {
             return article.readableHTML == nil ? .website : .reader
         }
         if article.isImportedDocument { return .reader }
-        if article.contentKind == "youtube", article.videoID != nil || article.url != nil { return .website }
+        if article.contentKind == "youtube" {
+            let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return summary.isEmpty ? .website : .reader
+        }
         if article.readableHTML == nil, article.url != nil { return .website }
         return .reader
     }
@@ -590,37 +677,32 @@ struct ReaderView: View {
         WebsiteReaderPane(url: url, title: article.title, isVideo: article.contentKind == "youtube")
     }
 
-    @ViewBuilder
-    private var youtubeSummaryBanner: some View {
-        if article.contentKind != "youtube" {
-            EmptyView()
-        } else if viewModel.isSummarizing {
-            HStack(spacing: 12) {
-                OneFeedMarkPulse(isActive: true, size: 18)
-                GalleryLabel(text: "Summarizing")
-            }
-            .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(OneFeedTheme.sand).frame(height: 1)
-            }
-            .transition(.opacity)
-        } else if let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
-            ScrollView {
-                Text(summary)
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(OneFeedTheme.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxHeight: 160)
-            .padding(.horizontal, OneFeedTheme.pagePadding)
-            .padding(.vertical, 16)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(OneFeedTheme.sand).frame(height: 1)
-            }
-            .transition(.opacity)
+    private func summarizeVideoIfReady() {
+        if GeminiAPIKeyStore.load() == nil {
+            geminiKeyFollowUp = .summarize
+            showingAPIKeySheet = true
+        } else {
+            Task { await viewModel.summarizeYouTube() }
         }
+    }
+
+    private func askAboutVideoIfReady() {
+        if GeminiAPIKeyStore.load() == nil {
+            geminiKeyFollowUp = .ask
+            showingAPIKeySheet = true
+        } else {
+            showingVideoChat = true
+        }
+    }
+}
+
+private struct ReaderBarPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
+            .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -629,6 +711,7 @@ private struct ReaderBarItemLabel: View {
     let systemImage: String
     var emphasized = false
     @ScaledMetric(relativeTo: .body) private var iconSize = 32.0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 4) {
@@ -646,8 +729,8 @@ private struct ReaderBarItemLabel: View {
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(OneFeedTheme.ink)
                 .multilineTextAlignment(.center)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.8)
         }
         .frame(maxWidth: .infinity)
         .frame(minHeight: 52)
@@ -829,6 +912,7 @@ private struct ReaderWebContent: View {
             }
             .frame(width: 7, height: 7)
             .frame(width: 44, height: 28)
+            .padding(.top, 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -1,8 +1,10 @@
 import Foundation
 import SwiftData
 
-/// Drops old unread/unkept articles so the on-device library stays small.
-/// Items in Queue and anything in today's stack are never purged.
+/// Drops old stories so the on-device library stays small.
+/// Unread stories older than the period are removed, along with read and skipped
+/// stories that have no takeaway. Queue, today's stack, and stories with a
+/// takeaway stay.
 @MainActor
 struct ArticleRetentionService {
     nonisolated static let defaultRetentionDays = 7
@@ -47,6 +49,7 @@ struct ArticleRetentionService {
         var removed = 0
         for article in candidates {
             if keptIDs.contains(article.id) { continue }
+            if Self.hasTakeaway(article) { continue }
             if article.isImportedDocument {
                 ImportedDocumentStore.shared.removeFiles(for: article)
             }
@@ -55,5 +58,11 @@ struct ArticleRetentionService {
         }
         if persist, removed > 0 { try context.save() }
         return removed
+    }
+
+    /// A note or a reaction is a takeaway. Whitespace-only notes do not count.
+    nonisolated private static func hasTakeaway(_ article: Article) -> Bool {
+        !article.readingNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !article.readingReactionRawValue.isEmpty
     }
 }

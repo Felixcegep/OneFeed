@@ -87,4 +87,44 @@ struct ArticleStateTests {
         #expect(saved.isRemoteStarred)
         #expect(FeedFolderGrouping.savedArticles(from: [saved]).isEmpty)
     }
+
+    @Test func moveToQueueKeepsNoteRatingAndClearsNotInterested() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let finished = Date(timeIntervalSince1970: 1_700_000_000)
+        let article = Article(
+            guid: "read-note",
+            title: "Read with a note",
+            url: URL(string: "https://source.test/read-note"),
+            state: .read,
+            rating: 4,
+            notInterested: true,
+            readingNote: "The nonce repeats.",
+            feed: feed
+        )
+        article.completedAt = finished
+        context.insert(article)
+        NotInterestedLog.record(article, in: context)
+        let unrelated = NotInterestedEntry(
+            articleTitle: "Something else",
+            articleURL: "https://source.test/other",
+            articleGUID: "other-guid",
+            sourceTitle: "Source",
+            sourceFeedURL: "https://source.test/rss"
+        )
+        context.insert(unrelated)
+        try context.save()
+
+        try ArticleQueueService().moveToQueue(article, in: context)
+
+        #expect(article.state == .saved)
+        #expect(article.readingNote == "The nonce repeats.")
+        #expect(article.rating == 4)
+        #expect(!article.notInterested)
+        #expect(article.isRemoteStarred)
+        #expect(article.completedAt == finished)
+        let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
+        #expect(entries.map(\.articleGUID) == ["other-guid"])
+    }
 }

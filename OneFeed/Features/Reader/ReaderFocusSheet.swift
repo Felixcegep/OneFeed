@@ -23,7 +23,7 @@ struct ReaderFocusSheet: View {
             .oneFeedInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button("Close") { dismiss() }
                 }
             }
         }
