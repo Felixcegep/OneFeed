@@ -20,25 +20,7 @@ final class SourcesViewModel {
     }
 
     var folders: [FeedFolderGroup] {
-        let occupied = FeedFolderGrouping.groups(from: feeds)
-        var named: [String: [Feed]] = [:]
-        var unfiled: [Feed] = []
-        for group in occupied {
-            switch group.folderID {
-            case .named(let name): named[name] = group.feeds
-            case .unfiled: unfiled = group.feeds
-            }
-        }
-        for name in FolderStore.knownNames() where named[name] == nil {
-            // Preserve canonical casing from FolderStore when no feeds yet.
-            if named.keys.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) { continue }
-            named[name] = []
-        }
-        let namedGroups = named.keys
-            .sorted(by: FeedFolderGrouping.compareFolderNames)
-            .map { FeedFolderGroup(folderID: .named($0), feeds: named[$0] ?? []) }
-        if unfiled.isEmpty { return namedGroups }
-        return namedGroups + [FeedFolderGroup(folderID: .unfiled, feeds: unfiled)]
+        FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
     }
 
     var folderNames: [String] { FolderStore.allNames(from: feeds) }
@@ -57,14 +39,26 @@ final class SourcesViewModel {
         reload()
     }
 
-    func move(_ feed: Feed, to folderName: String?) {
-        guard let context else { return }
-        let trimmed = folderName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        feed.folderName = (trimmed?.isEmpty == false) ? trimmed : nil
-        if let trimmed, !trimmed.isEmpty { FolderStore.remember(trimmed) }
+    func add(_ feed: Feed, to folderName: String) {
+        guard let context, feed.addFolder(folderName) else { return }
         LibraryChange.note(feed)
         try? context.save()
         reload()
+    }
+
+    func remove(_ feed: Feed, from folderName: String) {
+        guard let context, feed.removeFolder(folderName) else { return }
+        LibraryChange.note(feed)
+        try? context.save()
+        reload()
+    }
+
+    func toggle(_ feed: Feed, folder folderName: String) {
+        if feed.containsFolder(folderName) {
+            remove(feed, from: folderName)
+        } else {
+            add(feed, to: folderName)
+        }
     }
 
     func importAllSeededSources() {
@@ -230,24 +224,41 @@ final class SourceDetailViewModel {
         availableFolders = FolderStore.allNames(from: feeds)
     }
 
-    var folderSelection: String {
-        get { feed.folderName ?? "" }
-        set {
-            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            feed.folderName = trimmed.isEmpty ? nil : trimmed
-            if !trimmed.isEmpty { FolderStore.remember(trimmed) }
-            LibraryChange.note(feed)
-            try? context.save()
+    func addFolder(_ name: String) {
+        feed.addFolder(name)
+        LibraryChange.note(feed)
+        try? context.save()
+        reloadFolders()
+    }
+
+    func toggleFolder(_ name: String) {
+        if feed.containsFolder(name) {
+            feed.removeFolder(name)
+        } else {
+            feed.addFolder(name)
         }
+        LibraryChange.note(feed)
+        try? context.save()
+        reloadFolders()
     }
 
     var isEnabled: Bool {
         get { feed.isEnabled }
-        set { feed.isEnabled = newValue; LibraryChange.note(feed); try? context.save() }
+        set { updateTodayMembership { feed.isEnabled = newValue } }
     }
     var includeInToday: Bool {
         get { feed.includeInToday }
-        set { feed.includeInToday = newValue; LibraryChange.note(feed); try? context.save() }
+        set { updateTodayMembership { feed.includeInToday = newValue } }
+    }
+
+    private func updateTodayMembership(_ change: () -> Void) {
+        change()
+        LibraryChange.note(feed)
+        do {
+            try DailyDeckService.reconcileMembership(in: context)
+        } catch {
+            try? context.save()
+        }
     }
     var includeVideos: Bool {
         get { feed.includeVideos }

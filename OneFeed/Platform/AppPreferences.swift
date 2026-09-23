@@ -65,6 +65,7 @@ enum AppPreferenceKey {
     static let readerFocusIntensity = "readerFocusIntensity"
     static let readerFocusZoneY = "readerFocusZoneY"
     static let didSeedTinyRSSCatalog = "didSeedTinyRSSCatalog"
+    static let didSeeTakeawayHint = "didSeeTakeawayHint"
     static let seedCatalogVersion = "seedCatalogVersion"
     static let articleRetentionDays = "articleRetentionDays"
     static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
@@ -81,17 +82,26 @@ enum AppPreferenceKey {
 enum FolderStore {
     nonisolated static func knownNames() -> [String] {
         let stored = UserDefaults.standard.stringArray(forKey: AppPreferenceKey.knownFolderNames) ?? []
-        return normalize(stored)
+        return dedupePreservingOrder(stored)
+    }
+
+    /// Writes the folder order shown on Feed. Names already known but missing from `names` stay at the end.
+    nonisolated static func setOrder(_ names: [String]) {
+        var ordered = dedupePreservingOrder(names)
+        var seen = Set(ordered.map { $0.lowercased() })
+        for name in knownNames() where seen.insert(name.lowercased()).inserted {
+            ordered.append(name)
+        }
+        UserDefaults.standard.set(ordered, forKey: AppPreferenceKey.knownFolderNames)
     }
 
     nonisolated static func remember(_ names: [String]) {
-        var merged = Set(knownNames())
-        for name in names {
-            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            merged.insert(trimmed)
+        var ordered = knownNames()
+        var seen = Set(ordered.map { $0.lowercased() })
+        for name in dedupePreservingOrder(names) where seen.insert(name.lowercased()).inserted {
+            ordered.append(name)
         }
-        UserDefaults.standard.set(normalize(Array(merged)), forKey: AppPreferenceKey.knownFolderNames)
+        UserDefaults.standard.set(ordered, forKey: AppPreferenceKey.knownFolderNames)
     }
 
     nonisolated static func remember(_ name: String) {
@@ -105,18 +115,27 @@ enum FolderStore {
         FolderEmoji.remove(for: trimmed)
     }
 
-    /// Known empty folders plus folders that already contain feeds.
+    /// Known empty folders plus folders that already contain feeds. Existing order is kept.
     nonisolated static func allNames(from feeds: [Feed]) -> [String] {
-        var names = Set(knownNames())
+        var ordered = knownNames()
+        var seen = Set(ordered.map { $0.lowercased() })
         for feed in feeds {
-            if let folder = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
-                names.insert(folder)
+            for folder in feed.memberships {
+                let trimmed = folder.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                if seen.insert(trimmed.lowercased()).inserted {
+                    ordered.append(trimmed)
+                }
             }
         }
-        return normalize(Array(names))
+        return ordered
     }
 
     nonisolated static func normalize(_ names: [String]) -> [String] {
+        dedupePreservingOrder(names)
+    }
+
+    nonisolated private static func dedupePreservingOrder(_ names: [String]) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
         for name in names {
@@ -126,6 +145,6 @@ enum FolderStore {
             guard seen.insert(key).inserted else { continue }
             ordered.append(trimmed)
         }
-        return ordered.sorted(by: FeedFolderGrouping.compareFolderNames)
+        return ordered
     }
 }

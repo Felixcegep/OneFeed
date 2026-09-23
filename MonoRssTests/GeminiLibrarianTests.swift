@@ -204,6 +204,73 @@ struct GeminiLibrarianTests {
         #expect(try context.fetch(FetchDescriptor<Feed>()).isEmpty)
     }
 
+    @Test @MainActor func librarianKeepsExtraFoldersUntilMove() async throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(
+            title: "The Verge",
+            websiteURL: URL(string: "https://www.theverge.com"),
+            feedURL: URL(string: "https://www.theverge.com/rss/index.xml")!,
+            folderName: "Librarian Home"
+        )
+        context.insert(feed)
+        try context.save()
+        defer {
+            FolderStore.remove("Librarian Home")
+            FolderStore.remove("Librarian Extra")
+            FolderStore.remove("Librarian Only")
+        }
+
+        let librarian = GeminiLibrarian(
+            feedService: InsertingFeedRepository(),
+            freshRSSService: LocalFreshRSSService()
+        )
+
+        let added = await librarian.perform(
+            GeminiFunctionCall(name: "add_to_folder", arguments: [
+                "source": "The Verge",
+                "folder": "Librarian Extra"
+            ]),
+            in: context,
+            allowRemoval: false
+        )
+        #expect(added.ok)
+        #expect(feed.memberships.contains("Librarian Home"))
+        #expect(feed.memberships.contains("Librarian Extra"))
+        #expect(try context.fetch(FetchDescriptor<Feed>()).count == 1)
+
+        let searched = await librarian.perform(
+            GeminiFunctionCall(name: "search_sources", arguments: ["query": "Verge"]),
+            in: context,
+            allowRemoval: false
+        )
+        #expect(searched.ok)
+        #expect(searched.message.contains("Librarian Home"))
+        #expect(searched.message.contains("Librarian Extra"))
+
+        let removed = await librarian.perform(
+            GeminiFunctionCall(name: "remove_from_folder", arguments: [
+                "source": "The Verge",
+                "folder": "Librarian Extra"
+            ]),
+            in: context,
+            allowRemoval: false
+        )
+        #expect(removed.ok)
+        #expect(feed.memberships == ["Librarian Home"])
+
+        let moved = await librarian.perform(
+            GeminiFunctionCall(name: "move_source", arguments: [
+                "source": "The Verge",
+                "folder": "Librarian Only"
+            ]),
+            in: context,
+            allowRemoval: false
+        )
+        #expect(moved.ok)
+        #expect(feed.memberships == ["Librarian Only"])
+        #expect(feed.folderName == "Librarian Only")
+    }
+
     @Test @MainActor func librarianViewModelAsksBeforeRemoving() async throws {
         let context = try InMemoryStore.makeContext()
         let feed = Feed(

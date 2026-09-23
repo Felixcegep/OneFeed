@@ -171,6 +171,7 @@ struct SourcesView: View {
 
 private struct FolderRow: View {
     let folder: FeedFolderGroup
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
@@ -178,12 +179,12 @@ private struct FolderRow: View {
                 Text(folder.name)
                     .font(.body)
                     .foregroundStyle(OneFeedTheme.ink)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 if let preview {
                     Text(preview)
                         .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)
-                        .lineLimit(2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                         .multilineTextAlignment(.leading)
                 }
             }
@@ -222,6 +223,13 @@ private struct FolderFeedsView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var searchText = ""
 
+    private var otherFolders: [String] {
+        viewModel.folderNames.filter { name in
+            guard case .named(let current) = folderID else { return true }
+            return name.caseInsensitiveCompare(current) != .orderedSame
+        }
+    }
+
     private var visibleFeeds: [Feed] {
         let feeds = viewModel.feeds(in: folderID)
         guard !searchText.isEmpty else { return feeds }
@@ -255,14 +263,26 @@ private struct FolderFeedsView: View {
                     NavigationLink {
                         SourceDetailView(feed: feed, context: modelContext)
                     } label: {
-                        SourceRow(feed: feed)
+                        SourceRow(feed: feed, folderID: folderID)
                     }
                     .sourceManageRow()
                     .contextMenu {
-                        Menu("Move to Folder") {
-                            Button("Unfiled") { viewModel.move(feed, to: nil) }
-                            ForEach(viewModel.folderNames, id: \.self) { name in
-                                Button(name) { viewModel.move(feed, to: name) }
+                        Menu("Also in…") {
+                            ForEach(otherFolders, id: \.self) { name in
+                                Button {
+                                    viewModel.toggle(feed, folder: name)
+                                } label: {
+                                    if feed.containsFolder(name) {
+                                        Label(name, systemImage: "checkmark")
+                                    } else {
+                                        Text(name)
+                                    }
+                                }
+                            }
+                        }
+                        if case .named(let current) = folderID {
+                            Button("Remove from \(current)") {
+                                viewModel.remove(feed, from: current)
                             }
                         }
                     }
@@ -284,6 +304,8 @@ private struct FolderFeedsView: View {
 
 private struct SourceRow: View {
     let feed: Feed
+    var folderID: FeedFolderID? = nil
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(spacing: 12) {
@@ -297,17 +319,28 @@ private struct SourceRow: View {
                 Text(feed.title)
                     .font(.body)
                     .foregroundStyle(OneFeedTheme.ink)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                if let alsoIn {
+                    Text(alsoIn)
+                        .font(.subheadline)
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                }
                 Text(subtitle)
                     .font(.subheadline)
                     .foregroundStyle(OneFeedTheme.graphite)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minHeight: 44)
         .accessibilityElement(children: .combine)
         .accessibilityHint(feed.isEnabled ? "Opens source details" : "Paused. Opens source details")
+    }
+
+    private var alsoIn: String? {
+        guard case .named(let name) = folderID else { return nil }
+        return feed.alsoInLine(excluding: name)
     }
 
     private var symbol: String {
@@ -367,15 +400,31 @@ private struct SourceDetailView: View {
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
-                Picker("Folder", selection: $viewModel.folderSelection) {
-                    Text("Unfiled").tag("")
-                    ForEach(viewModel.availableFolders, id: \.self) { name in
-                        Text(name).tag(name)
+                if viewModel.availableFolders.isEmpty {
+                    Text("No folders yet")
+                        .foregroundStyle(OneFeedTheme.graphite)
+                }
+                ForEach(viewModel.availableFolders, id: \.self) { name in
+                    Button {
+                        viewModel.toggleFolder(name)
+                    } label: {
+                        HStack {
+                            Text(name)
+                                .foregroundStyle(OneFeedTheme.ink)
+                            Spacer()
+                            if viewModel.feed.containsFolder(name) {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(OneFeedTheme.ink)
+                            }
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
                 Button("New Folder…") { isCreatingFolder = true }
+            } header: {
+                Text("Folders")
             } footer: {
-                Text("Folders keep Must read separate from skim noise.")
+                Text("This source can live in more than one folder. Uncheck a folder to take it out of that list.")
             }
             Section {
                 Toggle("Included in Feed", isOn: $viewModel.isEnabled)
@@ -430,12 +479,12 @@ private struct SourceDetailView: View {
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)
             Button("Cancel", role: .cancel) { newFolderName = "" }
-            Button("Move Here") {
+            Button("Add Here") {
                 let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else { return }
                 FolderStore.remember(name)
                 viewModel.reloadFolders()
-                viewModel.folderSelection = name
+                viewModel.addFolder(name)
                 newFolderName = ""
             }
         }
@@ -536,7 +585,7 @@ struct AddSourceView: View {
                     .transition(.opacity)
                 }
             }
-            .animation(OneFeedMotion.decision, value: showSuccess)
+            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
             .oneFeedPaperScreen()

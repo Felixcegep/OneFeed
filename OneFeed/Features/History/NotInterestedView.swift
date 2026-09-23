@@ -158,16 +158,17 @@ struct NotInterestedView: View {
     private func sourceDetail(for group: NotInterestedSourceGroup, feed: Feed?) -> String {
         let count = group.count == 1 ? "1 article" : "\(group.count) articles"
         guard let feed else { return "\(count) · source removed" }
-        if feed.folderName?.caseInsensitiveCompare(NotInterestedLog.archiveFolderName) == .orderedSame {
+        if feed.memberships.count == 1, feed.containsFolder(NotInterestedLog.archiveFolderName) {
             return "\(count) · Archive"
         }
+        var parts = [count]
+        if !feed.memberships.isEmpty {
+            parts.append(feed.memberships.joined(separator: ", "))
+        }
         if !feed.includeInToday {
-            return "\(count) · not in Today"
+            parts.append("not in Today")
         }
-        if let folder = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
-            return "\(count) · \(folder)"
-        }
-        return count
+        return parts.joined(separator: " · ")
     }
 
     private func sourcePrompt(for group: NotInterestedSourceGroup) -> String {

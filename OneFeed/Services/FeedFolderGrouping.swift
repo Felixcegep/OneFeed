@@ -101,20 +101,60 @@ enum FeedFolderGrouping {
     static func groups(from feeds: [Feed]) -> [FeedFolderGroup] {
         var buckets: [FeedFolderID: [Feed]] = [:]
         for feed in feeds {
-            let name = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let id: FeedFolderID = name.isEmpty ? .unfiled : .named(name)
-            buckets[id, default: []].append(feed)
+            let names = feed.memberships
+            if names.isEmpty {
+                buckets[.unfiled, default: []].append(feed)
+                continue
+            }
+            for name in names {
+                buckets[.named(name), default: []].append(feed)
+            }
         }
         let named = buckets
             .filter { $0.key != .unfiled }
             .sorted { lhs, rhs in
-                compareFolderNames(lhs.key.title, rhs.key.title)
+                folderPrecedes(lhs.key.title, rhs.key.title)
             }
             .map { FeedFolderGroup(folderID: $0.key, feeds: $0.value.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }) }
         if let unfiled = buckets[.unfiled], !unfiled.isEmpty {
             return named + [FeedFolderGroup(folderID: .unfiled, feeds: unfiled.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending })]
         }
         return named
+    }
+
+    /// Occupied folders plus remembered folders that do not yet contain a source.
+    static func groupsIncludingKnownEmpty(from feeds: [Feed]) -> [FeedFolderGroup] {
+        let occupied = groups(from: feeds)
+        var named: [String: [Feed]] = [:]
+        var unfiled: [Feed] = []
+        for group in occupied {
+            switch group.folderID {
+            case .named(let name): named[name] = group.feeds
+            case .unfiled: unfiled = group.feeds
+            }
+        }
+        for name in FolderStore.knownNames() where named[name] == nil {
+            if named.keys.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) { continue }
+            named[name] = []
+        }
+        let namedGroups = named.keys
+            .sorted(by: folderPrecedes)
+            .map { FeedFolderGroup(folderID: .named($0), feeds: named[$0] ?? []) }
+        if unfiled.isEmpty { return namedGroups }
+        return namedGroups + [FeedFolderGroup(folderID: .unfiled, feeds: unfiled)]
+    }
+
+    /// User order from Feed, then the seeded order, then alphabetical.
+    nonisolated static func folderPrecedes(_ lhs: String, _ rhs: String) -> Bool {
+        let stored = FolderStore.knownNames()
+        let li = stored.firstIndex { $0.caseInsensitiveCompare(lhs) == .orderedSame }
+        let ri = stored.firstIndex { $0.caseInsensitiveCompare(rhs) == .orderedSame }
+        switch (li, ri) {
+        case let (l?, r?) where l != r: return l < r
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return compareFolderNames(lhs, rhs)
+        }
     }
 
     /// Seeded cadence/topic order first, then alphabetical extras.

@@ -35,6 +35,25 @@ struct FolderEmojiTests {
         FolderEmoji.resetStored()
     }
 
+    @Test func draggedFolderOrderIsKept() {
+        let names = ["Zed Folder", "Alpha Folder", "Middle Folder"]
+        defer { names.forEach(FolderStore.remove) }
+        FolderStore.setOrder(names)
+        FolderStore.remember("Tail Folder")
+        let stored = FolderStore.knownNames()
+        let zed = stored.firstIndex(of: "Zed Folder")
+        let alpha = stored.firstIndex(of: "Alpha Folder")
+        let middle = stored.firstIndex(of: "Middle Folder")
+        let tail = stored.firstIndex(of: "Tail Folder")
+        #expect(zed != nil && alpha != nil && middle != nil && tail != nil)
+        #expect(zed! < alpha! && alpha! < middle! && middle! < tail!)
+
+        let feeds = names.map { name in
+            Feed(title: name, feedURL: URL(string: "https://example.com/\(name.replacingOccurrences(of: " ", with: "-"))")!, folderName: name)
+        }
+        #expect(FeedFolderGrouping.groups(from: feeds).map(\.name) == names)
+    }
+
     @Test func unknownFoldersStayStableAcrossCalls() {
         FolderEmoji.resetStored()
         let first = FolderEmoji.glyph(for: "Deep Cuts")

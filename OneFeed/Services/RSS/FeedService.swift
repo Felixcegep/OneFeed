@@ -297,10 +297,7 @@ final class FeedService {
         let folder = (normalizedFolder?.isEmpty == false) ? normalizedFolder : nil
         let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
         if let existing = try context.fetch(descriptor).first {
-            if let folder, existing.folderName != folder {
-                existing.folderName = folder
-                existing.touchLibrary()
-                FolderStore.remember(folder)
+            if let folder, existing.addFolder(folder) {
                 try context.save()
                 LibraryChange.noteStructureChanged()
             }
@@ -338,10 +335,8 @@ final class FeedService {
         let folder = (normalizedFolder?.isEmpty == false) ? normalizedFolder : nil
         let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == url })
         if let existing = try context.fetch(descriptor).first {
-            if let folder, existing.folderName != folder {
-                existing.folderName = folder
-                existing.touchLibrary()
-                FolderStore.remember(folder)
+            if let folder {
+                existing.addFolder(folder)
             }
             if !existing.refreshesOverRSS {
                 existing.contentKind = contentKind

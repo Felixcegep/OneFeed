@@ -42,8 +42,7 @@ struct FeedSeedService {
             let key = entry.url.absoluteString
             if let feed = byURL[key] {
                 var changed = false
-                if feed.folderName != entry.folder {
-                    feed.folderName = entry.folder
+                if feed.addFolder(entry.folder) {
                     changed = true
                 }
                 if feed.title != entry.title {

@@ -28,6 +28,7 @@ final class ExperimentalLibrarianViewModel {
         "What sources are in Today?",
         "Make a folder called Newsletters",
         "Move a noisy source out of Today",
+        "Also put a source in another folder",
         "Review what I'm not interested in"
     ]
 
@@ -179,7 +180,9 @@ final class ExperimentalLibrarianViewModel {
                 return false
             }
             openResponses.append(Self.functionResponse(name: call.name, result: result))
-            if call.name != "list_library" && call.name != "list_not_interested" {
+            if call.name != "list_library"
+                && call.name != "list_not_interested"
+                && call.name != "search_sources" {
                 logs.append(result.message)
             }
         }
@@ -262,7 +265,7 @@ struct ExperimentalLibrarianView: View {
             }
         }
         .oneFeedTabBarClearance()
-        .navigationTitle("Experimental")
+        .navigationTitle("Librarian")
         .oneFeedInlineTitle()
         .toolbar {
             if !viewModel.messages.isEmpty && !viewModel.isWorking {
@@ -289,7 +292,7 @@ struct ExperimentalLibrarianView: View {
     }
 
     private var warning: some View {
-        Text("Gemini can add, move, archive, pause, or remove sources. This page is experimental — check Sources after it acts.")
+        Text("Gemini can add, put a source in another folder, move, archive, pause, or remove sources. This page is experimental — check Sources after it acts.")
             .font(.footnote)
             .foregroundStyle(OneFeedTheme.graphite)
             .fixedSize(horizontal: false, vertical: true)

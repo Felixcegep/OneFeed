@@ -29,9 +29,12 @@ enum GeminiLibraryTools {
     static let names = [
         "list_library",
         "list_not_interested",
+        "search_sources",
         "add_source",
         "remove_source",
         "move_source",
+        "add_to_folder",
+        "remove_from_folder",
         "archive_source",
         "create_folder",
         "rename_folder",
@@ -49,8 +52,14 @@ enum GeminiLibraryTools {
                 []
             ),
             declaration(
+                "search_sources",
+                "Find sources by title, site, or URL. When the query is a folder name, list the sources in that folder. Returns title, site, and folders. Read-only.",
+                ["query": string("Source title, site, URL, or folder name.")],
+                ["query"]
+            ),
+            declaration(
                 "add_source",
-                "Subscribe to a website or RSS/Atom URL. Use the homepage if the reader names a publication.",
+                "Subscribe to a website or RSS/Atom URL. Use the homepage if the reader names a publication. If that URL is already subscribed, add the folder and do not create a second source.",
                 [
                     "url": string("Website or feed URL."),
                     "folder": string("Existing or new folder name. Omit to leave unfiled.")
@@ -71,16 +80,34 @@ enum GeminiLibraryTools {
             ),
             declaration(
                 "move_source",
-                "Move a source into a folder. Use an empty folder string for Unfiled.",
+                "File a source in this folder only and drop every other folder. Use an empty folder string for Unfiled. If the reader wants to keep other folders, use add_to_folder instead.",
                 [
                     "source": string("Exact source title or URL from the library."),
-                    "folder": string("Folder name, or empty for Unfiled.")
+                    "folder": string("The only folder to keep, or empty for Unfiled.")
                 ],
                 ["source"]
             ),
             declaration(
+                "add_to_folder",
+                "Add a source to a folder and keep its other folders. Creates the folder if it is new. If the source is already in that folder, leave it there.",
+                [
+                    "source": string("Exact source title or URL from the library."),
+                    "folder": string("Folder to add. Other folders stay.")
+                ],
+                ["source", "folder"]
+            ),
+            declaration(
+                "remove_from_folder",
+                "Drop one folder label from a source. The subscription stays. If this was the last folder, the source becomes Unfiled.",
+                [
+                    "source": string("Exact source title or URL from the library."),
+                    "folder": string("Folder label to drop.")
+                ],
+                ["source", "folder"]
+            ),
+            declaration(
                 "create_folder",
-                "Create a folder. Sources can be moved into it afterwards.",
+                "Create a folder. Sources can be added to it afterwards.",
                 [
                     "name": string("Folder name."),
                     "emoji": string("Optional emoji for the folder icon.")
@@ -125,10 +152,13 @@ enum GeminiLibraryTools {
         var named: [String: [Feed]] = [:]
         var unfiled: [Feed] = []
         for feed in feeds {
-            if let folder = feed.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
-                named[folder, default: []].append(feed)
-            } else {
+            let folders = feed.memberships
+            if folders.isEmpty {
                 unfiled.append(feed)
+            } else {
+                for folder in folders {
+                    named[folder, default: []].append(feed)
+                }
             }
         }
         for name in folderNames where named[name] == nil {
@@ -142,14 +172,15 @@ enum GeminiLibraryTools {
         for name in orderedNames {
             let group = (named[name] ?? []).sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             lines.append("\(FolderEmoji.glyph(for: name)) \(name)")
-            appendFeeds(group, into: &lines, remaining: &remaining)
+            appendFeeds(group, into: &lines, remaining: &remaining, inFolder: name)
         }
         if !unfiled.isEmpty {
             lines.append("\(FolderEmoji.glyph(for: "Unfiled")) Unfiled")
             appendFeeds(
                 unfiled.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending },
                 into: &lines,
-                remaining: &remaining
+                remaining: &remaining,
+                inFolder: nil
             )
         }
         if remaining < 0 {
@@ -190,13 +221,44 @@ enum GeminiLibraryTools {
         return .none
     }
 
+    /// Title, site, and folders for matching sources. A query that names a folder also lists that folder. Read-only.
+    static func search(query: String, feeds: [Feed], folderNames: [String]) -> String {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return "A search query is required." }
+
+        let matched = Self.feeds(matching: matchFeeds(query: needle, in: feeds), in: feeds)
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        var lines = matched.map(describe)
+
+        if let folder = matchFolder(name: needle, in: folderNames) {
+            if !lines.isEmpty { lines.append("") }
+            lines.append("\(FolderEmoji.glyph(for: folder)) \(folder)")
+            let members = feeds
+                .filter { $0.containsFolder(folder) }
+                .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            if members.isEmpty {
+                lines.append("- (empty)")
+            } else {
+                lines.append(contentsOf: members.map(describe))
+            }
+        }
+
+        if lines.isEmpty { return "No source matches “\(needle)”." }
+        return lines.joined(separator: "\n")
+    }
+
     static func matchFolder(name: String, in folderNames: [String]) -> String? {
         let needle = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else { return nil }
         return folderNames.first { $0.caseInsensitiveCompare(needle) == .orderedSame }
     }
 
-    private static func appendFeeds(_ feeds: [Feed], into lines: inout [String], remaining: inout Int) {
+    private static func appendFeeds(
+        _ feeds: [Feed],
+        into lines: inout [String],
+        remaining: inout Int,
+        inFolder folder: String?
+    ) {
         if feeds.isEmpty {
             lines.append("- (empty)")
             return
@@ -208,8 +270,30 @@ enum GeminiLibraryTools {
             var flags: [String] = []
             if !feed.isEnabled { flags.append("paused") }
             if !feed.includeInToday { flags.append("not in Today") }
-            let suffix = flags.isEmpty ? "" : " · " + flags.joined(separator: ", ")
+            var suffix = flags.isEmpty ? "" : " · " + flags.joined(separator: ", ")
+            if let folder, let also = feed.alsoInLine(excluding: folder) {
+                let names = also.hasPrefix("Also in ") ? String(also.dropFirst("Also in ".count)) : also
+                suffix += " · also in \(names)"
+            }
             lines.append("- \(feed.title) (\(host))\(suffix)")
+        }
+    }
+
+    private static func describe(_ feed: Feed) -> String {
+        let host = feed.websiteURL?.host() ?? feed.feedURL.host() ?? feed.feedURL.absoluteString
+        return "- \(feed.title) (\(host)) · \(feed.filedInLine)"
+    }
+
+    private static func feeds(matching match: GeminiFeedMatch, in feeds: [Feed]) -> [Feed] {
+        switch match {
+        case .one(let id):
+            return feeds.filter { $0.id == id }
+        case .none:
+            return []
+        case .many(let titles):
+            return feeds.filter { feed in
+                titles.contains { $0.caseInsensitiveCompare(feed.title) == .orderedSame }
+            }
         }
     }
 
@@ -264,9 +348,12 @@ final class GeminiLibrarian {
 
         Rules:
         - Prefer existing folder names. Create a folder only when asked or when a new group is clearly needed.
-        - add_source accepts a website or RSS URL. Use the site’s homepage if the reader names a publication.
+        - The same title in two folders is one source.
+        - add_source accepts a website or RSS URL. Use the site’s homepage if the reader names a publication. If that URL is already subscribed, add the folder and do not create a second source.
         - Identify sources by their exact title or URL from the library. If several match, ask.
-        - remove_source deletes the source and its locally stored articles. Only do that when the reader is explicit.
+        - search_sources before guessing when the library list is long.
+        - add_to_folder keeps other folders. move_source means this folder only.
+        - remove_from_folder drops one label. remove_source deletes the subscription and its locally stored articles. Only do that when the reader is explicit.
         - archive_source moves a source to Archive and sets include_in_today=false. The subscription stays.
         - Use the not-interested log to notice noisy sources. Suggest Archive, blocked words, or removal. Only remove when the reader is explicit.
         - include_in_today controls whether a source enters Today. Pausing a source uses enabled=false.
@@ -286,12 +373,18 @@ final class GeminiLibrarian {
             return .init(ok: true, message: snapshot(in: context))
         case "list_not_interested":
             return .init(ok: true, message: NotInterestedLog.snapshot(in: context, sources: 20, articlesPerSource: 6))
+        case "search_sources":
+            return searchSources(call, in: context)
         case "add_source":
             return await addSource(call, in: context)
         case "remove_source":
             return await removeSource(call, in: context, allowRemoval: allowRemoval)
         case "move_source":
             return moveSource(call, in: context)
+        case "add_to_folder":
+            return addToFolder(call, in: context)
+        case "remove_from_folder":
+            return removeFromFolder(call, in: context)
         case "archive_source":
             return archiveSource(call, in: context)
         case "create_folder":
@@ -359,7 +452,9 @@ final class GeminiLibrarian {
         guard let feed = resolved.feed else {
             return .init(ok: false, message: resolved.message ?? "Could not find that source.")
         }
-        let alreadyArchived = feed.folderName?.caseInsensitiveCompare(NotInterestedLog.archiveFolderName) == .orderedSame
+        let archiveName = NotInterestedLog.archiveFolderName
+        let alreadyArchived = feed.memberships.count == 1
+            && feed.memberships.contains { $0.caseInsensitiveCompare(archiveName) == .orderedSame }
             && feed.includeInToday == false
         if alreadyArchived {
             return .init(ok: true, message: "\(feed.title) is already in Archive and out of Today.")
@@ -373,15 +468,67 @@ final class GeminiLibrarian {
         guard let feed = resolved.feed else {
             return .init(ok: false, message: resolved.message ?? "Could not find that source.")
         }
-        let folder = call.string("folder")
-        feed.folderName = folder
-        if let folder { FolderStore.remember(folder) }
+        let folder = call.string("folder").map { canonicalFolder($0, on: feed, in: context) }
+        feed.replaceFolders(with: folder)
         LibraryChange.note(feed)
         try? context.save()
         if let folder {
             return .init(ok: true, message: "Moved \(feed.title) to \(folder).")
         }
         return .init(ok: true, message: "Moved \(feed.title) to Unfiled.")
+    }
+
+    private func addToFolder(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {
+        let resolved = resolveFeed(call.string("source"), in: context)
+        guard let feed = resolved.feed else {
+            return .init(ok: false, message: resolved.message ?? "Could not find that source.")
+        }
+        guard let requested = call.string("folder") else {
+            return .init(ok: false, message: "A folder name is required.")
+        }
+        let folder = canonicalFolder(requested, on: feed, in: context)
+        if feed.addFolder(folder) {
+            LibraryChange.note(feed)
+            try? context.save()
+            return .init(ok: true, message: "Added \(feed.title) to \(folder).")
+        }
+        if feed.containsFolder(folder) {
+            return .init(ok: true, message: "\(feed.title) is already in \(folder).")
+        }
+        return .init(ok: false, message: "A folder name is required.")
+    }
+
+    private func removeFromFolder(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {
+        let resolved = resolveFeed(call.string("source"), in: context)
+        guard let feed = resolved.feed else {
+            return .init(ok: false, message: resolved.message ?? "Could not find that source.")
+        }
+        guard let requested = call.string("folder") else {
+            return .init(ok: false, message: "A folder name is required.")
+        }
+        let folder = canonicalFolder(requested, on: feed, in: context)
+        guard feed.removeFolder(folder) else {
+            return .init(ok: true, message: "\(feed.title) is not in \(folder).")
+        }
+        LibraryChange.note(feed)
+        try? context.save()
+        if feed.memberships.isEmpty {
+            return .init(ok: true, message: "Removed \(feed.title) from \(folder). It is now Unfiled.")
+        }
+        return .init(ok: true, message: "Removed \(feed.title) from \(folder).")
+    }
+
+    private func searchSources(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {
+        guard let query = call.string("query") else {
+            return .init(ok: false, message: "A search query is required.")
+        }
+        let feeds = fetchFeeds(in: context)
+        let message = GeminiLibraryTools.search(
+            query: query,
+            feeds: feeds,
+            folderNames: FolderStore.allNames(from: feeds)
+        )
+        return .init(ok: true, message: message)
     }
 
     private func createFolder(_ call: GeminiFunctionCall) -> GeminiToolResult {
@@ -408,8 +555,8 @@ final class GeminiLibrarian {
             return .init(ok: true, message: "Folder \(from) already has that name.")
         }
         let emoji = FolderEmoji.glyph(for: from)
-        for feed in feeds where feed.folderName?.caseInsensitiveCompare(from) == .orderedSame {
-            feed.folderName = to
+        for feed in feeds where feed.containsFolder(from) {
+            feed.renameMembership(from: from, to: to)
             LibraryChange.note(feed)
         }
         FolderStore.remember(to)
@@ -463,8 +610,20 @@ final class GeminiLibrarian {
             return .init(ok: false, message: "No source settings to change.")
         }
         LibraryChange.note(feed)
-        try? context.save()
+        if call.bool("enabled") != nil || call.bool("include_in_today") != nil {
+            try? DailyDeckService.reconcileMembership(in: context)
+        } else {
+            try? context.save()
+        }
         return .init(ok: true, message: "Updated \(feed.title): \(changes.joined(separator: ", ")).")
+    }
+
+    private func canonicalFolder(_ requested: String, on feed: Feed, in context: ModelContext) -> String {
+        if let membership = feed.memberships.first(where: { $0.caseInsensitiveCompare(requested) == .orderedSame }) {
+            return membership
+        }
+        let names = FolderStore.allNames(from: fetchFeeds(in: context))
+        return GeminiLibraryTools.matchFolder(name: requested, in: names) ?? requested
     }
 
     private func resolveFeed(_ query: String?, in context: ModelContext) -> (feed: Feed?, message: String?) {

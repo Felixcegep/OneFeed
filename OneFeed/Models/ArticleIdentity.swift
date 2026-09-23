@@ -91,7 +91,10 @@ nonisolated enum ArticleIdentity {
                 let articles = Array(duplicate.articles)
                 for article in articles { article.feed = keeper }
                 if keeper.remoteID == nil { keeper.remoteID = duplicate.remoteID }
-                if keeper.folderName == nil { keeper.folderName = duplicate.folderName }
+                let combined = FeedMembership.normalize(keeper.memberships + duplicate.memberships)
+                if combined != keeper.memberships {
+                    keeper.setMemberships(combined, touch: false)
+                }
                 if keeper.websiteURL == nil { keeper.websiteURL = duplicate.websiteURL }
                 context.delete(duplicate)
                 removed += 1

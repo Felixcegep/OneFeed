@@ -176,6 +176,55 @@ struct FeedAndFreshRSSDomainTests {
         #expect(groups[1].articles.map(\.title) == ["New", "Old"])
     }
 
+    @Test @MainActor func feedInTwoFoldersAppearsInBothGroupsAndUnreadCounts() {
+        let feed = Feed(title: "Aeon", feedURL: URL(string: "https://aeon.co/feed")!, folderName: "Philosophy")
+        #expect(feed.addFolder("Must read"))
+        let queued = Article(guid: "1", title: "Essay", publishedAt: .now, state: .queued, feed: feed)
+
+        let groups = FeedFolderGrouping.groups(from: [feed])
+        #expect(groups.map(\.name) == ["Must read", "Philosophy"])
+        #expect(groups.allSatisfy { $0.feeds.map(\.title) == ["Aeon"] })
+
+        let summaries = FeedFolderGrouping.folderSummaries(feeds: [feed], articles: [queued])
+        #expect(summaries.map(\.name) == ["Must read", "Philosophy"])
+        #expect(summaries.map(\.unreadCount) == [1, 1])
+        #expect(summaries.map(\.feedCount) == [1, 1])
+    }
+
+    @Test @MainActor func removeFolderLeavesTheOtherLabel() {
+        let feed = Feed(
+            title: "Essay",
+            feedURL: URL(string: "https://essay.test/rss")!,
+            folderNames: ["Must read", "Philosophy"]
+        )
+        #expect(feed.removeFolder("Must read"))
+        #expect(feed.memberships == ["Philosophy"])
+        #expect(feed.folderName == "Philosophy")
+        #expect(feed.removeFolder("Philosophy"))
+        #expect(feed.memberships.isEmpty)
+        #expect(feed.folderName == nil)
+    }
+
+    @Test @MainActor func applyRemotePrimaryFolderReplacesOnlyTheFirstLabel() {
+        let moved = Feed(
+            title: "Essay",
+            feedURL: URL(string: "https://essay.test/rss")!,
+            folderNames: ["Must read", "Programming"]
+        )
+        moved.applyRemotePrimaryFolder("Philosophy")
+        #expect(moved.memberships == ["Philosophy", "Programming"])
+        #expect(moved.folderName == "Philosophy")
+
+        let unchanged = Feed(
+            title: "Same",
+            feedURL: URL(string: "https://same.test/rss")!,
+            folderNames: ["Must read", "Programming"]
+        )
+        unchanged.applyRemotePrimaryFolder("Must read")
+        #expect(unchanged.memberships == ["Must read", "Programming"])
+        #expect(unchanged.folderName == "Must read")
+    }
+
     @Test func folderSummariesIncludeEmptyFoldersAndUnreadCounts() {
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
         let empty = Feed(title: "Quiet", feedURL: URL(string: "https://e.test/rss")!, folderName: "Quiet")
@@ -591,5 +640,42 @@ struct FeedAndFreshRSSDomainTests {
         #expect(html.contains("Hello reader"))
         #expect(html.contains("onefeed-article"))
         #expect(!html.contains("alert(1)"))
+    }
+
+    @Test func videoSummaryBecomesArticleProse() {
+        let html = ReaderHTML.videoSummaryBody(from: """
+        The video explains why a cache helps.
+
+        ## The hot path 02:10
+        Keep the data the program touches often close to the processor.
+
+        ## What to do 18:40
+        Measure before adding another layer. A & B < C.
+        """)
+        #expect(html.contains("<p>The video explains why a cache helps.</p>"))
+        #expect(html.contains("<h2>The hot path 02:10</h2>"))
+        #expect(html.contains("<h2>What to do 18:40</h2>"))
+        #expect(html.contains("A &amp; B &lt; C."))
+        #expect(!html.contains("##"))
+    }
+
+    @Test @MainActor func youtubeSummaryUsesTheArticleReader() {
+        let article = Article(
+            guid: "yt",
+            title: "Caches",
+            contentKind: "youtube",
+            aiSummary: """
+            Opening thought.
+
+            ## The point 01:00
+            Details worth keeping.
+            """
+        )
+        let html = ReaderViewModel(article: article).documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("New York"))
+        #expect(html.contains("<h1>Caches</h1>"))
+        #expect(html.contains("<h2>The point 01:00</h2>"))
+        #expect(html.contains("Details worth keeping."))
+        #expect(html.contains("onefeed-article"))
     }
 }

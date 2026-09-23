@@ -9,6 +9,9 @@ struct FolderEmojiPicker: View {
     let folderName: String
     var onSelect: (String) -> Void
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    #endif
     @State private var selected: String
 
     init(folderName: String, onSelect: @escaping (String) -> Void) {
@@ -81,7 +84,7 @@ struct FolderEmojiPicker: View {
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
-        .presentationDetents([.medium, .large])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         #endif
     }
 }

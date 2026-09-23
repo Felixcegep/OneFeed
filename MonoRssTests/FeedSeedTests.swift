@@ -43,10 +43,12 @@ struct FeedSeedTests {
         #expect(try context.fetchCount(FetchDescriptor<Feed>()) == 60)
 
         let misplaced = try #require(context.fetch(FetchDescriptor<Feed>()).first { $0.title == "Aeon" })
-        misplaced.folderName = "Unfiled"
+        misplaced.replaceFolders(with: "Unfiled")
         let third = try FeedSeedService().apply(in: context)
         #expect(third.updated == 1)
-        #expect(misplaced.folderName == "Philosophy")
+        #expect(misplaced.memberships.contains("Unfiled"))
+        #expect(misplaced.memberships.contains("Philosophy"))
+        #expect(misplaced.folderName == "Unfiled")
     }
 
     @Test func applyingCatalogRemovesStratecheryByTitleOrURL() throws {

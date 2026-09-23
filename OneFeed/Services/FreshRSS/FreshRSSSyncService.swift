@@ -106,6 +106,28 @@ final class FreshRSSSyncService {
         try? context.save()
     }
 
+    /// Drops mutations for `remoteID` that were not already pending. Rows in `ids` stay.
+    func cancelPendingMutations(forRemoteID remoteID: String, keeping ids: Set<UUID>, in context: ModelContext) {
+        let remoteID = remoteID
+        let descriptor = FetchDescriptor<PendingSyncMutation>(
+            predicate: #Predicate { $0.remoteArticleID == remoteID }
+        )
+        let rows = (try? context.fetch(descriptor)) ?? []
+        var removed = false
+        for row in rows where !ids.contains(row.id) {
+            context.delete(row)
+            removed = true
+        }
+        if removed { try? context.save() }
+    }
+
+    /// Queues a local markUnread. No network call.
+    func enqueueCompensatingUnread(for article: Article, in context: ModelContext) {
+        guard let remoteID = article.remoteID else { return }
+        context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: .markUnread))
+        try? context.save()
+    }
+
     func addSubscription(from input: String, folderName: String? = nil, in context: ModelContext) async throws -> Feed {
         guard let account = try enabledAccount(in: context) else { throw FreshRSSSyncError.missingCredentials }
         guard let url = FeedService.normalizedURL(from: input) else { throw FeedServiceError.invalidAddress }
@@ -115,9 +137,8 @@ final class FreshRSSSyncService {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
         if let match = feeds.first(where: { $0.feedURL.absoluteString == url.absoluteString }) {
             let normalized = folderName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let folder = normalized, !folder.isEmpty {
-                match.folderName = folder
-                FolderStore.remember(folder)
+            if let folder = normalized, !folder.isEmpty, match.addFolder(folder) {
+                LibraryChange.note(match)
                 try context.save()
             }
             return match
@@ -270,7 +291,7 @@ extension LibraryIngestActor {
         feed.title = subscription.title
         feed.websiteURL = subscription.htmlURL
         if let feedURL = subscription.resolvedFeedURL { feed.feedURL = feedURL }
-        feed.folderName = subscription.folderName
+        feed.applyRemotePrimaryFolder(subscription.folderName)
         if let kind = subscription.contentType { feed.contentKind = kind }
     }
 
