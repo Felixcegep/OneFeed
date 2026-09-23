@@ -7,6 +7,7 @@ struct CurrentView: View {
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
     @State private var showingAddSource = false
+    @State private var showingTodayFilter = false
     @State private var celebrateClear = false
     @State private var keepReadingPaneClear = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -33,6 +34,12 @@ struct CurrentView: View {
             })
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .readingUndoBanner {
+            viewModel.loadCurrent()
+            if let open = readerArticle, !viewModel.remainingArticles.contains(where: { $0.id == open.id }) {
+                readerArticle = nil
+            }
         }
     }
 
@@ -102,6 +109,18 @@ struct CurrentView: View {
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .toolbar {
+            if !feeds.isEmpty {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    Button {
+                        showingTodayFilter = true
+                    } label: {
+                        Image(systemName: todayFilterIsNarrowed ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    }
+                    .accessibilityLabel("Choose what fills Today")
+                    .accessibilityValue(todayFilterIsNarrowed ? "Filtered" : "All sources")
+                    .accessibilityIdentifier("today-filter")
+                }
+            }
             ToolbarItem(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
                     Task { await viewModel.refresh() }
@@ -138,6 +157,11 @@ struct CurrentView: View {
         .sheet(isPresented: $showingAddSource, onDismiss: {
             if !feeds.isEmpty { Task { await viewModel.refresh() } }
         }) { AddSourceView() }
+        .sheet(isPresented: $showingTodayFilter, onDismiss: {
+            viewModel.loadCurrent()
+        }) {
+            TodayFilterSheet { viewModel.loadCurrent() }
+        }
         .onChange(of: stories.count) { oldCount, newCount in
             if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
                 celebrateClear = true
@@ -150,7 +174,7 @@ struct CurrentView: View {
                 celebrateClear = false
             }
         }
-        .alert("OneFeed", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
+        .alert("Couldn’t refresh", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
     }
@@ -160,8 +184,9 @@ struct CurrentView: View {
         readerArticle = article
     }
 
+    /// Full-screen cover only while refreshing with no stories yet. Existing stories stay on screen.
     private var showsSourceRefreshCover: Bool {
-        viewModel.isRefreshing && !ReaderWebWarmup.skipsOpeningCover
+        viewModel.isRefreshing && stories.isEmpty && !ReaderWebWarmup.skipsOpeningCover
     }
 
     private var subtitle: String {
@@ -192,6 +217,12 @@ struct CurrentView: View {
                     Text("Add a source")
                         .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
+                } else if todayHasNoSources {
+                    OneFeedMark(size: 52)
+                    Text("Nothing set for Today")
+                        .font(.system(.title, design: .serif))
+                        .foregroundStyle(OneFeedTheme.ink)
+                        .multilineTextAlignment(.center)
                 } else {
                     OneFeedMark(size: 52)
                     Text("You’re caught up")
@@ -200,13 +231,15 @@ struct CurrentView: View {
                 }
             }
         } description: {
-            Text(viewModel.isRefreshing ? caughtUpProgressCopy : feeds.isEmpty ? "Follow your favorite publications to find your next read here." : "You’ve finished today’s selection. Refresh to check for new stories.")
+            Text(caughtUpDescription)
                 .font(.body)
                 .foregroundStyle(OneFeedTheme.graphite)
         } actions: {
-            Button(viewModel.isRefreshing ? viewModel.progress.countText : feeds.isEmpty ? "Add a source" : "Refresh") {
+            Button(caughtUpActionTitle) {
                 if feeds.isEmpty {
                     showingAddSource = true
+                } else if todayHasNoSources {
+                    showingTodayFilter = true
                 } else {
                     Task { await viewModel.refresh() }
                 }
@@ -219,6 +252,29 @@ struct CurrentView: View {
         .background(OneFeedTheme.plaster)
         .animation(nil, value: viewModel.progress.completed)
         .sensoryFeedback(.success, trigger: celebrateClear)
+    }
+
+    private var todayFilterIsNarrowed: Bool {
+        feeds.contains { $0.isEnabled && !$0.includeInToday }
+    }
+
+    /// Enabled sources exist, and every one of them is left out of Today.
+    private var todayHasNoSources: Bool {
+        feeds.contains(where: \.isEnabled) && !feeds.contains { $0.isEnabled && $0.includeInToday }
+    }
+
+    private var caughtUpDescription: String {
+        if viewModel.isRefreshing { return caughtUpProgressCopy }
+        if feeds.isEmpty { return "Follow your favorite publications to find your next read here." }
+        if todayHasNoSources { return "Turn a folder or source on. Stories you leave out stay in Feed." }
+        return "You’ve finished today’s selection. Refresh to check for new stories."
+    }
+
+    private var caughtUpActionTitle: String {
+        if viewModel.isRefreshing { return viewModel.progress.countText }
+        if feeds.isEmpty { return "Add a source" }
+        if todayHasNoSources { return "Choose sources" }
+        return "Refresh"
     }
 
     private var caughtUpProgressCopy: String {

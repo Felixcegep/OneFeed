@@ -9,10 +9,7 @@ enum NotInterestedLog {
     static func record(_ article: Article, in context: ModelContext, now: Date = .now) -> NotInterestedEntry {
         article.notInterested = true
         let url = ArticleIdentity.normalizedURLString(article.url)
-        let existing = (try? context.fetch(FetchDescriptor<NotInterestedEntry>()))?.first { entry in
-            entry.articleGUID == article.guid
-                || (url != nil && entry.articleURL == url)
-        }
+        let existing = entries(matching: article, in: context).first
         let feed = article.feed
         let entry = existing ?? NotInterestedEntry(
             recordedAt: now,
@@ -40,6 +37,19 @@ enum NotInterestedLog {
         trim(in: context)
         try? context.save()
         return entry
+    }
+
+    static func entries(matching article: Article, in context: ModelContext) -> [NotInterestedEntry] {
+        let guid = article.guid
+        let byGUID = (try? context.fetch(
+            FetchDescriptor<NotInterestedEntry>(predicate: #Predicate { $0.articleGUID == guid })
+        )) ?? []
+        guard let url = ArticleIdentity.normalizedURLString(article.url) else { return byGUID }
+        let byURL = (try? context.fetch(
+            FetchDescriptor<NotInterestedEntry>(predicate: #Predicate { $0.articleURL == url })
+        )) ?? []
+        var seen = Set(byGUID.map(\.id))
+        return byGUID + byURL.filter { seen.insert($0.id).inserted }
     }
 
     static func entries(in context: ModelContext) -> [NotInterestedEntry] {
@@ -86,8 +96,9 @@ enum NotInterestedLog {
         for group in grouped.prefix(sources) {
             let feed = feed(matching: group, in: feeds)
             var flags: [String] = []
-            if let folder = feed?.folderName?.trimmingCharacters(in: .whitespacesAndNewlines), !folder.isEmpty {
-                flags.append(folder)
+            let folders = feed?.memberships ?? []
+            if !folders.isEmpty {
+                flags.append(folders.joined(separator: ", "))
             }
             if feed?.includeInToday == false { flags.append("not in Today") }
             if feed?.isEnabled == false { flags.append("paused") }
@@ -116,17 +127,17 @@ enum NotInterestedLog {
     }
 
     static func archive(_ feed: Feed, in context: ModelContext) {
-        feed.folderName = archiveFolderName
+        feed.setMemberships([Self.archiveFolderName])
         feed.includeInToday = false
         FolderStore.remember(archiveFolderName)
         LibraryChange.note(feed)
-        try? context.save()
+        try? DailyDeckService.reconcileMembership(in: context)
     }
 
     static func takeOutOfToday(_ feed: Feed, in context: ModelContext) {
         feed.includeInToday = false
         LibraryChange.note(feed)
-        try? context.save()
+        try? DailyDeckService.reconcileMembership(in: context)
     }
 
     static func delete(_ entry: NotInterestedEntry, in context: ModelContext) {

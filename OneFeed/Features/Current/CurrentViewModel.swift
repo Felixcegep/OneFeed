@@ -96,9 +96,15 @@ final class CurrentViewModel {
         do {
             guard let item = try deckService.currentItem(in: context) else { return }
             if let article = item.article, article.isStored {
+                if state == .skipped {
+                    ReadingUndo.begin(article, in: context)
+                }
                 freshRSSService.enqueueMutation(for: article, transition: state, in: context)
             }
             let next = try deckService.advance(item: item, to: state, in: context)
+            if state == .skipped, let article = item.article, article.isStored {
+                ReadingUndo.commit(article, in: context)
+            }
             apply(item: next, totalCount: item.deck?.items.count ?? totalCount)
             Task { await ArticleExtractionService().enrichUpcoming(in: context, from: next) }
         } catch {

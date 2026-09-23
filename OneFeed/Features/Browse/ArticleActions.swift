@@ -9,17 +9,28 @@ enum ArticleActions {
         in context: ModelContext
     ) {
         guard article.isStored else { return }
+        if state == .skipped {
+            ReadingUndo.begin(article, in: context)
+        }
         let queue = ArticleQueueService()
         let sync: any FreshRSSSyncing = FreshRSSSyncService()
         sync.enqueueMutation(for: article, transition: state, in: context)
-        withAnimation(OneFeedMotion.list) {
-            do { try queue.complete(article, as: state, in: context) }
-            catch { }
+        let motion: Animation? = OneFeedMotion.allowsMotion ? OneFeedMotion.list : nil
+        do {
+            try withAnimation(motion) {
+                try queue.complete(article, as: state, in: context)
+            }
+        } catch {
+            return
         }
         syncTodayDeck(article, to: state, in: context)
+        if state == .skipped {
+            ReadingUndo.commit(article, in: context)
+        }
     }
 
     static func markNotInterested(_ article: Article, in context: ModelContext) {
+        ReadingUndo.begin(article, in: context)
         NotInterestedLog.record(article, in: context)
         apply(.skipped, to: article, in: context)
     }
