@@ -87,7 +87,7 @@ final class MonoRssUITests: XCTestCase {
         capture("07-Folder-Articles", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
 
-        app.staticTexts["Manage sources"].tap()
+        app.navigationBars["Feed"].buttons["Sources"].tap()
         XCTAssertTrue(app.navigationBars["Sources"].waitForExistence(timeout: 3))
         capture("08-Sources", app: app)
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -174,7 +174,7 @@ final class MonoRssUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["Import OPML"].waitForExistence(timeout: 2))
             }
             if title == "Video & AI" {
-                XCTAssertTrue(app.buttons["Experimental librarian"].waitForExistence(timeout: 2))
+                XCTAssertTrue(app.buttons["Librarian"].waitForExistence(timeout: 2))
             }
             capture("\(17 + index)-Settings-\(title.replacingOccurrences(of: " & ", with: "-").replacingOccurrences(of: " ", with: "-"))", app: app)
             if title == "Accounts & Sync" {
@@ -189,6 +189,110 @@ final class MonoRssUITests: XCTestCase {
             app.navigationBars[title].buttons.element(boundBy: 0).tap()
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
         }
+    }
+
+    @MainActor
+    func testReadingRecoveryFlows() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting", "-inMemoryStore"]
+        app.launch()
+
+        let vms = "VMs Won’t Contain Cyber-Capable Agents"
+        let swiftTitle = "Swift concurrency without the noise"
+        let linux = "Understanding Linux Namespaces"
+
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts[vms].waitForExistence(timeout: 5))
+        app.staticTexts[vms].tap()
+
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: 5))
+        app.buttons["Done"].tap()
+
+        let notNowInBar = app.navigationBars.buttons["Not now"]
+        let notNow = app.buttons["Not now"]
+        XCTAssertTrue(notNowInBar.waitForExistence(timeout: 5) || notNow.waitForExistence(timeout: 3))
+        if notNowInBar.exists {
+            notNowInBar.tap()
+        } else {
+            notNow.tap()
+        }
+
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
+        let vmsText = app.staticTexts[vms]
+        let vmsGone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: vmsText)
+        XCTAssertEqual(XCTWaiter.wait(for: [vmsGone], timeout: 5), .completed)
+
+        XCTAssertTrue(app.staticTexts[swiftTitle].waitForExistence(timeout: 5))
+        app.staticTexts[swiftTitle].tap()
+        XCTAssertTrue(app.buttons["Skip"].waitForExistence(timeout: 5))
+        app.buttons["Skip"].tap()
+
+        let undo = app.buttons["Undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3))
+        undo.tap()
+        XCTAssertTrue(app.staticTexts[swiftTitle].waitForExistence(timeout: 5))
+
+        app.tabBars.buttons["Queue"].tap()
+        XCTAssertTrue(app.navigationBars["Queue"].waitForExistence(timeout: 5))
+        app.navigationBars["Queue"].buttons["History"].tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
+
+        let search = app.searchFields.matching(
+            NSPredicate(format: "placeholderValue == %@ OR label == %@", "Search history", "Search history")
+        ).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Linux")
+
+        XCTAssertTrue(app.staticTexts[linux].waitForExistence(timeout: 5))
+        app.staticTexts[linux].tap()
+
+        XCTAssertTrue(app.buttons["Reading options"].waitForExistence(timeout: 5))
+        app.buttons["Reading options"].tap()
+        let putInQueueMenu = app.menuItems["Put in Queue"]
+        if putInQueueMenu.waitForExistence(timeout: 3) {
+            putInQueueMenu.tap()
+        } else {
+            let putInQueue = app.buttons["Put in Queue"]
+            XCTAssertTrue(putInQueue.waitForExistence(timeout: 5))
+            putInQueue.tap()
+        }
+
+        let readerClose = app.buttons["Close"]
+        if readerClose.waitForExistence(timeout: 2), readerClose.isHittable {
+            readerClose.tap()
+        }
+        let readerClosed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: app.buttons["Close"]
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [readerClosed], timeout: 5), .completed)
+
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
+        let backToQueue = app.navigationBars["History"].buttons.matching(
+            NSPredicate(format: "label == 'Queue' OR label == 'Back' OR identifier == 'BackButton'")
+        ).firstMatch
+        XCTAssertTrue(backToQueue.waitForExistence(timeout: 5))
+        backToQueue.tap()
+        XCTAssertTrue(app.navigationBars["Queue"].waitForExistence(timeout: 5))
+        let queued = app.staticTexts[linux]
+        for _ in 0..<8 {
+            if queued.exists { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(queued.waitForExistence(timeout: 5))
+
+        app.tabBars.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let storage = app.staticTexts["Storage"].firstMatch
+        for _ in 0..<8 {
+            if storage.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(storage.waitForExistence(timeout: 3))
+        storage.tap()
+        XCTAssertTrue(app.navigationBars["Storage"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["On this device"].waitForExistence(timeout: 5))
     }
 
     private func capture(_ name: String, app: XCUIApplication) {
