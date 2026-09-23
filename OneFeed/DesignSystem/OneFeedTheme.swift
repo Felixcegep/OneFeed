@@ -249,6 +249,14 @@ struct ArticleRow: View {
                         .foregroundStyle(OneFeedTheme.graphite)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let takeaway = article.readingTakeawayLine {
+                    Text(takeaway)
+                        .font(.subheadline)
+                        .foregroundStyle(OneFeedTheme.ink)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
@@ -556,6 +564,7 @@ struct DirectoryRowButtonStyle: ButtonStyle {
 
 struct UnreadCount: View {
     let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(_ count: Int) {
         self.count = count
@@ -563,12 +572,22 @@ struct UnreadCount: View {
 
     var body: some View {
         if count > 0 {
-            Text("\(count)")
-                .font(.caption.monospacedDigit().weight(.medium))
-                .foregroundStyle(OneFeedTheme.ink)
+            countLabel
+                .accessibilityLabel("\(count) unread")
+        }
+    }
+
+    @ViewBuilder
+    private var countLabel: some View {
+        let label = Text("\(count)")
+            .font(.caption.monospacedDigit().weight(.medium))
+            .foregroundStyle(OneFeedTheme.ink)
+        if reduceMotion {
+            label
+        } else {
+            label
                 .contentTransition(.numericText())
                 .animation(OneFeedMotion.overlay, value: count)
-                .accessibilityLabel("\(count) unread")
         }
     }
 }
@@ -591,6 +610,7 @@ struct ArticleRatingGlyphs: View {
 
 struct ArticleRatingControl: View {
     let article: Article
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if article.isStored {
@@ -598,7 +618,7 @@ struct ArticleRatingControl: View {
                 ForEach(1...5, id: \.self) { star in
                     Button {
                         guard article.isStored else { return }
-                        withAnimation(OneFeedMotion.press) {
+                        withAnimation(reduceMotion ? nil : OneFeedMotion.press) {
                             article.setRating(article.rating == star ? 0 : star)
                             try? article.modelContext?.save()
                         }

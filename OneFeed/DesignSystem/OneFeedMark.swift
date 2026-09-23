@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#elseif os(macOS)
+import AppKit
+#endif
 
 /// Quiet paper motion: 200–350ms ease, one low-bounce spring for decisions.
 enum OneFeedMotion {
@@ -11,6 +16,16 @@ enum OneFeedMotion {
     static let reveal = Animation.easeOut(duration: 0.3)
     static let success = Animation.spring(duration: 0.4, bounce: 0.12)
     static let dots = Animation.easeInOut(duration: 0.2)
+
+    static var allowsMotion: Bool {
+        #if os(iOS)
+        !UIAccessibility.isReduceMotionEnabled
+        #elseif os(macOS)
+        !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+        true
+        #endif
+    }
 
     static func cardTransition(reduceMotion: Bool) -> AnyTransition {
         if reduceMotion { return .opacity }
