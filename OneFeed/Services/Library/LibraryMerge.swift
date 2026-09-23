@@ -190,7 +190,8 @@ nonisolated enum LibraryMerge {
             feedURL: ArticleIdentity.feedKey(feed.feedURL),
             title: feed.title,
             websiteURL: feed.websiteURL?.absoluteString,
-            folderName: feed.folderName,
+            folderName: feed.memberships.first,
+            folderNames: feed.memberships,
             isEnabled: feed.isEnabled,
             contentKind: feed.contentKind,
             includeInToday: feed.includeInToday,
@@ -214,7 +215,9 @@ nonisolated enum LibraryMerge {
             state: article.state,
             completedAt: article.completedAt,
             isRemoteStarred: article.isRemoteStarred,
-            updatedAt: article.libraryUpdatedAt
+            updatedAt: article.libraryUpdatedAt,
+            readingReactionRawValue: article.readingReactionRawValue,
+            readingNote: article.readingNote
         )
     }
 
@@ -275,7 +278,7 @@ nonisolated enum LibraryMerge {
     private static func apply(_ record: LibraryFeed, to feed: Feed) {
         feed.title = record.title
         feed.websiteURL = record.websiteURL.flatMap(URL.init(string:))
-        feed.folderName = record.folderName
+        feed.setMemberships(record.resolvedFolderNames, touch: false)
         feed.isEnabled = record.isEnabled
         feed.contentKind = record.contentKind
         feed.includeInToday = record.includeInToday
@@ -284,7 +287,6 @@ nonisolated enum LibraryMerge {
         feed.minVideoSeconds = record.minVideoSeconds
         feed.blockedWords = record.blockedWords
         feed.libraryUpdatedAt = record.updatedAt
-        if let folder = record.folderName { FolderStore.remember(folder) }
     }
 
     private static func apply(_ record: LibraryArticle, to article: Article) {
@@ -298,6 +300,8 @@ nonisolated enum LibraryMerge {
         if record.state == .current {
             article.firstDisplayedAt = article.firstDisplayedAt ?? .now
         }
+        article.readingReactionRawValue = ArticleReadingReaction.clampedRawValue(record.readingReactionRawValue)
+        article.readingNote = record.readingNote
     }
 
     private static func makeFeed(from record: LibraryFeed) -> Feed {
@@ -307,6 +311,7 @@ nonisolated enum LibraryMerge {
             feedURL: URL(string: record.feedURL) ?? URL(string: "https://invalid.invalid")!,
             isEnabled: record.isEnabled,
             folderName: record.folderName,
+            folderNames: record.resolvedFolderNames,
             contentKind: record.contentKind,
             includeInToday: record.includeInToday,
             includeVideos: record.includeVideos,
@@ -326,6 +331,8 @@ nonisolated enum LibraryMerge {
             state: record.state,
             isRemoteStarred: record.isRemoteStarred || record.state == .saved,
             libraryUpdatedAt: record.updatedAt,
+            readingReactionRawValue: ArticleReadingReaction.clampedRawValue(record.readingReactionRawValue),
+            readingNote: record.readingNote,
             feed: feed
         )
         article.completedAt = record.completedAt

@@ -265,6 +265,7 @@ struct LibraryMergeTests {
             feed: feed
         )
         saved.completedAt = Date(timeIntervalSince1970: 21)
+        saved.setReadingTakeaway(reaction: .learned, note: "The attack needs a leaked nonce.")
         source.insert(saved)
         let current = Article(
             guid: "current",
@@ -288,7 +289,125 @@ struct LibraryMergeTests {
         let restored = try destination.fetch(FetchDescriptor<Article>())
         #expect(Set(restored.map(\.state)) == [.saved, .current])
         #expect(restored.contains { $0.state == .current && $0.title == "Current story" })
+        let restoredSaved = try #require(restored.first { $0.guid == "saved" })
+        #expect(restoredSaved.readingReaction == .learned)
+        #expect(restoredSaved.readingNote == "The attack needs a leaked nonce.")
+        let restoredCurrent = try #require(restored.first { $0.guid == "current" })
+        #expect(restoredCurrent.readingReaction == nil)
+        #expect(restoredCurrent.readingNote == "")
         FolderStore.remove("Security")
+    }
+
+    @Test func legacyLibraryJSONDecodesArticleWithoutTakeaway() throws {
+        let encodedFeed = try LibraryDocumentFormat.encoder().encode(
+            LibraryFeed.stub(updatedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        )
+        let encodedObject = try #require(JSONSerialization.jsonObject(with: encodedFeed) as? [String: Any])
+        let updatedAt = try #require(encodedObject["updatedAt"] as? String)
+
+        let legacy = """
+        {
+          "schemaVersion": 2,
+          "updatedAt": "\(updatedAt)",
+          "folderNames": [],
+          "feeds": [],
+          "articles": [
+            {
+              "key": "url:https://example.com/saved",
+              "feedURL": "https://security.test/rss",
+              "guid": "saved",
+              "title": "Saved story",
+              "url": "https://example.com/saved",
+              "state": "read",
+              "completedAt": "\(updatedAt)",
+              "isRemoteStarred": false,
+              "updatedAt": "\(updatedAt)"
+            }
+          ],
+          "tombstones": []
+        }
+        """
+        let document = try LibraryDocument.decode(Data(legacy.utf8))
+        #expect(document.articles.count == 1)
+        #expect(document.articles[0].readingReactionRawValue == "")
+        #expect(document.articles[0].readingNote == "")
+    }
+
+    @Test func unknownReadingReactionClampsToNone() throws {
+        #expect(ArticleReadingReaction.clampedRawValue("nope") == "")
+        #expect(ArticleReadingReaction.clampedRawValue("learned") == "learned")
+        #expect(ArticleReadingReaction.clampedRawValue("  ") == "")
+        #expect(ArticleReadingReaction(stored: "nope") == nil)
+
+        let article = LibraryArticle(
+            key: "url:https://example.com/a",
+            feedURL: "https://example.com/rss",
+            guid: "a",
+            title: "A",
+            url: "https://example.com/a",
+            state: .read,
+            completedAt: nil,
+            isRemoteStarred: false,
+            updatedAt: Date(timeIntervalSince1970: 1),
+            readingReactionRawValue: "why",
+            readingNote: "Because the nonce repeats."
+        )
+        let decoded = try LibraryDocumentFormat.decoder().decode(
+            LibraryArticle.self,
+            from: LibraryDocumentFormat.encoder().encode(article)
+        )
+        #expect(decoded == article)
+    }
+
+    @Test func legacyLibraryJSONDecodesFolderNameWithoutFolderNames() throws {
+        #expect(LibraryDocumentFormat.schemaVersion == 2)
+        let modern = LibraryFeed(
+            feedURL: "https://security.test/rss",
+            title: "Trail of Bits",
+            websiteURL: nil,
+            folderNames: ["Security"],
+            isEnabled: true,
+            contentKind: "article",
+            includeInToday: true,
+            includeVideos: true,
+            includeShorts: false,
+            minVideoSeconds: 180,
+            blockedWords: "",
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let encodedFeed = try LibraryDocumentFormat.encoder().encode(modern)
+        let encodedObject = try #require(JSONSerialization.jsonObject(with: encodedFeed) as? [String: Any])
+        #expect(encodedObject["folderName"] as? String == "Security")
+        #expect(encodedObject["folderNames"] as? [String] == ["Security"])
+        let updatedAt = try #require(encodedObject["updatedAt"] as? String)
+
+        let legacy = """
+        {
+          "schemaVersion": 1,
+          "updatedAt": "\(updatedAt)",
+          "folderNames": [],
+          "feeds": [
+            {
+              "blockedWords": "",
+              "contentKind": "article",
+              "feedURL": "https://security.test/rss",
+              "folderName": "Security",
+              "includeInToday": true,
+              "includeShorts": false,
+              "includeVideos": true,
+              "isEnabled": true,
+              "minVideoSeconds": 180,
+              "title": "Trail of Bits",
+              "updatedAt": "\(updatedAt)"
+            }
+          ],
+          "articles": [],
+          "tombstones": []
+        }
+        """
+        let document = try LibraryDocument.decode(Data(legacy.utf8))
+        #expect(document.feeds.count == 1)
+        #expect(document.feeds[0].resolvedFolderNames == ["Security"])
     }
 }
 
