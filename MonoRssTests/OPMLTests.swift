@@ -35,6 +35,29 @@ struct OPMLTests {
         #expect(feeds.first { $0.title == "Loose" }?.folderName == nil)
     }
 
+    @Test func importUnionsSameURLUnderTwoFolders() throws {
+        let context = try context()
+        let opml = """
+        <?xml version="1.0"?><opml version="2.0"><body>
+          <outline text="Must read">
+            <outline text="One" xmlUrl="https://one.test/rss" />
+          </outline>
+          <outline text="Philosophy">
+            <outline text="One again" xmlUrl="https://one.test/rss" />
+          </outline>
+        </body></opml>
+        """
+
+        let inserted = try OPMLService().importDocument(Data(opml.utf8), in: context)
+        #expect(inserted == 1)
+        let feeds = try context.fetch(FetchDescriptor<Feed>())
+        #expect(feeds.count == 1)
+        let feed = try #require(feeds.first)
+        #expect(feed.memberships.contains("Must read"))
+        #expect(feed.memberships.contains("Philosophy"))
+        #expect(feed.folderName == "Must read")
+    }
+
     @Test func exportGroupsFeedsByFolder() throws {
         let context = try context()
         let must = Feed(title: "A & B", feedURL: URL(string: "https://example.test/a?x=1&y=2")!, folderName: "Must read")

@@ -18,17 +18,111 @@ struct OPMLFeedOutline: Equatable, Sendable {
     let folderName: String?
 }
 
+/// Counts for an OPML file before anything is inserted. `outlines` is the parse
+/// retained so a later import does not read the file again.
+struct OPMLImportPreview: Equatable, Sendable {
+    let newSourceCount: Int
+    let alreadyPresentCount: Int
+    let folderMembershipsToAdd: Int
+    let outlines: [OPMLFeedOutline]
+
+    static let confirmationTitle = "Import these sources?"
+
+    var confirmationTitle: String { Self.confirmationTitle }
+
+    /// "12 new sources. 3 already here. 4 folder memberships would be added."
+    var confirmationMessage: String {
+        let sources = Self.counted(newSourceCount, singular: "new source", plural: "new sources")
+        let present = Self.counted(alreadyPresentCount, singular: "already here", plural: "already here")
+        let folders = Self.counted(
+            folderMembershipsToAdd,
+            singular: "folder membership would be added",
+            plural: "folder memberships would be added"
+        )
+        return "\(sources). \(present). \(folders)."
+    }
+
+    static func resultTitle(newSourceCount: Int) -> String {
+        switch newSourceCount {
+        case 0: "No new sources"
+        case 1: "Imported 1 source"
+        default: "Imported \(newSourceCount) sources"
+        }
+    }
+
+    static func resultMessage(folderMembershipsAdded: Int, refreshError: String?) -> String {
+        var lines: [String] = []
+        switch folderMembershipsAdded {
+        case 0: break
+        case 1: lines.append("Added 1 folder membership.")
+        default: lines.append("Added \(folderMembershipsAdded) folder memberships.")
+        }
+        if let refreshError, refreshError.isEmpty == false {
+            lines.append(refreshError)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func counted(_ count: Int, singular: String, plural: String) -> String {
+        "\(count) \(count == 1 ? singular : plural)"
+    }
+}
+
 @MainActor
 struct OPMLService {
-    func importDocument(_ data: Data, in context: ModelContext) throws -> Int {
+    /// Reads the document and reports what import would change. Does not insert.
+    func previewDocument(_ data: Data, in context: ModelContext) throws -> OPMLImportPreview {
         let outlines = try Self.parse(data)
+        let feeds = try context.fetch(FetchDescriptor<Feed>())
+        var known: [(url: URL, folders: Set<String>)] = feeds.map { feed in
+            (feed.feedURL, Set(feed.memberships.map { $0.lowercased() }))
+        }
+        var newSourceCount = 0
+        var alreadyPresentCount = 0
+        var folderMembershipsToAdd = 0
+        var countedURLs = Set<URL>()
+
+        for outline in outlines {
+            let feedURL = outline.feedURL
+            if countedURLs.insert(feedURL).inserted {
+                if known.contains(where: { $0.url == feedURL }) {
+                    alreadyPresentCount += 1
+                } else {
+                    newSourceCount += 1
+                    known.append((feedURL, []))
+                }
+            }
+            guard let folder = FeedMembership.normalized(outline.folderName)?.lowercased() else { continue }
+            guard let index = known.firstIndex(where: { $0.url == feedURL }) else { continue }
+            var entry = known[index]
+            if entry.folders.insert(folder).inserted {
+                folderMembershipsToAdd += 1
+                known[index] = entry
+            }
+        }
+
+        return OPMLImportPreview(
+            newSourceCount: newSourceCount,
+            alreadyPresentCount: alreadyPresentCount,
+            folderMembershipsToAdd: folderMembershipsToAdd,
+            outlines: outlines
+        )
+    }
+
+    func importDocument(_ data: Data, in context: ModelContext) throws -> Int {
+        try importOutlines(try Self.parse(data), in: context).newSources
+    }
+
+    /// Insert path shared by a fresh parse and by a preview already held in memory.
+    func importOutlines(_ outlines: [OPMLFeedOutline], in context: ModelContext) throws -> (newSources: Int, folderMembershipsAdded: Int) {
         var inserted = 0
+        var memberships = 0
         for outline in outlines {
             let feedURL = outline.feedURL
             let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
             if let existing = try context.fetch(descriptor).first {
-                if let folder = outline.folderName, existing.folderName != folder {
-                    existing.folderName = folder
+                if let folder = outline.folderName, existing.addFolder(folder) {
+                    memberships += 1
                 }
                 continue
             }
@@ -38,9 +132,12 @@ struct OPMLService {
                 folderName: outline.folderName
             ))
             inserted += 1
+            if FeedMembership.normalized(outline.folderName) != nil {
+                memberships += 1
+            }
         }
         try context.save()
-        return inserted
+        return (inserted, memberships)
     }
 
     func exportDocument(feeds: [Feed]) -> OPMLDocument {
@@ -128,12 +225,15 @@ private final class OPMLOutlineParser: NSObject, XMLParserDelegate {
 
         if let rawURL = xmlURL, let feedURL = URL(string: rawURL) {
             let key = feedURL.absoluteString
+            let title = attributeDict.first(where: { $0.key.caseInsensitiveCompare("title") == .orderedSame })?.value
+                ?? attributeDict.first(where: { $0.key.caseInsensitiveCompare("text") == .orderedSame })?.value
+                ?? feedURL.host()
+                ?? "Imported Source"
+            let folder = currentFolder
             if seenURLs.insert(key).inserted {
-                let title = attributeDict.first(where: { $0.key.caseInsensitiveCompare("title") == .orderedSame })?.value
-                    ?? attributeDict.first(where: { $0.key.caseInsensitiveCompare("text") == .orderedSame })?.value
-                    ?? feedURL.host()
-                    ?? "Imported Source"
-                outlines.append(OPMLFeedOutline(title: title, feedURL: feedURL, folderName: currentFolder))
+                outlines.append(OPMLFeedOutline(title: title, feedURL: feedURL, folderName: folder))
+            } else if let folder, !folder.isEmpty {
+                outlines.append(OPMLFeedOutline(title: title, feedURL: feedURL, folderName: folder))
             }
             stack.append(.feed)
             return

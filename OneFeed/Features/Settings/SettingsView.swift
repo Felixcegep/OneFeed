@@ -63,25 +63,49 @@ struct SettingsView: View {
         .fileImporter(isPresented: $isPickingLibraryFolder, allowedContentTypes: LibraryDocumentPicker.folderTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.statusMessage = error.localizedDescription }
+                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
             }
         }
         .fileImporter(isPresented: $isPickingLibraryFile, allowedContentTypes: LibraryDocumentPicker.fileTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.statusMessage = error.localizedDescription }
+                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
             }
         }
         .fileImporter(isPresented: $viewModel.isImportingOPML, allowedContentTypes: [.xml, UTType(filenameExtension: "opml") ?? .xml]) { result in
-            do { viewModel.importOPML(from: try result.get()) }
-            catch { viewModel.statusMessage = error.localizedDescription }
+            switch result {
+            case .success(let url):
+                viewModel.stageOPMLImport(from: url)
+            case .failure(let error):
+                viewModel.presentStatus("Couldn’t import", message: error.localizedDescription)
+            }
+        }
+        .confirmationDialog(
+            OPMLImportPreview.confirmationTitle,
+            isPresented: $viewModel.isConfirmingOPMLImport,
+            titleVisibility: .visible
+        ) {
+            Button("Import") { viewModel.acceptOPMLImport() }
+            Button("Cancel", role: .cancel) { viewModel.declineOPMLImport() }
+        } message: {
+            Text(viewModel.opmlImportConfirmation)
         }
         .fileExporter(isPresented: $viewModel.isExportingOPML, document: viewModel.exportDocument, contentType: .xml, defaultFilename: "OneFeed Sources.opml") { result in
-            if case .failure(let error) = result { viewModel.statusMessage = error.localizedDescription }
+            if case .failure(let error) = result {
+                viewModel.presentStatus("Couldn’t export", message: error.localizedDescription)
+            }
         }
-        .alert("OneFeed", isPresented: Binding(get: { viewModel.statusMessage != nil }, set: { if !$0 { viewModel.statusMessage = nil } })) {
+        .alert(
+            viewModel.statusTitle ?? "",
+            isPresented: Binding(
+                get: { viewModel.statusTitle != nil },
+                set: { if !$0 { viewModel.clearStatus() } }
+            )
+        ) {
             Button("OK", role: .cancel) {}
-        } message: { Text(viewModel.statusMessage ?? "") }
+        } message: {
+            Text(viewModel.statusMessage)
+        }
     }
 
     private var readingSection: some View {
@@ -108,9 +132,9 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            GallerySectionHeader(text: "Library")
+            GallerySectionHeader(text: "On this device")
         } footer: {
-            Text("Unread articles older than this are removed. Items in Queue stay.")
+            Text("Unread stories older than this are removed, along with read and skipped stories that have no takeaway. Items in Queue stay. A story with a takeaway stays.")
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)
@@ -154,7 +178,7 @@ struct SettingsView: View {
                     GeminiAPIKeyStore.delete()
                 }
             }
-            NavigationLink("Experimental librarian") {
+            NavigationLink("Librarian") {
                 ExperimentalLibrarianView()
             }
         } header: {
@@ -195,7 +219,7 @@ struct SettingsView: View {
         } footer: {
             Text(viewModel.freshRSS == nil
                  ? "Bring your subscriptions and reading state into OneFeed."
-                 : "Done and Save sync to FreshRSS. Skip stays in OneFeed, and follows your library folder if you chose one.")
+                 : "Done and Queue sync to FreshRSS. Queue maps to the remote star. Skip stays in OneFeed, and follows your library folder if you chose one.")
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)
@@ -280,7 +304,7 @@ private struct ReadingAppearancePreview: View {
             .foregroundStyle(OneFeedTheme.ink)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : nil)
+            .lineLimit(nil)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 8)
             .accessibilityLabel("Reading preview")
@@ -349,6 +373,7 @@ struct GeminiAPIKeyForm: View {
     @Binding var key: String
     var onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #if os(iOS)
     @State private var sheetDetent: PresentationDetent = .medium
     @FocusState private var keyFieldFocused: Bool
@@ -386,8 +411,17 @@ struct GeminiAPIKeyForm: View {
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
-        .presentationDetents([.medium, .large], selection: $sheetDetent)
+        .presentationDetents(
+            dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large],
+            selection: $sheetDetent
+        )
         .presentationContentInteraction(.scrolls)
+        .onAppear {
+            if dynamicTypeSize.isAccessibilitySize { sheetDetent = .large }
+        }
+        .onChange(of: dynamicTypeSize) { _, size in
+            if size.isAccessibilitySize { sheetDetent = .large }
+        }
         .onChange(of: keyFieldFocused) { _, focused in
             if focused { sheetDetent = .large }
         }
