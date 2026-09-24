@@ -35,6 +35,8 @@ struct FoldersView: View {
     @State private var newFolderName = ""
     @State private var folderOrderTick = 0
     @State private var storyPlacements: [String: StoryPlacement] = [:]
+    /// Folder rows stay put while refresh progress updates. Rebuilt only when sources, stories, or order change.
+    @State private var directoryCache = FolderDirectoryCache()
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -45,7 +47,6 @@ struct FoldersView: View {
     }
 
     var body: some View {
-        let directory = FeedRootDirectory(feeds: feeds, articles: openQuery, placements: storyPlacements)
         let _ = iconTick
         let _ = folderOrderTick
         List {
@@ -58,10 +59,10 @@ struct FoldersView: View {
                         editingRow(row)
                     }
                     newFolderRow
-                } else if directory.summaries.isEmpty {
+                } else if directorySummaries.isEmpty {
                     emptySourceInvite
                 } else {
-                    ForEach(directory.summaries) { summary in
+                    ForEach(directorySummaries) { summary in
                         folderRow(summary)
                     }
                 }
@@ -186,6 +187,38 @@ struct FoldersView: View {
                 Button("Move down", systemImage: "arrow.down") { moveFolder(summary.name, by: 1) }
             }
         }
+    }
+
+    /// Cached folder rows. A progress tick keeps the same stamp, so the list is not regrouped.
+    private var directorySummaries: [FolderSummary] {
+        let stamp = directoryStampValue
+        if directoryCache.stamp == stamp {
+            return directoryCache.summaries
+        }
+        let summaries = FeedRootDirectory(
+            feeds: feeds,
+            articles: openQuery,
+            placements: storyPlacements
+        ).summaries
+        directoryCache.stamp = stamp
+        directoryCache.summaries = summaries
+        return summaries
+    }
+
+    private var directoryStampValue: Int {
+        var hasher = Hasher()
+        hasher.combine(folderOrderTick)
+        hasher.combine(placementStamp(storyPlacements))
+        hasher.combine(openQuery.count)
+        for article in openQuery {
+            hasher.combine(article.id)
+            hasher.combine(article.feed?.id)
+        }
+        for feed in feeds {
+            hasher.combine(feed.id)
+            hasher.combine(feed.memberships)
+        }
+        return hasher.finalize()
     }
 
     private func displayedFolderNames() -> [String] {
@@ -579,6 +612,27 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
     var id: Self { self }
 }
 
+private func placementStamp(_ placements: [String: StoryPlacement]) -> Int {
+    var stamp = placements.count
+    for (key, placement) in placements {
+        stamp ^= key.hashValue
+        stamp ^= placement.relationshipRaw.hashValue
+        stamp ^= placement.storyClusterID?.hashValue ?? 0
+        stamp ^= placement.matchedConsumedAt?.hashValue ?? 0
+    }
+    return stamp
+}
+
+private final class StoryRowCache {
+    var stamp = 0
+    var rows: [FeedStoryRow] = []
+}
+
+private final class FolderDirectoryCache {
+    var stamp = 0
+    var summaries: [FolderSummary] = []
+}
+
 private struct FeedRootDirectory {
     let summaries: [FolderSummary]
 
@@ -596,6 +650,8 @@ struct ArticleCollectionView: View {
     @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
     @State private var storyPlacements: [String: StoryPlacement] = [:]
+    /// Story rows stay grouped while the open article changes. Rebuilt when the query, stories, or clusters change.
+    @State private var storyRowCache = StoryRowCache()
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
@@ -624,11 +680,35 @@ struct ArticleCollectionView: View {
     }
 
     private var storyRows: [FeedStoryRow] {
-        StoryGrouping.rows(
+        let stamp = storyRowStamp
+        if storyRowCache.stamp == stamp {
+            return storyRowCache.rows
+        }
+        let rows = StoryGrouping.rows(
             from: items.filter(\.isStored),
             placements: storyPlacements,
             expandedClusterIDs: expandedClusterIDs
         )
+        storyRowCache.stamp = stamp
+        storyRowCache.rows = rows
+        return rows
+    }
+
+    private var storyRowStamp: Int {
+        var hasher = Hasher()
+        hasher.combine(appliedSearch)
+        hasher.combine(expandedClusterIDs)
+        hasher.combine(placementStamp(storyPlacements))
+        switch destination {
+        case .unread: hasher.combine(0)
+        case .folder(let id): hasher.combine(String(describing: id))
+        }
+        for article in articles where article.isStored {
+            hasher.combine(article.id)
+            hasher.combine(article.feed?.id)
+            hasher.combine(article.stateRawValue)
+        }
+        return hasher.finalize()
     }
 
     var body: some View {

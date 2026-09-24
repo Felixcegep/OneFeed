@@ -48,47 +48,11 @@ struct CurrentView: View {
             if stories.isEmpty {
                 caughtUp
             } else {
-                List {
-                    if let featured = stories.first {
-                        Section {
-                            Button { open(featured) } label: {
-                                FeaturedStory(article: featured, status: viewModel.storyCaptions[featured.id])
-                            }
-                            .buttonStyle(ArticleCardButtonStyle())
-                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .articleActions(for: featured, in: modelContext) {
-                                viewModel.loadCurrent()
-                            }
-                        } header: {
-                            GallerySectionHeader(text: "Up next")
-                        }
-                        #if os(iOS)
-                        .listSectionSeparator(.hidden)
-                        #endif
-                    }
-                    if stories.count > 1 {
-                        Section {
-                            ForEach(Array(stories.dropFirst())) { article in
-                                Button { open(article) } label: {
-                                    ArticleRow(article: article, status: viewModel.storyCaptions[article.id])
-                                }
-                                .buttonStyle(DirectoryRowButtonStyle())
-                                .articleListRow(isCurrent: article.isCurrentReading, isSelected: readerArticle?.id == article.id)
-                                .articleActions(for: article, in: modelContext) {
-                                    viewModel.loadCurrent()
-                                }
-                            }
-                        } header: {
-                            GallerySectionHeader(text: "Also today")
-                        }
-                        #if os(iOS)
-                        .listSectionSeparator(.hidden)
-                        #endif
-                    }
-                }
-                .oneFeedGroupedListStyle()
+                TodayStoryList(
+                    viewModel: viewModel,
+                    readerArticleID: readerArticle?.id,
+                    open: open
+                )
             }
         }
         .background(OneFeedTheme.plaster)
@@ -282,5 +246,61 @@ struct CurrentView: View {
         let detail = viewModel.progress.detailText()
         if detail.isEmpty { return "Fetching your sources. This can take a minute the first time." }
         return detail
+    }
+}
+
+/// Today’s stories. Kept off the progress line so a refresh tick does not rebuild the deck.
+private struct TodayStoryList: View {
+    var viewModel: CurrentViewModel
+    var readerArticleID: UUID?
+    var open: (Article) -> Void
+    @Environment(\.modelContext) private var modelContext
+
+    private var stories: [Article] {
+        viewModel.remainingArticles.filter(\.isStored)
+    }
+
+    var body: some View {
+        List {
+            if let featured = stories.first {
+                Section {
+                    Button { open(featured) } label: {
+                        FeaturedStory(article: featured, status: viewModel.storyCaptions[featured.id])
+                    }
+                    .buttonStyle(ArticleCardButtonStyle())
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .articleActions(for: featured, in: modelContext) {
+                        viewModel.loadCurrent()
+                    }
+                } header: {
+                    GallerySectionHeader(text: "Up next")
+                }
+                #if os(iOS)
+                .listSectionSeparator(.hidden)
+                #endif
+            }
+            if stories.count > 1 {
+                Section {
+                    ForEach(Array(stories.dropFirst())) { article in
+                        Button { open(article) } label: {
+                            ArticleRow(article: article, status: viewModel.storyCaptions[article.id])
+                        }
+                        .buttonStyle(DirectoryRowButtonStyle())
+                        .articleListRow(isCurrent: article.isCurrentReading, isSelected: readerArticleID == article.id)
+                        .articleActions(for: article, in: modelContext) {
+                            viewModel.loadCurrent()
+                        }
+                    }
+                } header: {
+                    GallerySectionHeader(text: "Also today")
+                }
+                #if os(iOS)
+                .listSectionSeparator(.hidden)
+                #endif
+            }
+        }
+        .oneFeedGroupedListStyle()
     }
 }
