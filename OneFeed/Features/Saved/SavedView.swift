@@ -28,10 +28,10 @@ struct SavedView: View {
         let query = searchQuery
         guard !query.isEmpty else { return waiting }
         return waiting.filter { article in
-            article.title.localizedCaseInsensitiveContains(query)
-                || article.readingNote.localizedCaseInsensitiveContains(query)
-                || (article.readingTakeawayLine?.localizedCaseInsensitiveContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedCaseInsensitiveContains(query)
+            article.title.localizedStandardContains(query)
+                || article.readingNote.localizedStandardContains(query)
+                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
+                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
         }
     }
 

@@ -23,10 +23,10 @@ struct HistoryView: View {
         guard !query.isEmpty else { return history }
         return history.filter { article in
             guard article.isStored else { return false }
-            return article.title.localizedCaseInsensitiveContains(query)
-                || article.readingNote.localizedCaseInsensitiveContains(query)
-                || (article.readingTakeawayLine?.localizedCaseInsensitiveContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedCaseInsensitiveContains(query)
+            return article.title.localizedStandardContains(query)
+                || article.readingNote.localizedStandardContains(query)
+                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
+                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
         }
     }
 

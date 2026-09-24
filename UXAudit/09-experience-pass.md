@@ -46,6 +46,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Refresh and Skip each started another extract and summary | Today, background refresh | High | Follow-up work ran again after the shared refresh lock was released | One extraction-and-summary pass runs at a time. A second caller waits for it | Code review |
 | A second Done, Queue, or Put in Queue wrote another sync | Today, Feed, History | High | The action did not notice the article was already in that state, and the sync queue appended the same change | The action returns when the state already matches, and a pending sync of the same kind is kept once | `SwiftDataFreshRSSSyncTests.enqueueMutationIgnoresARepeatedStar` |
 | Stories inside one History day appeared in an unstable order | History | Medium | Grouping by day used a dictionary, which does not keep the query order | Each day is newest first | `RetentionAndExtractionTests.historyDayKeepsNewestFirst` |
+| Queue and History search missed accented titles | Queue, History | Medium | Those screens used case-insensitive search, so “cafe” did not match “café” | They use the same standard search as Feed and Sources | Code review |
 
 ## Still open
 

@@ -57,9 +57,9 @@ struct FeedStreamView: View {
         let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return open }
         return open.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-                || ($0.feed?.title.localizedCaseInsensitiveContains(query) ?? false)
-                || ($0.displayExcerpt?.localizedCaseInsensitiveContains(query) ?? false)
+            $0.title.localizedStandardContains(query)
+                || ($0.feed?.title.localizedStandardContains(query) ?? false)
+                || ($0.displayExcerpt?.localizedStandardContains(query) ?? false)
         }
     }
 
