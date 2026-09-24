@@ -125,11 +125,10 @@ final class RefreshProgress {
         return remainingCount == 1 ? "1 left" : "\(remainingCount) left"
     }
 
+    /// Stable line for the full-screen cover. Source names and the countdown change every tick and resize the cover.
     var coverStatus: String {
-        let detail = detailText()
-        if !detail.isEmpty { return detail }
-        if !remainingText.isEmpty { return remainingText }
-        return "This can take a minute the first time."
+        guard total > 0 else { return "This can take a minute the first time." }
+        return countText
     }
 
     /// One line for the navigation subtitle so the list does not need a tall banner.
