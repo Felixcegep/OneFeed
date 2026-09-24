@@ -231,7 +231,9 @@ final class CurrentViewModel {
         self.totalCount = totalCount
         if let context {
             remainingArticles = (try? deckService.remainingArticles(in: context)) ?? []
-            let memories = (try? context.fetch(FetchDescriptor<ContentMemory>())) ?? []
+            var descriptor = FetchDescriptor<ContentMemory>()
+            descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt]
+            let memories = (try? context.fetch(descriptor)) ?? []
             storyCaptions = StoryGrouping.captions(for: remainingArticles, memories: memories)
         } else {
             remainingArticles = []

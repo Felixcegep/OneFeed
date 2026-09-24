@@ -283,7 +283,9 @@ struct DailyDeckService {
     }
 
     nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
-        let memories = try context.fetch(FetchDescriptor<ContentMemory>())
+        var descriptor = FetchDescriptor<ContentMemory>()
+        descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID]
+        let memories = try context.fetch(descriptor)
         var lookup: [String: StoryPlacement] = [:]
         lookup.reserveCapacity(memories.count)
         for memory in memories {

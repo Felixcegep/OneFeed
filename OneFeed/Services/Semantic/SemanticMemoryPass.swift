@@ -16,8 +16,8 @@ nonisolated enum SemanticMemoryPass {
         applyConsumed(consumed, to: &known)
 
         let embedder = EmbeddingService()
-        let outcome = await classify(jobs, against: known, embedder: embedder)
-        try commit(outcome, consumed: consumed, in: context)
+        let outcome = await classify(jobs, against: known, packed: packedVectors(from: memories), embedder: embedder)
+        try commit(outcome, consumed: consumed, memories: memories, in: context)
         try context.save()
     }
 
@@ -63,6 +63,10 @@ nonisolated enum SemanticMemoryPass {
 
     private static func fetchArticles(in context: ModelContext) throws -> [Article] {
         var descriptor = FetchDescriptor<Article>()
+        // Bodies stay faults until a job is actually embedded. History rows do not need their HTML.
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.title, \.url, \.publishedAt, \.stateRawValue, \.completedAt, \.contentKind, \.videoID, \.remoteID,
+        ]
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         return try context.fetch(descriptor)
     }
@@ -169,8 +173,8 @@ nonisolated enum SemanticMemoryPass {
                 contentHash: memory.contentHash,
                 sourceTitle: sourceTitles[memory.identityKey] ?? "",
                 publishedAt: memory.publishedAt,
-                titleVector: ContentVector.unpack(memory.titleVector),
-                contentVector: ContentVector.unpack(memory.contentVector),
+                titleVector: nil,
+                contentVector: nil,
                 embeddingLanguage: memory.embeddingLanguage,
                 embeddingRevision: memory.embeddingRevision,
                 hasGeminiSummary: !memory.semanticSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -180,9 +184,37 @@ nonisolated enum SemanticMemoryPass {
         }
     }
 
+    private static func packedVectors(from memories: [ContentMemory]) -> [String: (title: Data?, content: Data?)] {
+        var packed: [String: (title: Data?, content: Data?)] = [:]
+        packed.reserveCapacity(memories.count)
+        for memory in memories where memory.titleVector != nil || memory.contentVector != nil {
+            packed[memory.identityKey] = (memory.titleVector, memory.contentVector)
+        }
+        return packed
+    }
+
+    /// Unpacks vectors only for the language and revision about to be scored.
+    private static func materialize(
+        _ known: inout [SemanticItem],
+        language: String,
+        revision: Int,
+        packed: [String: (title: Data?, content: Data?)]
+    ) {
+        for index in known.indices {
+            guard known[index].embeddingLanguage == language,
+                  known[index].embeddingRevision == revision,
+                  known[index].titleVector == nil,
+                  known[index].contentVector == nil,
+                  let data = packed[known[index].identityKey] else { continue }
+            known[index].titleVector = ContentVector.unpack(data.title)
+            known[index].contentVector = ContentVector.unpack(data.content)
+        }
+    }
+
     private static func classify(
         _ jobs: [Job],
         against known: [SemanticItem],
+        packed: [String: (title: Data?, content: Data?)],
         embedder: EmbeddingService
     ) async -> Outcome {
         var known = known
@@ -190,7 +222,7 @@ nonisolated enum SemanticMemoryPass {
         var patches: [String: UUID] = [:]
         decisions.reserveCapacity(jobs.count)
         for job in jobs {
-            let result = await classify(job, against: known, embedder: embedder)
+            let result = await classify(job, against: known, packed: packed, embedder: embedder)
             decisions.append(result.decision)
             if let patch = result.patch {
                 patches[patch.key] = patch.id
@@ -203,6 +235,7 @@ nonisolated enum SemanticMemoryPass {
     private static func classify(
         _ job: Job,
         against known: [SemanticItem],
+        packed: [String: (title: Data?, content: Data?)],
         embedder: EmbeddingService
     ) async -> (decision: Decision, known: [SemanticItem], patch: (key: String, id: UUID)?) {
         var known = known
@@ -237,6 +270,7 @@ nonisolated enum SemanticMemoryPass {
                 item.contentVector = vectors.content
                 item.embeddingLanguage = vectors.language
                 item.embeddingRevision = vectors.revision
+                materialize(&known, language: vectors.language, revision: vectors.revision, packed: packed)
                 let comparable = known.filter { memory in
                     hasVectors(memory)
                         && memory.embeddingLanguage == vectors.language
@@ -300,8 +334,12 @@ nonisolated enum SemanticMemoryPass {
         }
     }
 
-    private static func commit(_ outcome: Outcome, consumed: [ConsumedMark], in context: ModelContext) throws {
-        let memories = try context.fetch(FetchDescriptor<ContentMemory>())
+    private static func commit(
+        _ outcome: Outcome,
+        consumed: [ConsumedMark],
+        memories: [ContentMemory],
+        in context: ModelContext
+    ) throws {
         var indexed = index(memories)
         for mark in consumed {
             guard let memory = indexed[mark.identityKey], memory.consumedAt == nil else { continue }

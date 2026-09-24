@@ -24,10 +24,10 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Search regrouped the feed on every keystroke | Feed, Queue, History | Medium | The field and the filter shared one string | The field stays live. The filter waits 180ms, and clears immediately | Code review |
 | Reader alerts showed raw errors | Reader | Medium | `localizedDescription` included API text | Gemini copy stays. Other failures use one plain sentence | `RetentionAndExtractionTests.readerFailuresStayInPlainLanguage` |
 | Asking about a video kept running after the sheet closed | Reader | Medium | The ask task was unstructured | The sheet cancels that task on disappear | Code review |
+| Building Today loaded every article body and every vector | Today build | High | `prepare` fetched full articles and unpacked every memory | HTML stays a fault until a story is embedded. Vectors unpack only for the language being scored. Deck placement and captions skip vector blobs | Code review |
 
 ## Still open
 
 - Today still does not list “N more sources” under a story. The deck keeps one slot per cluster. The already-read line is on the row.
 - Swiping the takeaway sheet closed still marks the article read. That matches Done → optional note. A draft is not saved on swipe.
-- `SemanticMemoryPass` still loads every article and memory while building Today. Scoring is limited to one language and revision, but the fetch is not.
 - No Xcode on this machine, so the new tests have not been executed here. Scroll-to-top of the progress line still needs a device pass.
