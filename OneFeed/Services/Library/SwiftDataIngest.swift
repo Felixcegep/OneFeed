@@ -70,6 +70,11 @@ actor LibraryIngestActor {
         try persistIfNeeded()
     }
 
+    func importOPML(_ outlines: [OPMLFeedOutline]) throws -> (newSources: Int, folderMembershipsAdded: Int) {
+        modelContext.autosaveEnabled = false
+        return try OPMLImport.apply(outlines, in: modelContext)
+    }
+
     func encodedLibraryFile(extraTombstones: [LibraryTombstone]) throws -> Data {
         try librarySnapshot(extraTombstones: extraTombstones).encoded()
     }

@@ -77,7 +77,7 @@ final class Feed {
         self.libraryUpdatedAt = libraryUpdatedAt
     }
 
-    func touchLibrary() {
+    nonisolated func touchLibrary() {
         libraryUpdatedAt = .now
     }
 
@@ -108,7 +108,7 @@ final class Feed {
         return "In \(names.joined(separator: ", "))"
     }
 
-    func setMemberships(_ names: [String], touch: Bool = true) {
+    nonisolated func setMemberships(_ names: [String], touch: Bool = true) {
         let normalized = FeedMembership.normalize(names)
         folderNames = normalized
         folderName = normalized.first
@@ -118,7 +118,7 @@ final class Feed {
 
     /// Adds a folder and leaves the others in place. Returns false when it was already there.
     @discardableResult
-    func addFolder(_ name: String, touch: Bool = true) -> Bool {
+    nonisolated func addFolder(_ name: String, touch: Bool = true) -> Bool {
         guard let name = FeedMembership.normalized(name) else { return false }
         var names = memberships
         guard !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else { return false }

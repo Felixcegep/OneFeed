@@ -119,29 +119,7 @@ struct OPMLService {
 
     /// Insert path shared by a fresh parse and by a preview already held in memory.
     func importOutlines(_ outlines: [OPMLFeedOutline], in context: ModelContext) throws -> (newSources: Int, folderMembershipsAdded: Int) {
-        var inserted = 0
-        var memberships = 0
-        for outline in outlines {
-            let feedURL = outline.feedURL
-            let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
-            if let existing = try context.fetch(descriptor).first {
-                if let folder = outline.folderName, existing.addFolder(folder) {
-                    memberships += 1
-                }
-                continue
-            }
-            context.insert(Feed(
-                title: outline.title,
-                feedURL: feedURL,
-                folderName: outline.folderName
-            ))
-            inserted += 1
-            if FeedMembership.normalized(outline.folderName) != nil {
-                memberships += 1
-            }
-        }
-        try context.save()
-        return (inserted, memberships)
+        try OPMLImport.apply(outlines, in: context)
     }
 
     func exportDocument(feeds: [Feed]) -> OPMLDocument {
@@ -191,6 +169,35 @@ struct OPMLService {
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+    }
+}
+
+/// Writes an OPML preview onto whatever store context it is given.
+nonisolated enum OPMLImport {
+    static func apply(_ outlines: [OPMLFeedOutline], in context: ModelContext) throws -> (newSources: Int, folderMembershipsAdded: Int) {
+        var inserted = 0
+        var memberships = 0
+        for outline in outlines {
+            let feedURL = outline.feedURL
+            let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
+            if let existing = try context.fetch(descriptor).first {
+                if let folder = outline.folderName, existing.addFolder(folder) {
+                    memberships += 1
+                }
+                continue
+            }
+            context.insert(Feed(
+                title: outline.title,
+                feedURL: feedURL,
+                folderName: outline.folderName
+            ))
+            inserted += 1
+            if FeedMembership.normalized(outline.folderName) != nil {
+                memberships += 1
+            }
+        }
+        try context.save()
+        return (inserted, memberships)
     }
 }
 

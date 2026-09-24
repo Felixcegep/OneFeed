@@ -261,22 +261,21 @@ final class SettingsViewModel {
 
     private func commitOPMLImport(_ preview: OPMLImportPreview) {
         guard let context else { return }
-        do {
-            let applied = try OPMLService().importOutlines(preview.outlines, in: context)
-            if applied.newSources > 0 || applied.folderMembershipsAdded > 0 {
-                LibraryChange.noteStructureChanged()
-            }
-            reload()
-            let newSources = applied.newSources
-            let folderMembershipsAdded = applied.folderMembershipsAdded
-            Task {
+        let outlines = preview.outlines
+        Task {
+            do {
+                let applied = try await SwiftDataIngest.actor(from: context).importOPML(outlines)
+                if applied.newSources > 0 || applied.folderMembershipsAdded > 0 {
+                    LibraryChange.noteStructureChanged()
+                }
+                reload()
                 if freshRSS != nil {
                     try? await freshRSSService.subscribeLocalFeeds(in: context)
                 }
-                await finishOPMLImport(newSourceCount: newSources, folderMembershipsAdded: folderMembershipsAdded)
+                await finishOPMLImport(newSourceCount: applied.newSources, folderMembershipsAdded: applied.folderMembershipsAdded)
+            } catch {
+                presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
             }
-        } catch {
-            presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
         }
     }
 

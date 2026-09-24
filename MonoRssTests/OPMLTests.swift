@@ -99,4 +99,18 @@ struct OPMLTests {
         #expect(parsed.first?.title == "One")
         #expect(parsed.first?.folderName == "Must read")
     }
+
+    @Test func confirmingOPMLImportWritesSourcesOnTheIngestActor() async throws {
+        let context = try context()
+        let outlines = [
+            OPMLFeedOutline(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Must read")
+        ]
+        let applied = try await LibraryIngestActor(modelContainer: context.container).importOPML(outlines)
+        #expect(applied.newSources == 1)
+        #expect(applied.folderMembershipsAdded == 1)
+        let stored = try ModelContext(context.container).fetch(FetchDescriptor<Feed>())
+        let feed = try #require(stored.first)
+        #expect(feed.title == "One")
+        #expect(feed.folderName == "Must read")
+    }
 }
