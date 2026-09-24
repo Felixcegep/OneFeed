@@ -122,6 +122,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A library change during Sync kept scheduling another push | Settings | Medium | The delayed push started a new 1.5-second wait every time it found a sync still running | One follow-up push is remembered and runs after that sync. Leaving the app during a sync does the same | Code review |
 | Replacing the article could snapshot the reading place twice at once | Reader | Medium | The timer’s snapshot and the save-before-reload both called the page | The reload waits for the snapshot already running, saves once more, and keeps a new snapshot from starting until that save finishes | Code review |
 | A middle story could stay on screen after it was replaced | Queue, History, Feed, Source | High | The row cache treated the same count and the same ends as the same list | The cache includes every story id, so a middle replacement rebuilds the rows. Opening a story still does not regroup them | `SourceDetailTests.middleIdentityChangesTheListToken` |
+| A folder badge could keep a story that had already left the middle of the list | Feed | High | The folder cache used the count and the ends, so a middle replacement left the old unread count | Folder badges use every open story id. A refresh tick still does not regroup the folders | Code review |
+| A video could stay in the article section of Queue | Queue | Medium | The section cache ignored a story whose kind changed and whose id did not | The queue cache includes each story’s kind, so a video moves into the video section | Code review |
 
 ## Still open
 

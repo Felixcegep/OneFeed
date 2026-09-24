@@ -208,12 +208,10 @@ struct FoldersView: View {
         return summaries
     }
 
-    /// Count and ends, plus each source. A refresh tick does not walk every article.
+    /// Every open story, plus each source. A refresh tick does not regroup the folders.
     private var directoryEdge: Int {
         var token = folderOrderTick
-        token = token &* 31 &+ openQuery.count
-        token = token &* 31 &+ (openQuery.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (openQuery.last?.id.hashValue ?? 0)
+        token = token &* 31 &+ openQueryEdge
         token = token &* 31 &+ placementTick
         for feed in feeds {
             token = token &* 31 &+ feed.id.hashValue
@@ -224,10 +222,7 @@ struct FoldersView: View {
     }
 
     private var openQueryEdge: Int {
-        var token = openQuery.count
-        token = token &* 31 &+ (openQuery.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (openQuery.last?.id.hashValue ?? 0)
-        return token
+        ListIdentity.token(ids: openQuery.lazy.map(\.id))
     }
 
     private func displayedFolderNames() -> [String] {
