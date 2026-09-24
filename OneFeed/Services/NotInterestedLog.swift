@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+/// A Not interested mark stays only when the story was actually skipped. A failed skip clears it.
+enum NotInterestedFiling {
+    static func clearsMark(skipLanded: Bool) -> Bool {
+        !skipLanded
+    }
+}
+
 enum NotInterestedLog {
     static let archiveFolderName = "Archive"
     static let keepLimit = 200

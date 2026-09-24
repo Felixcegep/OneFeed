@@ -27,10 +27,26 @@ enum ArticleActions {
 
     @discardableResult
     static func markNotInterested(_ article: Article, in context: ModelContext) -> Bool {
+        let wasMarked = article.notInterested
+        let alreadyFiled = !NotInterestedLog.entries(matching: article, in: context).isEmpty
         ReadingUndo.begin(article, in: context)
         do {
-            try NotInterestedLog.record(article, in: context)
-            try apply(.skipped, to: article, in: context)
+            let entry = try NotInterestedLog.record(article, in: context)
+            do {
+                try apply(.skipped, to: article, in: context)
+            } catch {
+                let landed = article.state == .skipped
+                if NotInterestedFiling.clearsMark(skipLanded: landed) {
+                    article.notInterested = wasMarked
+                    if alreadyFiled {
+                        if !wasMarked { try? context.save() }
+                    } else {
+                        try? NotInterestedLog.delete(entry, in: context)
+                    }
+                    return false
+                }
+                return true
+            }
             return true
         } catch {
             return false

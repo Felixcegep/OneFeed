@@ -9,6 +9,11 @@ struct NotInterestedLogTests {
         try InMemoryStore.makeContext()
     }
 
+    @Test func aFailedSkipClearsANewNotInterestedMark() {
+        #expect(NotInterestedFiling.clearsMark(skipLanded: false))
+        #expect(NotInterestedFiling.clearsMark(skipLanded: true) == false)
+    }
+
     @Test func recordingLogsTheArticleAndMarksIt() throws {
         let context = try context()
         let feed = Feed(

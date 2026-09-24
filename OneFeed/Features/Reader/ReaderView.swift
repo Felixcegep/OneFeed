@@ -387,14 +387,26 @@ struct ReaderView: View {
     #endif
 
     private func finishNotInterested() {
+        guard decision == nil else { return }
         ReadingUndo.begin(article, in: modelContext)
+        let wasMarked = article.notInterested
+        let alreadyFiled = !NotInterestedLog.entries(matching: article, in: modelContext).isEmpty
+        let entry: NotInterestedEntry
         do {
-            try NotInterestedLog.record(article, in: modelContext)
+            entry = try NotInterestedLog.record(article, in: modelContext)
         } catch {
             filingError = UserFacingFailure.message(for: error, fallback: "Couldn’t file that as not interested.")
             return
         }
-        finish(.skipped)
+        finish(.skipped) {
+            guard NotInterestedFiling.clearsMark(skipLanded: article.state == .skipped) else { return }
+            article.notInterested = wasMarked
+            if alreadyFiled {
+                if !wasMarked { try? modelContext.save() }
+            } else {
+                try? NotInterestedLog.delete(entry, in: modelContext)
+            }
+        }
     }
 
     private func beginFinishRead() {
@@ -403,7 +415,7 @@ struct ReaderView: View {
         showingTakeaway = true
     }
 
-    private func finish(_ state: ArticleState) {
+    private func finish(_ state: ArticleState, onFailed: (() -> Void)? = nil) {
         guard decision == nil else { return }
         if state == .saved, article.state == .saved { return }
         decision = state
@@ -411,6 +423,7 @@ struct ReaderView: View {
             await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
             guard onFinish(state) else {
                 decision = nil
+                onFailed?()
                 return
             }
             OneFeedMotion.acknowledge(state)
