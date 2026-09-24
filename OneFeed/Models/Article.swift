@@ -161,10 +161,21 @@ final class Article {
         }
     }
 
+    /// The reader asks for this on redraws. Trimming the stored body once is enough.
+    @Transient private var cachedReadableSource: String?
+    @Transient private var cachedReadableHTML: String?
+
     var readableHTML: String? {
         let value = contentHTML ?? summary
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return value
+        if cachedReadableSource == value { return cachedReadableHTML }
+        cachedReadableSource = value
+        guard let value else {
+            cachedReadableHTML = nil
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        cachedReadableHTML = trimmed.isEmpty ? nil : value
+        return cachedReadableHTML
     }
 
     var displayImageURL: URL? { FeedImageURL.displayable(imageURL) }

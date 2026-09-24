@@ -20,6 +20,8 @@ final class CurrentViewModel {
     private(set) var position = 0
     private(set) var totalCount = 0
     private(set) var isRefreshing = false
+    private var captionStamp = 0
+    private var cachedCaptions: [UUID: String] = [:]
     private(set) var storyCaptions: [UUID: String] = [:]
     let progress = RefreshProgress()
     var presentedError: String?
@@ -226,24 +228,44 @@ final class CurrentViewModel {
         self.totalCount = totalCount
         if let context {
             remainingArticles = (try? deckService.remainingArticles(in: context)) ?? []
-            let queued = ArticleState.queued.rawValue
-            let current = ArticleState.current.rawValue
-            var openDescriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
-                article.stateRawValue == queued || article.stateRawValue == current
-            })
-            openDescriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID]
-            let openArticles = (try? context.fetch(openDescriptor)) ?? []
-            var descriptor = FetchDescriptor<ContentMemory>()
-            descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt, \.storyClusterID, \.relationshipRaw]
-            let memories = (try? context.fetch(descriptor)) ?? []
-            storyCaptions = StoryGrouping.captions(
-                for: remainingArticles,
-                memories: memories,
-                openArticles: openArticles
-            )
+            storyCaptions = captions(for: remainingArticles, in: context)
         } else {
             remainingArticles = []
             storyCaptions = [:]
         }
+    }
+
+    /// Same deck within the hour reuses captions. A finished story or a new hour loads them again.
+    private func captions(for articles: [Article], in context: ModelContext) -> [UUID: String] {
+        guard !articles.isEmpty else {
+            captionStamp = 0
+            cachedCaptions = [:]
+            return [:]
+        }
+        var stamp = articles.count
+        stamp ^= Int(Date().timeIntervalSince1970 / 3600)
+        for article in articles {
+            stamp ^= article.id.hashValue
+            stamp ^= article.stateRawValue.hashValue
+        }
+        if stamp == captionStamp { return cachedCaptions }
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var openDescriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
+            article.stateRawValue == queued || article.stateRawValue == current
+        })
+        openDescriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID]
+        let openArticles = (try? context.fetch(openDescriptor)) ?? []
+        var descriptor = FetchDescriptor<ContentMemory>()
+        descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt, \.storyClusterID, \.relationshipRaw]
+        let memories = (try? context.fetch(descriptor)) ?? []
+        let built = StoryGrouping.captions(
+            for: articles,
+            memories: memories,
+            openArticles: openArticles
+        )
+        captionStamp = stamp
+        cachedCaptions = built
+        return built
     }
 }
