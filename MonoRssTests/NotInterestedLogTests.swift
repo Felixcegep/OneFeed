@@ -104,6 +104,9 @@ struct NotInterestedLogTests {
         #expect(plans.count == 1)
         #expect(plans.first?.entryIDs == groups.first?.entries.map(\.id))
         #expect(groups.first?.entries.map(\.articleTitle) == ["Newer", "Older"])
+        #expect(NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 2))
+        #expect(!NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 0))
+        #expect(!NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 201))
     }
 
     @Test func snapshotMentionsRepeatsAndFolder() throws {

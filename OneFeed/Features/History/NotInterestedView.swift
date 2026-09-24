@@ -36,12 +36,18 @@ struct NotInterestedView: View {
 
     private func reloadLog() async {
         let edge = logStamp
+        if NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: entries.count) {
+            publish(NotInterestedListPlan.groups(from: entries.map(NotInterestedEntrySnap.init)))
+        }
         let snaps = entries.map(NotInterestedEntrySnap.init)
-        let guids = entries.map(\.articleGUID)
         let plans = await Task.detached(priority: .userInitiated) {
             NotInterestedListPlan.groups(from: snaps)
         }.value
         guard !Task.isCancelled, edge == logStamp else { return }
+        publish(plans)
+    }
+
+    private func publish(_ plans: [NotInterestedGroupPlan]) {
         let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let groups = plans.map { plan in
             NotInterestedSourceGroup(
@@ -52,9 +58,21 @@ struct NotInterestedView: View {
                 entries: plan.entryIDs.compactMap { byID[$0] }
             )
         }
-        listCache.resolve(entries: entries, guids: guids, in: modelContext)
+        guard !showsSameGroups(groups, as: grouped) else {
+            logReady = true
+            return
+        }
+        listCache.resolve(entries: entries, guids: entries.map(\.articleGUID), in: modelContext)
         grouped = groups
         logReady = true
+    }
+
+    private func showsSameGroups(_ next: [NotInterestedSourceGroup], as current: [NotInterestedSourceGroup]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { lhs, rhs in
+            lhs.sourceTitle == rhs.sourceTitle
+                && lhs.sourceFeedURL == rhs.sourceFeedURL
+                && lhs.entries.map(\.id) == rhs.entries.map(\.id)
+        }
     }
 
     var body: some View {

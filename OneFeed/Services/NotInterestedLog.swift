@@ -257,6 +257,13 @@ struct NotInterestedGroupPlan: Sendable {
 
 /// Same source groups as the Not interested log, from copied fields.
 nonisolated enum NotInterestedListPlan {
+    /// A modest log can be grouped on the open screen. A long one waits for the off-screen plan.
+    static let synchronousGroupingLimit = 200
+
+    static func groupsOnTheOpenScreen(entryCount: Int) -> Bool {
+        entryCount > 0 && entryCount <= synchronousGroupingLimit
+    }
+
     static func groups(from snaps: [NotInterestedEntrySnap]) -> [NotInterestedGroupPlan] {
         var order: [String] = []
         var buckets: [String: [NotInterestedEntrySnap]] = [:]
