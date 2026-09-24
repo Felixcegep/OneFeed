@@ -82,6 +82,14 @@ struct SourcesView: View {
         } message: {
             Text(viewModel.statusMessage ?? "")
         }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { viewModel.saveError != nil },
+            set: { if !$0 { viewModel.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.saveError = nil }
+        } message: {
+            Text(viewModel.saveError ?? "")
+        }
         .confirmationDialog(
             "Remove empty folder?",
             isPresented: Binding(
@@ -558,6 +566,14 @@ private struct SourceDetailView: View {
             Button("OK", role: .cancel) { storyError = nil }
         } message: {
             Text(storyError ?? "")
+        }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { viewModel.saveError != nil },
+            set: { if !$0 { viewModel.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.saveError = nil }
+        } message: {
+            Text(viewModel.saveError ?? "")
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)

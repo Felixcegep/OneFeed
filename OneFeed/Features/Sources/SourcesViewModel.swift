@@ -12,6 +12,7 @@ final class SourcesViewModel {
     var newFolderName = ""
     var statusTitle: String?
     var statusMessage: String?
+    var saveError: String?
     private(set) var isImportingPack = false
 
     func configure(with context: ModelContext) { self.context = context; reload() }
@@ -53,14 +54,24 @@ final class SourcesViewModel {
     func add(_ feed: Feed, to folderName: String) {
         guard let context, feed.addFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            feed.removeFolder(folderName)
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
         reload()
     }
 
     func remove(_ feed: Feed, from folderName: String) {
         guard let context, feed.removeFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            feed.addFolder(folderName)
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
         reload()
     }
 
@@ -230,6 +241,7 @@ final class SourceDetailViewModel {
     var isConfirmingRemoval = false
     var presentedError: String?
     var refreshError: String?
+    var saveError: String?
     private(set) var isRefreshing = false
     let progress = RefreshProgress()
     var availableFolders: [String] = []
@@ -269,20 +281,25 @@ final class SourceDetailViewModel {
     }
 
     func addFolder(_ name: String) {
-        feed.addFolder(name)
-        LibraryChange.note(feed)
-        try? context.save()
+        persist({ feed.addFolder(name) }, revert: { feed.removeFolder(name) })
         reloadFolders()
     }
 
     func toggleFolder(_ name: String) {
-        if feed.containsFolder(name) {
-            feed.removeFolder(name)
-        } else {
-            feed.addFolder(name)
-        }
-        LibraryChange.note(feed)
-        try? context.save()
+        let wasMember = feed.containsFolder(name)
+        persist({
+            if wasMember {
+                feed.removeFolder(name)
+            } else {
+                feed.addFolder(name)
+            }
+        }, revert: {
+            if wasMember {
+                feed.addFolder(name)
+            } else {
+                feed.removeFolder(name)
+            }
+        })
         reloadFolders()
     }
 
@@ -296,21 +313,33 @@ final class SourceDetailViewModel {
     }
 
     private func updateTodayMembership(_ change: () -> Void) {
+        let enabled = feed.isEnabled
+        let included = feed.includeInToday
         change()
         LibraryChange.note(feed)
         do {
             try DailyDeckService.reconcileMembership(in: context)
         } catch {
-            try? context.save()
+            context.rollback()
+            feed.isEnabled = enabled
+            feed.includeInToday = included
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
         }
     }
+
     var includeVideos: Bool {
         get { feed.includeVideos }
-        set { feed.includeVideos = newValue; LibraryChange.note(feed); try? context.save() }
+        set {
+            let previous = feed.includeVideos
+            persist({ feed.includeVideos = newValue }, revert: { feed.includeVideos = previous })
+        }
     }
     var includeShorts: Bool {
         get { feed.includeShorts }
-        set { feed.includeShorts = newValue; LibraryChange.note(feed); try? context.save() }
+        set {
+            let previous = feed.includeShorts
+            persist({ feed.includeShorts = newValue }, revert: { feed.includeShorts = previous })
+        }
     }
     var blockedWords: String {
         get { pendingBlockedWords ?? feed.blockedWords }
@@ -324,9 +353,27 @@ final class SourceDetailViewModel {
         guard let pending = pendingBlockedWords else { return }
         pendingBlockedWords = nil
         guard pending != feed.blockedWords else { return }
+        let previous = feed.blockedWords
         feed.blockedWords = pending
         LibraryChange.note(feed)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            feed.blockedWords = previous
+            pendingBlockedWords = previous
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
+    }
+
+    private func persist(_ change: () -> Void, revert: () -> Void) {
+        change()
+        LibraryChange.note(feed)
+        do {
+            try context.save()
+        } catch {
+            revert()
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     private func scheduleBlockedWordsSave(_ value: String) {
