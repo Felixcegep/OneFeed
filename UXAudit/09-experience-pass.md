@@ -102,6 +102,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Sources empty states used the system unavailable view | Sources | Medium | The folder list and a folder with no sources used `ContentUnavailableView` inside a row | They use the same plaster empty state as Queue, with a next action | Code review |
 | The Today source picker used the system empty view | Today | Medium | No sources and no search matches sat in a system unavailable row | They use the same plaster empty state, and say what to do next | Code review |
 | Dragging focus intensity reconfigured the page on every step | Reader | Medium | Each slider change started another focus task, and an older one could finish last | The latest change waits a moment and replaces the one already waiting | Code review |
+| A second library Sync could merge the file twice | Settings | High | The file path did not mark itself busy until after the next tap could start | A sync that is already running ignores the next tap, including the pull and the push | Code review |
 
 ## Still open
 

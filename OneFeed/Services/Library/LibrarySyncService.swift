@@ -222,11 +222,13 @@ final class LibrarySyncService {
     }
 
     func syncNow() async {
-        guard isLinked else { return }
+        guard isLinked, !isSyncing else { return }
         if usesGoogleDriveAPI {
             _ = await sync(request: .manual)
             return
         }
+        isSyncing = true
+        defer { isSyncing = false }
         await pullAndMerge()
         await pushNow()
     }
