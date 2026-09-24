@@ -441,14 +441,31 @@ final class SourceDetailViewModel {
     }
 
     /// The twenty newest stories. A redraw reuses them until the count changes or a refresh finishes.
+    /// The count and the twenty rows are fetched on their own, so opening a source does not load every stored article.
     var recentArticles: [Article] {
-        let count = feed.articles.count
+        let count = storyCount()
         if recentArticlesCache.count == count { return recentArticlesCache.articles }
         recentArticlesCache.count = count
-        recentArticlesCache.articles = Array(
-            feed.articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(20)
-        )
+        recentArticlesCache.articles = newestStories(limit: 20)
         return recentArticlesCache.articles
+    }
+
+    private func storyCount() -> Int {
+        let feedID = feed.id
+        let descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
+        if let count = try? context.fetchCount(descriptor) { return count }
+        return feed.articles.count
+    }
+
+    private func newestStories(limit: Int) -> [Article] {
+        let feedID = feed.id
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { $0.feed?.id == feedID },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        if let stories = try? context.fetch(descriptor) { return stories }
+        return Array(feed.articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(limit))
     }
 }
 
