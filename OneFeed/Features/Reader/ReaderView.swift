@@ -809,6 +809,18 @@ private struct ReaderBarGlyph: View {
 }
 #endif
 
+/// Returns when the page stops loading, or after the opening-cover timeout.
+private func waitForPageSettled(_ page: WebPage) async {
+    let clock = ContinuousClock()
+    let start = clock.now
+    while !Task.isCancelled {
+        let elapsed = clock.now - start
+        if !page.isLoading, elapsed > .milliseconds(80) { return }
+        if elapsed > .seconds(8) { return }
+        try? await Task.sleep(for: .milliseconds(40))
+    }
+}
+
 private struct WebsiteReaderPane: View {
     let url: URL
     let title: String
@@ -855,7 +867,7 @@ private struct WebsiteReaderPane: View {
                 allowCover = false
                 async let cover: Void = revealCoverIfStillWaiting()
                 _ = page.load(URLRequest(url: url))
-                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                await waitForPageSettled(page)
                 hasCommitted = true
                 allowCover = false
                 _ = await cover
@@ -914,10 +926,7 @@ private struct ReaderWebContent: View {
                 }
             }
             .onChange(of: page.isLoading) { _, loading in
-                if !loading {
-                    hasCommitted = true
-                    Task { await applyFocus(restore: !didRestoreTrail) }
-                }
+                if !loading { hasCommitted = true }
             }
             .onChange(of: focusMode) { _, _ in
                 Task { await applyFocus(restore: false) }
@@ -953,7 +962,7 @@ private struct ReaderWebContent: View {
                 allowCover = false
                 async let cover: Void = revealCoverIfStillWaiting()
                 page.load(html: html, baseURL: baseURL)
-                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                await waitForPageSettled(page)
                 hasCommitted = true
                 allowCover = false
                 _ = await cover

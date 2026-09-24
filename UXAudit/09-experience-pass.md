@@ -90,6 +90,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The progress line could paint across the bar while its width moved | Today, Feed, Settings | High | An overlay rectangle stayed in the tree at height 0, and the appear animation could slide the fill | The fill exists only while the line is shown, and the width itself does not animate | Code review. Still needs a device pass for scroll-to-top |
 | Adding a source faded the whole form | Add Source | Medium | The success animation sat on the form, so the fields moved with the cover | The cover fades in its own overlay. The form underneath stays still | Code review |
 | A new story index could leave folder badges on the old grouping | Feed | High | The row cache treated an equal placement count as the same index | Each placement load bumps a tick, and the rows rebuild | Code review |
+| Focus was configured again about eight seconds into reading | Reader | High | The page applied focus when loading finished, then the opening task applied it again after a fixed sleep and dropped the saved place | Focus is applied once, when the page has settled or the timeout ends | Code review |
 
 ## Still open
 
