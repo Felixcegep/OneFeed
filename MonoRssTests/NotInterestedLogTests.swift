@@ -107,6 +107,9 @@ struct NotInterestedLogTests {
         #expect(NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 2))
         #expect(!NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 0))
         #expect(!NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: 201))
+        let copied = NotInterestedListPlan.snaps(in: context.container)
+        #expect(copied.map(\.sourceTitle) == ["The Verge", "The Verge"])
+        #expect(NotInterestedListPlan.groups(from: copied).first?.entryIDs == plans.first?.entryIDs)
     }
 
     @Test func snapshotMentionsRepeatsAndFolder() throws {

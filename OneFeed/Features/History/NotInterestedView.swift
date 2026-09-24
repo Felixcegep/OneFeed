@@ -36,12 +36,15 @@ struct NotInterestedView: View {
 
     private func reloadLog() async {
         let edge = logStamp
-        if NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: entries.count) {
-            publish(NotInterestedListPlan.groups(from: entries.map(NotInterestedEntrySnap.init)))
+        let onScreen = NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: entries.count)
+        let openSnaps = onScreen ? entries.map(NotInterestedEntrySnap.init) : []
+        if onScreen {
+            publish(NotInterestedListPlan.groups(from: openSnaps))
         }
-        let snaps = entries.map(NotInterestedEntrySnap.init)
+        let container = modelContext.container
         let plans = await Task.detached(priority: .userInitiated) {
-            NotInterestedListPlan.groups(from: snaps)
+            let snaps = onScreen ? openSnaps : NotInterestedListPlan.snaps(in: container)
+            return NotInterestedListPlan.groups(from: snaps)
         }.value
         guard !Task.isCancelled, edge == logStamp else { return }
         publish(plans)

@@ -62,6 +62,38 @@ nonisolated enum FolderDirectoryCount {
         storyCount <= synchronousCountLimit
     }
 
+    /// Copies open stories on a short-lived context. A long library uses this instead of walking the rows on screen.
+    static func storySnaps(in container: ModelContainer) -> [FolderStorySnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.propertiesToFetch = [
+            \.id, \.publishedAt, \.videoID, \.url, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+        ]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let stories = (try? context.fetch(descriptor)) ?? []
+        return stories.map { article in
+            FolderStorySnap(
+                feedID: article.feed?.id,
+                publishedAt: article.publishedAt,
+                videoID: article.videoID,
+                url: article.url,
+                guid: article.guid,
+                id: article.id,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
+        }
+    }
+
     static func summaries(
         feeds: [FolderFeedSnap],
         stories: [FolderStorySnap],

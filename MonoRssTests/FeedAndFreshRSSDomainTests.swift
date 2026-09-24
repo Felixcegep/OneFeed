@@ -279,6 +279,21 @@ struct FeedAndFreshRSSDomainTests {
         #expect(counted.map(\.feedCount) == summaries.map(\.feedCount))
     }
 
+    @Test func aLongLibraryCountsFoldersAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let queued = Article(guid: "open", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: feed)
+        let read = Article(guid: "read", title: "Finished", url: URL(string: "https://c.test/read"), publishedAt: .now, state: .read, feed: feed)
+        context.insert(feed)
+        context.insert(queued)
+        context.insert(read)
+        try context.save()
+        let copied = FolderDirectoryCount.storySnaps(in: context.container)
+        #expect(copied.map(\.id) == [queued.id])
+        #expect(copied.first?.feedID == feed.id)
+        #expect(copied.first?.guid == "open")
+    }
+
     @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
         let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)

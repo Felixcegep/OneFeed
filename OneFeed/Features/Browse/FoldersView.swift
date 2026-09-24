@@ -239,7 +239,10 @@ struct FoldersView: View {
     private func reloadFolderSummaries() async {
         let edge = directoryEdge
         let feedSnaps = feeds.map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) }
-        let storySnaps = openQuery.map { article in
+        let placements = storyPlacements
+        let order = FolderStore.knownNames()
+        let onScreen = FolderDirectoryCount.countsOnTheOpenScreen(storyCount: openQuery.count)
+        let openSnaps: [FolderStorySnap] = onScreen ? openQuery.map { article in
             FolderStorySnap(
                 feedID: article.feed?.id,
                 publishedAt: article.publishedAt,
@@ -251,21 +254,21 @@ struct FoldersView: View {
                 stateRaw: article.stateRawValue,
                 isRemoteStarred: article.isRemoteStarred
             )
-        }
-        let placements = storyPlacements
-        let order = FolderStore.knownNames()
-        if FolderDirectoryCount.countsOnTheOpenScreen(storyCount: storySnaps.count) {
+        } : []
+        if onScreen {
             publishFolderSummaries(FolderDirectoryCount.summaries(
                 feeds: feedSnaps,
-                stories: storySnaps,
+                stories: openSnaps,
                 placements: placements,
                 folderOrder: order
             ))
         }
+        let container = modelContext.container
         let summaries = await Task.detached(priority: .userInitiated) {
-            FolderDirectoryCount.summaries(
+            let stories = onScreen ? openSnaps : FolderDirectoryCount.storySnaps(in: container)
+            return FolderDirectoryCount.summaries(
                 feeds: feedSnaps,
-                stories: storySnaps,
+                stories: stories,
                 placements: placements,
                 folderOrder: order
             )

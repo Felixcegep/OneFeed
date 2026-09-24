@@ -237,6 +237,22 @@ struct NotInterestedEntrySnap: Sendable {
     var sourceWebsiteURL: String?
     var feedID: UUID?
 
+    init(
+        id: UUID,
+        recordedAt: Date,
+        sourceTitle: String,
+        sourceFeedURL: String,
+        sourceWebsiteURL: String?,
+        feedID: UUID?
+    ) {
+        self.id = id
+        self.recordedAt = recordedAt
+        self.sourceTitle = sourceTitle
+        self.sourceFeedURL = sourceFeedURL
+        self.sourceWebsiteURL = sourceWebsiteURL
+        self.feedID = feedID
+    }
+
     init(_ entry: NotInterestedEntry) {
         id = entry.id
         recordedAt = entry.recordedAt
@@ -262,6 +278,29 @@ nonisolated enum NotInterestedListPlan {
 
     static func groupsOnTheOpenScreen(entryCount: Int) -> Bool {
         entryCount > 0 && entryCount <= synchronousGroupingLimit
+    }
+
+    /// Copies marks on a short-lived context. A long log uses this instead of walking the rows on screen.
+    static func snaps(in container: ModelContainer) -> [NotInterestedEntrySnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        var descriptor = FetchDescriptor<NotInterestedEntry>(
+            sortBy: [SortDescriptor(\.recordedAt, order: .reverse)]
+        )
+        descriptor.propertiesToFetch = [
+            \.id, \.recordedAt, \.sourceTitle, \.sourceFeedURL, \.sourceWebsiteURL, \.feedID,
+        ]
+        let entries = (try? context.fetch(descriptor)) ?? []
+        return entries.map { entry in
+            NotInterestedEntrySnap(
+                id: entry.id,
+                recordedAt: entry.recordedAt,
+                sourceTitle: entry.sourceTitle,
+                sourceFeedURL: entry.sourceFeedURL,
+                sourceWebsiteURL: entry.sourceWebsiteURL,
+                feedID: entry.feedID
+            )
+        }
     }
 
     static func groups(from snaps: [NotInterestedEntrySnap]) -> [NotInterestedGroupPlan] {
