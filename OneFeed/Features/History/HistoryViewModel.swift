@@ -36,6 +36,46 @@ enum HistoryViewModel {
         !isSearching && storyCount > 0 && storyCount <= synchronousGroupingLimit
     }
 
+    /// Copies finished stories on a short-lived context. A long history or a search uses this instead of walking the rows on screen.
+    nonisolated static func snaps(searching: Bool, in container: ModelContainer) -> [HistoryStorySnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let read = ArticleState.read.rawValue
+        let skipped = ArticleState.skipped.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.stateRawValue == read || article.stateRawValue == skipped
+            },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
+        if searching {
+            descriptor.propertiesToFetch = [
+                \.id, \.completedAt, \.publishedAt, \.title, \.readingNote, \.readingReactionRawValue,
+                \.url, \.author, \.contentKind,
+            ]
+        } else {
+            descriptor.propertiesToFetch = [\.id, \.completedAt, \.publishedAt]
+        }
+        if searching {
+            descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        }
+        let stories = (try? context.fetch(descriptor)) ?? []
+        return stories.map { article in
+            HistoryStorySnap(
+                id: article.id,
+                completedAt: article.completedAt,
+                publishedAt: article.publishedAt,
+                title: searching ? article.title : "",
+                readingNote: searching ? article.readingNote : "",
+                reactionRaw: searching ? article.readingReactionRawValue : "",
+                feedTitle: searching ? article.feed?.title : nil,
+                url: searching ? article.url : nil,
+                author: searching ? article.author : nil,
+                contentKind: searching ? article.contentKind : ""
+            )
+        }
+    }
+
     static func days(from articles: [Article]) -> [HistoryDay] {
         let calendar = Calendar.current
         let stored = articles.filter(\.isStored)

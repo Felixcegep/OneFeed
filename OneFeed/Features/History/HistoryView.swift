@@ -35,30 +35,33 @@ struct HistoryView: View {
     }
 
     private func reloadHistoryDays() async {
-        if HistoryViewModel.groupsOnTheOpenScreen(storyCount: history.count, isSearching: !trimmedQuery.isEmpty) {
+        let searching = !trimmedQuery.isEmpty
+        let onScreen = HistoryViewModel.groupsOnTheOpenScreen(storyCount: history.count, isSearching: searching)
+        if onScreen {
             historyDays = HistoryViewModel.days(from: history)
             historyReady = true
         }
         let edge = historyEdge
         let query = trimmedQuery
-        let searching = !query.isEmpty
-        let snaps = history.compactMap { article -> HistoryStorySnap? in
+        let openSnaps: [HistoryStorySnap] = onScreen ? history.compactMap { article in
             guard article.isStored else { return nil }
             return HistoryStorySnap(
                 id: article.id,
                 completedAt: article.completedAt,
                 publishedAt: article.publishedAt,
-                title: searching ? article.title : "",
-                readingNote: searching ? article.readingNote : "",
-                reactionRaw: searching ? article.readingReactionRawValue : "",
-                feedTitle: searching ? article.feed?.title : nil,
-                url: searching ? article.url : nil,
-                author: searching ? article.author : nil,
-                contentKind: searching ? article.contentKind : ""
+                title: "",
+                readingNote: "",
+                reactionRaw: "",
+                feedTitle: nil,
+                url: nil,
+                author: nil,
+                contentKind: ""
             )
-        }
+        } : []
+        let container = modelContext.container
         let plans = await Task.detached(priority: .userInitiated) {
-            HistoryViewModel.dayPlans(from: snaps, query: query)
+            let snaps = onScreen ? openSnaps : HistoryViewModel.snaps(searching: searching, in: container)
+            return HistoryViewModel.dayPlans(from: snaps, query: query)
         }.value
         guard !Task.isCancelled, edge == historyEdge else { return }
         let byID = Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })

@@ -55,8 +55,10 @@ struct SavedView: View {
         let query = searchQuery
         let searching = !query.isEmpty
         let stored = savedQuery.filter(\.isStored)
-        if QueueListPlan.sectionsOnTheOpenScreen(storyCount: stored.count, isSearching: searching) {
-            let openPlan = QueueListPlan.make(from: stored.map { queueSnap($0, searching: false) }, query: "")
+        let onScreen = QueueListPlan.sectionsOnTheOpenScreen(storyCount: stored.count, isSearching: searching)
+        let openSnaps = onScreen ? stored.map { queueSnap($0, searching: false) } : []
+        if onScreen {
+            let openPlan = QueueListPlan.make(from: openSnaps, query: "")
             let featured = openPlan.upNext.flatMap { id in stored.first { $0.id == id } }
             publish(
                 openPlan,
@@ -64,9 +66,10 @@ struct SavedView: View {
                 excerpt: QueueListPlan.openScreenExcerpt(aiSummary: featured?.aiSummary, summary: featured?.summary)
             )
         }
-        let snaps = stored.map { queueSnap($0, searching: searching) }
+        let container = modelContext.container
         let plan = await Task.detached(priority: .userInitiated) {
-            QueueListPlan.make(from: snaps, query: query)
+            let snaps = onScreen ? openSnaps : QueueListPlan.snaps(searching: searching, in: container)
+            return QueueListPlan.make(from: snaps, query: query)
         }.value
         guard !Task.isCancelled, edge == queuePlanEdge else { return }
         let byID = Dictionary(savedQuery.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -595,6 +598,48 @@ nonisolated enum QueueListPlan {
 
     static func sectionsOnTheOpenScreen(storyCount: Int, isSearching: Bool) -> Bool {
         !isSearching && storyCount > 0 && storyCount <= synchronousSectionLimit
+    }
+
+    /// Copies saved stories on a short-lived context. A long queue or a search uses this instead of walking the rows on screen.
+    static func snaps(searching: Bool, in container: ModelContainer) -> [QueueStorySnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let saved = ArticleState.saved.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
+        if searching {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.title, \.readingNote, \.readingReactionRawValue, \.url, \.author,
+                \.contentKind, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        } else {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.url, \.contentKind, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        }
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let stories = (try? context.fetch(descriptor)) ?? []
+        return stories.map { article in
+            QueueStorySnap(
+                id: article.id,
+                publishedAt: article.publishedAt,
+                title: searching ? article.title : "",
+                readingNote: searching ? article.readingNote : "",
+                reactionRaw: searching ? article.readingReactionRawValue : "",
+                feedTitle: searching ? article.feed?.title : nil,
+                hasFeed: article.feed != nil,
+                url: article.url,
+                author: searching ? article.author : nil,
+                contentKind: article.contentKind,
+                videoID: article.videoID,
+                guid: article.guid,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
+        }
     }
 
     /// One featured preview, from the characters the card already needs. The list itself is not stripped here.

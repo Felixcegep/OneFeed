@@ -240,6 +240,27 @@ struct RetentionAndExtractionTests {
         #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 2, isSearching: true) == false)
         #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 0, isSearching: false) == false)
         #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: HistoryViewModel.synchronousGroupingLimit + 1, isSearching: false) == false)
+        try context.save()
+        let copied = HistoryViewModel.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id).contains(newer.id))
+        #expect(copied.first { $0.id == newer.id }?.title == "")
+        let found = HistoryViewModel.snaps(searching: true, in: context.container)
+        #expect(found.first { $0.id == newer.id }?.title == "Newer")
+    }
+
+    @Test func aLongQueueCopiesStoriesAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let saved = Article(guid: "saved", title: "Essay", url: URL(string: "https://example.com/essay"), state: .saved, contentKind: "article")
+        let queued = Article(guid: "open", title: "Later", url: URL(string: "https://example.com/later"), state: .queued, contentKind: "article")
+        context.insert(saved)
+        context.insert(queued)
+        try context.save()
+        let copied = QueueListPlan.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id) == [saved.id])
+        #expect(copied.first?.title == "")
+        #expect(copied.first?.contentKind == "article")
+        let found = QueueListPlan.snaps(searching: true, in: context.container)
+        #expect(found.first?.title == "Essay")
     }
 
     private func historySnap(_ article: Article) -> HistoryStorySnap {
