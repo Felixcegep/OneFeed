@@ -12,10 +12,11 @@ struct AppRootView: View {
     @State private var isPickingDocument = false
     @State private var warmReaderWeb = false
     @State private var isLaunching = !ReaderWebWarmup.skipsOpeningCover
+    @State private var allowLaunchCover = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var showsLaunchCover: Bool {
-        isLaunching && !ReaderWebWarmup.skipsOpeningCover
+        isLaunching && allowLaunchCover && !ReaderWebWarmup.skipsOpeningCover
     }
 
     var body: some View {
@@ -57,7 +58,9 @@ struct AppRootView: View {
                     isLaunching = false
                     return
                 }
+                async let cover: Void = revealLaunchCoverIfStillWaiting()
                 warmReaderWeb = true
+                _ = await cover
             }
             .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.subscribe)) { _ in
                 isPresentingSubscribe = true
@@ -103,6 +106,12 @@ struct AppRootView: View {
     @ViewBuilder
     private var root: some View {
         AppShell(selectedTab: $selectedTab)
+    }
+
+    private func revealLaunchCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, isLaunching else { return }
+        allowLaunchCover = true
     }
 
     private func handleIncomingURL(_ url: URL) {

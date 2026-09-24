@@ -76,6 +76,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A fuller article reloaded the page and lost the place | Reader | High | Replacing the page cleared the saved position before the new page could restore it | The current place is saved first, then the new page opens there | Code review |
 | A second Sync, Disconnect, or Connect could start another request | Settings | High | The button disabled only after the first request had already begun | A second call returns while that request is still running | Code review |
 | The opening cover flashed on a page that was already ready | Reader | Medium | The cover appeared on the same frame the page started loading | The cover and the browser mark wait 160ms, and stay hidden if the page is ready first | Code review |
+| Launch covered the app even when the room was already warm | Launch | Medium | The cover appeared before the warmup had a chance to finish | The cover waits 160ms, and stays hidden if warmup finishes first | Code review |
 
 ## Still open
 
