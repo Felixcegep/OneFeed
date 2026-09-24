@@ -185,6 +185,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A refresh tick rebuilt Today, Settings, and a source while the line moved | Today, Settings, Source | High | Those screens read the progress line in the same view as the deck, the form, and recent stories | The line, the Today cover, and the refresh buttons live on chrome around that content. A tick does not rebuild it | Code review |
 | A similar-read line and the Drive status grew while the screen was open | Today, Feed, Settings | Medium | Both used a relative clock, so “1 minute ago” became a longer phrase and the row or status shifted | A same-day read stays “earlier today”. A sync on the same day stays a clock time | `FeedAndFreshRSSDomainTests.aPassingHourDoesNotRewriteASameDaySimilarCaption` |
 | VoiceOver repeated the refresh line as each source started | Today, Feed, Settings, Source | Medium | The spoken label included the source name and the countdown, which change on every item | The announcement stays on the phase and the count | `RefreshProgressTests.finishItemCountsSourcesArticlesAndETA` |
+| Opening Add to Queue read every open story | Queue | High | The sheet queried the whole Feed, including article bodies, to show eight rows | It fetches a short list and leaves the bodies on disk | `ImportBatchResultTests.queueSuggestionsStopAtEight` |
 
 ## Still open
 

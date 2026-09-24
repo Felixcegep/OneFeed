@@ -5,11 +5,8 @@ import UniformTypeIdentifiers
 struct AddToQueueView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-        sort: \Article.publishedAt,
-        order: .reverse
-    ) private var unread: [Article]
+    /// Eight Feed stories. Loaded without article bodies so opening the sheet does not read the library.
+    @State private var suggestions: [Article] = []
     @State private var address = ""
     @State private var isAdding = false
     @State private var pendingFileURLs: [URL] = []
@@ -24,10 +21,6 @@ struct AddToQueueView: View {
     #endif
     var startWithFilePicker = false
     var onAdded: () -> Void
-
-    private var suggestions: [Article] {
-        Array(unread.filter(\.isStored).prefix(8))
-    }
 
     var body: some View {
         NavigationStack {
@@ -127,6 +120,7 @@ struct AddToQueueView: View {
             .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
                 importDropped(providers)
             }
+            .task { suggestions = QueueFeedSuggestions.load(in: modelContext) }
             .onAppear {
                 if startWithFilePicker {
                     isPickingFile = true
@@ -281,5 +275,33 @@ struct AddToQueueView: View {
                 }
             }
         }
+    }
+}
+
+/// The eight newest open stories for Add to Queue. The fetch stops early and leaves article bodies on disk.
+enum QueueFeedSuggestions {
+    static let shown = 8
+    static let fetchCap = 24
+
+    static func load(in context: ModelContext) -> [Article] {
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = fetchCap
+        descriptor.propertiesToFetch = [
+            \.title, \.publishedAt, \.contentKind, \.imageURL, \.url, \.stateRawValue,
+            \.rating, \.readingNote, \.readingReactionRawValue, \.author, \.durationSeconds
+        ]
+        let fetched = (try? context.fetch(descriptor)) ?? []
+        return capped(fetched.filter(\.isStored))
+    }
+
+    static func capped(_ articles: [Article]) -> [Article] {
+        Array(ArticleIdentity.collapsingDuplicates(articles).prefix(shown))
     }
 }

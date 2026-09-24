@@ -13,4 +13,15 @@ struct ImportBatchResultTests {
     @Test func aCleanBatchSaysNothing() {
         #expect(ImportBatchResult.message(succeeded: 3, failed: 0, firstFailure: nil, emptyFallback: "Couldn’t add that to Queue.") == nil)
     }
+
+    @Test func queueSuggestionsStopAtEight() {
+        let articles = (0..<12).map { index in
+            Article(guid: "\(index)", title: "Story \(index)", url: URL(string: "https://example.com/\(index)")!)
+        }
+        let shown = QueueFeedSuggestions.capped(articles)
+        #expect(shown.count == QueueFeedSuggestions.shown)
+        #expect(shown.first?.title == "Story 0")
+        let withCopy = [Article(guid: "copy", title: "Copy", url: URL(string: "https://example.com/0")!)] + articles
+        #expect(QueueFeedSuggestions.capped(withCopy).count == QueueFeedSuggestions.shown)
+    }
 }
