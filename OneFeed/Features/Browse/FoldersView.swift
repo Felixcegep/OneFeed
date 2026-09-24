@@ -647,6 +647,7 @@ struct ArticleCollectionView: View {
     @State private var placementTick = 0
     /// Story rows stay grouped while the open article changes. Rebuilt when the query, stories, or clusters change.
     @State private var storyRowCache = StoryRowCache()
+    @State private var refresh = BrowseRefresh()
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
@@ -738,7 +739,11 @@ struct ArticleCollectionView: View {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
-                    description: emptyDescription
+                    description: emptyDescription,
+                    actionTitle: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Refresh" : nil,
+                    action: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? { Task { await refresh.refresh(in: modelContext) } }
+                        : nil
                 )
             } else {
                 List {
@@ -752,13 +757,31 @@ struct ArticleCollectionView: View {
                     }
                 }
                 .oneFeedGroupedListStyle()
+                .refreshable { await refresh.refresh(in: modelContext) }
             }
         }
         .navigationTitle(destination.title)
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
+        .refreshProgressBanner(refresh.progress)
         .background(OneFeedTheme.plaster)
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                    Task { await refresh.refresh(in: modelContext) }
+                }
+            }
+        }
+        .task { refresh.adoptLatestFetch(from: feeds) }
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { refresh.presentedError != nil },
+            set: { if !$0 { refresh.presentedError = nil } }
+        )) {
+            Button("OK", role: .cancel) { refresh.presentedError = nil }
+        } message: {
+            Text(refresh.presentedError ?? "")
+        }
         .task(id: articleEdge) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
             placementTick &+= 1
