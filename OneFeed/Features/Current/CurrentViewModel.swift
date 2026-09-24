@@ -27,6 +27,8 @@ final class CurrentViewModel {
     private(set) var storyCaptions: [UUID: String] = [:]
     private(set) var featuredExcerpt: String?
     private(set) var featuredExcerptID: UUID?
+    /// Plain previews for stories that are about to become the featured card.
+    private var prefetchedExcerpts: [UUID: PrefetchedExcerpt] = [:]
     let progress = RefreshProgress()
     var presentedError: String?
     var storyError: String?
@@ -257,7 +259,7 @@ final class CurrentViewModel {
     }
 
     /// Same deck within the hour reuses captions. A finished story, a new hour, or a new story index loads them again.
-    /// The lookup itself runs off the main actor, so Today can draw the deck first.
+    /// Captions fill in after the deck draws. The featured preview is published with the card, so the title does not jump when the blurb arrives.
     private func scheduleCaptions() {
         let articles = remainingArticles
         guard !articles.isEmpty, let context else {
@@ -265,6 +267,7 @@ final class CurrentViewModel {
             captionStamp = Int.min
             cachedCaptions = [:]
             storyCaptions = [:]
+            prefetchedExcerpts = [:]
             featuredExcerpt = nil
             featuredExcerptID = nil
             return
@@ -275,29 +278,57 @@ final class CurrentViewModel {
             StoryCaptionSubject(id: $0.id, identityKey: ArticleIdentity.identityKey(for: $0))
         }
         let featured = articles.first
-        let excerptSample = CardExcerptSample(
-            aiSummary: ContentClassifier.cardExcerptSample(featured?.aiSummary),
-            summary: ContentClassifier.cardExcerptSample(featured?.summary)
-        )
-        if featured?.id != featuredExcerptID {
-            featuredExcerpt = nil
-            featuredExcerptID = nil
+        let frame = FeaturedExcerptFrame(articleID: featuredExcerptID, text: featuredExcerpt)
+            .advancing(to: featured?.id, preview: featured.flatMap(preparedExcerpt(for:)))
+        if frame.articleID != featuredExcerptID || frame.text != featuredExcerpt {
+            featuredExcerpt = frame.text
+            featuredExcerptID = frame.articleID
+        }
+        let upcoming = articles.dropFirst().prefix(2).compactMap { article -> (id: UUID, sample: CardExcerptSample)? in
+            guard prefetchedExcerpts[article.id] == nil else { return nil }
+            return (
+                article.id,
+                CardExcerptSample(
+                    aiSummary: ContentClassifier.cardExcerptSample(article.aiSummary),
+                    summary: ContentClassifier.cardExcerptSample(article.summary)
+                )
+            )
         }
         let container = context.container
         let generation = captionGeneration
         captionTask?.cancel()
         captionTask = Task {
             async let built = StoryGrouping.captions(for: subjects, in: container)
-            let excerpt = await Task.detached(priority: .userInitiated) {
-                ContentClassifier.cardExcerpt(aiSummary: excerptSample.aiSummary, summary: excerptSample.summary)
+            let previews = await Task.detached(priority: .userInitiated) {
+                upcoming.map { item in
+                    (
+                        item.id,
+                        ContentClassifier.cardExcerpt(aiSummary: item.sample.aiSummary, summary: item.sample.summary)
+                    )
+                }
             }.value
             let captions = await built
             guard !Task.isCancelled, generation == captionGeneration else { return }
             captionStamp = stamp
             cachedCaptions = captions
             storyCaptions = captions
-            featuredExcerpt = excerpt
-            featuredExcerptID = featured?.id
+            for preview in previews where prefetchedExcerpts[preview.0] == nil {
+                prefetchedExcerpts[preview.0] = preview.1.map(PrefetchedExcerpt.text) ?? .none
+            }
+        }
+    }
+
+    /// A warm preview is reused. The first time a story is featured, its excerpt is stripped once and kept.
+    private func preparedExcerpt(for article: Article) -> String? {
+        switch prefetchedExcerpts[article.id] {
+        case .text(let text):
+            return text
+        case .none:
+            return nil
+        case nil:
+            let text = article.displayExcerpt
+            prefetchedExcerpts[article.id] = text.map(PrefetchedExcerpt.text) ?? .none
+            return text
         }
     }
 
@@ -310,5 +341,21 @@ final class CurrentViewModel {
             stamp ^= article.stateRawValue.hashValue
         }
         return stamp
+    }
+}
+
+enum PrefetchedExcerpt: Equatable {
+    case text(String)
+    case none
+}
+
+/// The preview published with the featured card. Advancing shows the new blurb in that same update.
+struct FeaturedExcerptFrame: Equatable {
+    var articleID: UUID?
+    var text: String?
+
+    func advancing(to articleID: UUID?, preview: String?) -> FeaturedExcerptFrame {
+        guard let articleID else { return FeaturedExcerptFrame(articleID: nil, text: nil) }
+        return FeaturedExcerptFrame(articleID: articleID, text: preview)
     }
 }

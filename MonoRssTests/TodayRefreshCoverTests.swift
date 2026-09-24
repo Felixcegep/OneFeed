@@ -20,6 +20,17 @@ struct TodayRefreshCoverTests {
         ) == .updating)
     }
 
+    @Test func advancingTheFeaturedCardKeepsItsPreview() {
+        let firstID = UUID()
+        let nextID = UUID()
+        let first = FeaturedExcerptFrame(articleID: nil, text: nil)
+            .advancing(to: firstID, preview: "The first blurb.")
+        #expect(first == FeaturedExcerptFrame(articleID: firstID, text: "The first blurb."))
+        let next = first.advancing(to: nextID, preview: "The next blurb.")
+        #expect(next == FeaturedExcerptFrame(articleID: nextID, text: "The next blurb."))
+        #expect(next.advancing(to: nil, preview: "Gone").text == nil)
+    }
+
     @Test func theFirstLoadStillUsesTheCover() {
         #expect(TodayRefreshCover.isShown(isRefreshing: true, hasStories: false, hasFeeds: false, skipsOpeningCover: false))
         #expect(TodayRefreshCover.isShown(isRefreshing: true, hasStories: true, hasFeeds: false, skipsOpeningCover: false) == false)
