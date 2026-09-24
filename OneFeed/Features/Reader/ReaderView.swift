@@ -809,14 +809,17 @@ private struct WebsiteReaderPane: View {
             .webViewBackForwardNavigationGestures(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                if showCover {
-                    OneFeedLoadingCover(
-                        title: title,
-                        status: isVideo ? "Opening the video" : "Opening the site"
-                    )
+                ZStack {
+                    if showCover {
+                        OneFeedLoadingCover(
+                            title: title,
+                            status: isVideo ? "Opening the video" : "Opening the site"
+                        )
+                        .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             .onChange(of: page.isLoading) { _, loading in
                 if !loading { hasCommitted = true }
             }
@@ -857,16 +860,19 @@ private struct ReaderWebContent: View {
             .webViewTextSelection(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                if showCover {
-                    OneFeedLoadingCover(title: title, status: "Laying the page")
+                ZStack {
+                    if showCover {
+                        OneFeedLoadingCover(title: title, status: "Laying the page")
+                            .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             }
             .overlay(alignment: .bottom) {
                 if !showCover {
                     focusDot
                 }
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             .onChange(of: page.isLoading) { _, loading in
                 if !loading {
                     hasCommitted = true

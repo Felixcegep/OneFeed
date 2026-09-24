@@ -59,6 +59,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The updating mark redrew the screen thirty times a second | Today, Feed, Reader, Settings | High | A timeline drove the pulse for the whole refresh | The mark scales with a repeating animation, and it stays still when Reduce Motion is on | Code review |
 | Queue and Feed lists loaded every article body to hide a duplicate | Queue, Feed | High | Choosing which copy to show checked whether `contentHTML` was empty, which faults the stored body | The choice uses the feed, the sync id, and the reading state. Lists no longer open the body | Code review |
 | Switching reader mode or starting a summary animated the whole page | Reader | High | Animation modifiers on the reader column included the web view | Only the decision curtain fades. The page, the loading mark, and a mode change stay put | Code review |
+| The opening cover faded by animating the web view | Reader | Medium | The cover’s animation sat on the page, so the web view moved as the cover left | The cover fades in its own overlay. The page underneath stays still | Code review |
 
 ## Still open
 
