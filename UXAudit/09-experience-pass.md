@@ -111,6 +111,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A late video length could paint the previous byline | Reader | Medium | Each byline change started its own script, and an older one could finish last | One update runs at a time, and the latest line runs after it | Code review |
 | Reading position could be snapshotted twice at once | Reader | Medium | The timer and leaving the app each called the page | One snapshot runs at a time. A second request runs when the first finishes | Code review |
 | The reader formatted a new long date on every redraw | Reader | Low | The byline called `formatted` whenever the page was asked for | The same calendar day reuses one long date | `FeedAndFreshRSSDomainTests.listDateLabelReusesTheSameCalendarDay` |
+| Increase Contrast left captions and rules at the normal palette | Lists, reader | High | Graphite and sand did not read the contrast setting | Secondary text, separators, and the reader meta line move toward the ink when Increase Contrast is on. The normal palette stays the same | `OneFeedPaletteTests.increaseContrastMovesSecondaryTextTowardInk` |
 
 ## Still open
 

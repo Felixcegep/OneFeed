@@ -45,6 +45,14 @@ struct OneFeedPaletteTests {
         #expect(WCAGContrast.ratio(OneFeedPalette.destructive.dark, paper) >= 5)
     }
 
+    @Test func increaseContrastMovesSecondaryTextTowardInk() {
+        #expect(OneFeedPalette.subdued.contrastLight != OneFeedPalette.subdued.light)
+        #expect(WCAGContrast.ratio(OneFeedPalette.subdued.contrastLight, OneFeedPalette.surface.light) > WCAGContrast.ratio(OneFeedPalette.subdued.light, OneFeedPalette.surface.light))
+        #expect(WCAGContrast.ratio(OneFeedPalette.subdued.contrastDark, OneFeedPalette.surface.dark) > WCAGContrast.ratio(OneFeedPalette.subdued.dark, OneFeedPalette.surface.dark))
+        #expect(OneFeedPalette.readerContrastCSS.contains("prefers-contrast: more"))
+        #expect(OneFeedPalette.text.contrastLight == OneFeedPalette.text.light)
+    }
+
     @Test func currentArticleUsesALabelNotOnlyColor() {
         let current = Article(guid: "now", title: "Current", state: .current)
         let queued = Article(guid: "later", title: "Queued", state: .queued)

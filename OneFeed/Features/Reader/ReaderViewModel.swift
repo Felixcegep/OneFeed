@@ -268,6 +268,7 @@ final class ReaderViewModel {
           color-scheme: light dark;
         \(OneFeedPalette.readerRootCSS)
         }
+        \(OneFeedPalette.readerContrastCSS)
         html { overflow-x: hidden; }
         body {
           font-family: \(family);

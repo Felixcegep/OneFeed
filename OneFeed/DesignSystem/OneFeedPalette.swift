@@ -15,13 +15,27 @@ enum OneFeedPalette: Sendable {
         let name: String
         let light: String
         let dark: String
+        /// How far secondary text and rules move toward the ink when Increase Contrast is on.
+        var contrastAmount: CGFloat = 0
 
         var css: String { "light-dark(\(light), \(dark))" }
+
+        var contrastLight: String {
+            Self.hex(Self.towardInk(Self.rgb(light), dark: false, amount: contrastAmount))
+        }
+
+        var contrastDark: String {
+            Self.hex(Self.towardInk(Self.rgb(dark), dark: true, amount: contrastAmount))
+        }
+
+        var contrastCSS: String { "light-dark(\(contrastLight), \(contrastDark))" }
 
         var color: Color {
             OneFeedPalette.adaptive(
                 light: Self.rgb(light),
                 dark: Self.rgb(dark),
+                increasedLight: Self.rgb(contrastLight),
+                increasedDark: Self.rgb(contrastDark),
                 name: "OneFeed\(name)"
             )
         }
@@ -35,6 +49,23 @@ enum OneFeedPalette: Sendable {
                 CGFloat(value & 0xFF) / 255
             )
         }
+
+        static func towardInk(_ color: (CGFloat, CGFloat, CGFloat), dark: Bool, amount: CGFloat) -> (CGFloat, CGFloat, CGFloat) {
+            guard amount > 0 else { return color }
+            let ink = dark ? rgb("#F3EFE5") : rgb("#171715")
+            return (
+                color.0 + (ink.0 - color.0) * amount,
+                color.1 + (ink.1 - color.1) * amount,
+                color.2 + (ink.2 - color.2) * amount
+            )
+        }
+
+        static func hex(_ color: (CGFloat, CGFloat, CGFloat)) -> String {
+            let channels = [color.0, color.1, color.2].map { channel -> Int in
+                Int((min(1, max(0, channel)) * 255).rounded())
+            }
+            return String(format: "#%02X%02X%02X", channels[0], channels[1], channels[2])
+        }
     }
 
     // MARK: 90% interface
@@ -45,10 +76,10 @@ enum OneFeedPalette: Sendable {
     /// Selected / current wash only. Never the sole state indicator.
     static let current = Pair(name: "Current", light: "#E2E9E2", dark: "#2A322C")
     static let text = Pair(name: "Text", light: "#171715", dark: "#F3EFE5")
-    static let subdued = Pair(name: "Subdued", light: "#625F58", dark: "#B4B0A7")
-    static let separator = Pair(name: "Separator", light: "#D8D2C7", dark: "#3E3B35")
+    static let subdued = Pair(name: "Subdued", light: "#625F58", dark: "#B4B0A7", contrastAmount: 0.55)
+    static let separator = Pair(name: "Separator", light: "#D8D2C7", dark: "#3E3B35", contrastAmount: 0.5)
     /// Icons and skip chrome. Not small body copy.
-    static let stone = Pair(name: "Stone", light: "#7A756C", dark: "#9A968C")
+    static let stone = Pair(name: "Stone", light: "#7A756C", dark: "#9A968C", contrastAmount: 0.45)
 
     // MARK: 10% color
 
@@ -74,23 +105,43 @@ enum OneFeedPalette: Sendable {
         """
     }
 
+    /// Overrides reader meta and rules after the normal `:root` block.
+    static var readerContrastCSS: String {
+        """
+        @media (prefers-contrast: more) {
+          :root {
+            --meta: \(subdued.contrastCSS);
+            --rule: \(separator.contrastCSS);
+          }
+        }
+        """
+    }
+
     fileprivate static func adaptive(
         light: (CGFloat, CGFloat, CGFloat),
         dark: (CGFloat, CGFloat, CGFloat),
+        increasedLight: (CGFloat, CGFloat, CGFloat),
+        increasedDark: (CGFloat, CGFloat, CGFloat),
         name: String
     ) -> Color {
         #if os(macOS)
         return Color(nsColor: NSColor(name: name, dynamicProvider: { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                ? NSColor(srgbRed: dark.0, green: dark.1, blue: dark.2, alpha: 1)
-                : NSColor(srgbRed: light.0, green: light.1, blue: light.2, alpha: 1)
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let increased = appearance.accessibilityContrast == .high
+            let rgb = isDark
+                ? (increased ? increasedDark : dark)
+                : (increased ? increasedLight : light)
+            return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
         }))
         #else
         _ = name
         return Color(uiColor: UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: dark.0, green: dark.1, blue: dark.2, alpha: 1)
-                : UIColor(red: light.0, green: light.1, blue: light.2, alpha: 1)
+            let isDark = traits.userInterfaceStyle == .dark
+            let increased = traits.accessibilityContrast == .high
+            let rgb = isDark
+                ? (increased ? increasedDark : dark)
+                : (increased ? increasedLight : light)
+            return UIColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
         })
         #endif
     }
