@@ -21,7 +21,7 @@ struct SettingsView: View {
                 settingsLink("Reading", summary: "\(ReaderFontChoice(rawValue: readerFont)?.label ?? "Serif") · \(ReaderTextSize(rawValue: readerTextSize)?.label ?? "Default") · \(ReaderFocusMode(rawValue: readerFocusMode)?.label ?? "Smart")") {
                     readingSection
                 }
-                settingsLink("Accounts & Sync", summary: "FreshRSS, iCloud or Google Drive") {
+                settingsLink("Accounts & Sync", summary: "FreshRSS, iCloud or Google Drive", reloadsOnAppear: true) {
                     freshRSSSection
                     cloudSection
                 }
@@ -34,7 +34,7 @@ struct SettingsView: View {
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
-                settingsLink("Import & Export", summary: "Move subscriptions with OPML") {
+                settingsLink("Import & Export", summary: "Move subscriptions with OPML", reloadsOnAppear: true) {
                     dataTransferSection
                 }
                 settingsLink("About", summary: "OneFeed · 1.0") {
@@ -252,6 +252,7 @@ struct SettingsView: View {
     private func settingsLink<Content: View>(
         _ title: String,
         summary: String,
+        reloadsOnAppear: Bool = false,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         NavigationLink {
@@ -262,7 +263,9 @@ struct SettingsView: View {
             .oneFeedInlineTitle()
             .oneFeedSettingsCanvas()
             .tint(OneFeedTheme.ink)
-            .onAppear { viewModel.reload() }
+            .onAppear {
+                if reloadsOnAppear { viewModel.reload() }
+            }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)

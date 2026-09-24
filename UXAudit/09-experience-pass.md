@@ -48,6 +48,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Stories inside one History day appeared in an unstable order | History | Medium | Grouping by day used a dictionary, which does not keep the query order | Each day is newest first | `RetentionAndExtractionTests.historyDayKeepsNewestFirst` |
 | Queue and History search missed accented titles | Queue, History | Medium | Those screens used case-insensitive search, so “cafe” did not match “café” | They use the same standard search as Feed and Sources | Code review |
 | Sources and the Today filter regrouped on every keystroke | Sources, Today | Medium | The field and the filter shared one string | The field stays live. The filter waits 180ms, and clears immediately | Code review |
+| Opening Reading or About reloaded every source | Settings | Medium | Every settings page fetched all feeds on appear | Only Accounts and Import reload, because those pages show that data | Code review |
 
 ## Still open
 
