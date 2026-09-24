@@ -198,6 +198,22 @@ struct ReaderFocusTests {
         #expect(model.memoryBodyCopies == 0)
     }
 
+    @Test @MainActor func aSavedPDFDoesNotCopyItsTextOnTheOpenArticle() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-pdf",
+            title: "Paper",
+            contentHTML: "<p>Saved page</p>",
+            contentKind: "pdf"
+        )
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        await model.enrichReadableHTML()
+        #expect(model.memoryDocumentChecks == 0)
+        #expect(article.contentHTML == "<p>Saved page</p>")
+    }
+
     @Test @MainActor func unsavedReaderPageUsesTheBodyAlreadyInMemory() async throws {
         let context = try InMemoryStore.makeContext()
         let article = Article(guid: "draft-page", title: "Essay", contentHTML: "<p>Edited before save</p>")

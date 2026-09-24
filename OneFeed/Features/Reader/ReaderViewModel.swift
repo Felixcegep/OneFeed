@@ -237,6 +237,29 @@ final class ReaderViewModel {
     private(set) var bodyRevision = 0
     /// Times the page copied the stored body on the main thread. A saved article does not.
     private(set) var memoryBodyCopies = 0
+    /// Times a PDF or book checked its stored text on the open article. A saved file does not.
+    private(set) var memoryDocumentChecks = 0
+
+    /// A saved file is checked on a separate store context. An unsaved extract is already in memory.
+    private func storedDocumentAlreadyHasText() async -> Bool {
+        let articleID = article.id
+        if articleBodyIsUnsaved {
+            memoryDocumentChecks += 1
+            return Self.hasVisibleText(article.contentHTML)
+        }
+        guard let container = article.modelContext?.container else {
+            memoryDocumentChecks += 1
+            return Self.hasVisibleText(article.contentHTML)
+        }
+        return await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            let matchID = articleID
+            var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+            descriptor.fetchLimit = 1
+            guard let stored = try? context.fetch(descriptor).first else { return false }
+            return Self.hasVisibleText(stored.contentHTML)
+        }.value
+    }
 
     /// True when this article’s body may differ from the last save. Another dirty object in the store does not count.
     private var articleBodyIsUnsaved: Bool {
@@ -617,7 +640,7 @@ final class ReaderViewModel {
     }
 
     private func loadPDFTextIfNeeded() async {
-        if Self.hasVisibleText(article.contentHTML) { return }
+        if await storedDocumentAlreadyHasText() { return }
         guard let file = importedFileURL else { return }
         isExtracting = true
         defer { isExtracting = false }
@@ -640,7 +663,7 @@ final class ReaderViewModel {
     }
 
     private func loadEPUBIfNeeded() async {
-        if Self.hasVisibleText(article.contentHTML) { return }
+        if await storedDocumentAlreadyHasText() { return }
         guard let file = importedFileURL,
               let hash = ImportedDocumentStore.hash(fromGuid: article.guid) else { return }
         isExtracting = true
