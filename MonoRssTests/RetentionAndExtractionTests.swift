@@ -176,6 +176,11 @@ struct RetentionAndExtractionTests {
         #expect(quiet.upNext == plan.upNext)
         #expect(quiet.articles == plan.articles)
         #expect(QueueListPlan.make(from: [video, saved, copy].map(queueSnap), query: "Essay").articles == [saved.id])
+        #expect(QueueListPlan.sectionsOnTheOpenScreen(storyCount: 3, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 0, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 201, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 3, isSearching: true))
+        #expect(QueueListPlan.openScreenExcerpt(aiSummary: "<p>Ready</p>", summary: nil) == "Ready")
     }
 
     private func queueSnap(_ article: Article) -> QueueStorySnap {

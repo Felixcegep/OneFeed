@@ -54,26 +54,17 @@ struct SavedView: View {
         let edge = queuePlanEdge
         let query = searchQuery
         let searching = !query.isEmpty
-        let snaps = savedQuery.compactMap { article -> QueueStorySnap? in
-            guard article.isStored else { return nil }
-            return QueueStorySnap(
-                id: article.id,
-                publishedAt: article.publishedAt,
-                title: searching ? article.title : "",
-                readingNote: searching ? article.readingNote : "",
-                reactionRaw: searching ? article.readingReactionRawValue : "",
-                feedTitle: searching ? article.feed?.title : nil,
-                hasFeed: article.feed != nil,
-                url: article.url,
-                author: searching ? article.author : nil,
-                contentKind: article.contentKind,
-                videoID: article.videoID,
-                guid: article.guid,
-                hasRemoteID: article.remoteID != nil,
-                stateRaw: article.stateRawValue,
-                isRemoteStarred: article.isRemoteStarred
+        let stored = savedQuery.filter(\.isStored)
+        if QueueListPlan.sectionsOnTheOpenScreen(storyCount: stored.count, isSearching: searching) {
+            let openPlan = QueueListPlan.make(from: stored.map { queueSnap($0, searching: false) }, query: "")
+            let featured = openPlan.upNext.flatMap { id in stored.first { $0.id == id } }
+            publish(
+                openPlan,
+                byID: Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                excerpt: QueueListPlan.openScreenExcerpt(aiSummary: featured?.aiSummary, summary: featured?.summary)
             )
         }
+        let snaps = stored.map { queueSnap($0, searching: searching) }
         let plan = await Task.detached(priority: .userInitiated) {
             QueueListPlan.make(from: snaps, query: query)
         }.value
@@ -88,11 +79,35 @@ struct SavedView: View {
             ContentClassifier.cardExcerpt(aiSummary: excerptSample.aiSummary, summary: excerptSample.summary)
         }.value
         guard !Task.isCancelled, edge == queuePlanEdge else { return }
+        publish(plan, byID: byID, excerpt: excerpt)
+    }
+
+    private func queueSnap(_ article: Article, searching: Bool) -> QueueStorySnap {
+        QueueStorySnap(
+            id: article.id,
+            publishedAt: article.publishedAt,
+            title: searching ? article.title : "",
+            readingNote: searching ? article.readingNote : "",
+            reactionRaw: searching ? article.readingReactionRawValue : "",
+            feedTitle: searching ? article.feed?.title : nil,
+            hasFeed: article.feed != nil,
+            url: article.url,
+            author: searching ? article.author : nil,
+            contentKind: article.contentKind,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
+    private func publish(_ plan: QueueSectionPlan, byID: [UUID: Article], excerpt: String?) {
         func articles(_ ids: [UUID]) -> [Article] {
             ids.compactMap { byID[$0] }.filter(\.isStored)
         }
-        queueLayout = QueueLayout(
-            upNext: featuredArticle,
+        let next = QueueLayout(
+            upNext: plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil },
             videos: articles(plan.videos),
             audio: articles(plan.audio),
             files: articles(plan.files),
@@ -101,6 +116,11 @@ struct SavedView: View {
             subtitle: plan.subtitle,
             upNextExcerpt: excerpt
         )
+        guard !next.showsSameRows(as: queueLayout) else {
+            queueReady = true
+            return
+        }
+        queueLayout = next
         queueReady = true
     }
 
@@ -570,6 +590,21 @@ enum QueueNavigationSubtitle {
 
 /// Same collapse and sections as the Queue screen, from copied fields.
 nonisolated enum QueueListPlan {
+    /// A modest queue can be sectioned on the open screen. A long one, or a search, waits for the off-screen plan.
+    static let synchronousSectionLimit = 200
+
+    static func sectionsOnTheOpenScreen(storyCount: Int, isSearching: Bool) -> Bool {
+        !isSearching && storyCount > 0 && storyCount <= synchronousSectionLimit
+    }
+
+    /// One featured preview, from the characters the card already needs. The list itself is not stripped here.
+    static func openScreenExcerpt(aiSummary: String?, summary: String?) -> String? {
+        ContentClassifier.cardExcerpt(
+            aiSummary: ContentClassifier.cardExcerptSample(aiSummary),
+            summary: ContentClassifier.cardExcerptSample(summary)
+        )
+    }
+
     static func make(from stories: [QueueStorySnap], query: String) -> QueueSectionPlan {
         let collapsed = collapsedStories(stories)
         let visible = query.isEmpty ? collapsed : collapsed.filter { matches($0, query: query) }
@@ -663,6 +698,17 @@ private struct QueueLayout {
     var hasQueue = false
     var subtitle = ""
     var upNextExcerpt: String?
+
+    func showsSameRows(as other: QueueLayout) -> Bool {
+        upNext?.id == other.upNext?.id
+            && videos.map(\.id) == other.videos.map(\.id)
+            && audio.map(\.id) == other.audio.map(\.id)
+            && files.map(\.id) == other.files.map(\.id)
+            && articles.map(\.id) == other.articles.map(\.id)
+            && hasQueue == other.hasQueue
+            && subtitle == other.subtitle
+            && upNextExcerpt == other.upNextExcerpt
+    }
 }
 
 private extension View {
