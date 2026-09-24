@@ -229,6 +229,8 @@ final class SourceDetailViewModel {
     private let freshRSSService: any FreshRSSSyncing
     var isConfirmingRemoval = false
     var presentedError: String?
+    var refreshError: String?
+    private(set) var isRefreshing = false
     var availableFolders: [String] = []
     private var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
@@ -240,6 +242,17 @@ final class SourceDetailViewModel {
         self.context = context
         self.freshRSSService = freshRSSService
         reloadFolders()
+    }
+
+    func refresh() async {
+        guard feed.refreshesOverRSS, !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        do {
+            try await FeedService().refresh(feed, in: context)
+        } catch {
+            refreshError = RefreshFailure.message(for: error, fallback: "Couldn’t refresh this source.")
+        }
     }
 
     func reloadFolders() {

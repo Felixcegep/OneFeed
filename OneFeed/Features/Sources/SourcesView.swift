@@ -502,6 +502,23 @@ private struct SourceDetailView: View {
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
+        .toolbar {
+            if viewModel.feed.refreshesOverRSS {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                        Task { await viewModel.refresh() }
+                    }
+                }
+            }
+        }
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { viewModel.refreshError != nil },
+            set: { if !$0 { viewModel.refreshError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.refreshError = nil }
+        } message: {
+            Text(viewModel.refreshError ?? "")
+        }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
