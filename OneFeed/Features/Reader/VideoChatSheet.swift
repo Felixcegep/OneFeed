@@ -31,6 +31,7 @@ struct VideoChatSheet: View {
                 composer
             }
             .background(OneFeedTheme.plaster)
+            .onDisappear { viewModel.cancelVideoWork() }
             .navigationTitle("This video")
             .oneFeedInlineTitle()
             .toolbar {
@@ -110,7 +111,7 @@ struct VideoChatSheet: View {
         let question = draft
         guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         draft = ""
-        Task { await viewModel.askAboutVideo(question) }
+        viewModel.beginVideoQuestion(question)
     }
 
     private func scrollToLatest(with proxy: ScrollViewProxy) {

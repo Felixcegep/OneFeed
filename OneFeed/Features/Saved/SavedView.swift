@@ -13,13 +13,14 @@ struct SavedView: View {
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
     @State private var searchText = ""
+    @State private var appliedSearch = ""
 
     private var waiting: [Article] {
         ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
     }
 
     private var searchQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// In-memory filter of `waiting`. An empty query returns the queue unchanged.
@@ -95,6 +96,7 @@ struct SavedView: View {
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
         .searchable(text: $searchText, prompt: "Search queue")
+        .debouncedSearch(searchText, into: $appliedSearch)
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add", systemImage: "plus") { isAdding = true }

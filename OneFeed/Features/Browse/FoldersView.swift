@@ -523,7 +523,7 @@ struct FoldersView: View {
                 folderAddError = nil
             } catch {
                 if openFolderID == .named(folderName) {
-                    folderAddError = error.localizedDescription
+                    folderAddError = RefreshFailure.message(for: error) ?? "Couldn’t add that source."
                 }
             }
             isAddingAddress = false
@@ -593,6 +593,7 @@ struct ArticleCollectionView: View {
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
     @State private var searchText = ""
+    @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
 
     init(destination: FeedBrowseDestination) {
@@ -612,7 +613,7 @@ struct ArticleCollectionView: View {
                 .first(where: { $0.folderID == folderID })?
                 .articles ?? []
         }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return candidates }
         return candidates.filter {
             $0.title.localizedStandardContains(query)
@@ -673,6 +674,7 @@ struct ArticleCollectionView: View {
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
         .searchable(text: $searchText, prompt: "Search articles")
+        .debouncedSearch(searchText, into: $appliedSearch)
     }
 
     private func articleButton(_ article: Article, caption: String?) -> some View {

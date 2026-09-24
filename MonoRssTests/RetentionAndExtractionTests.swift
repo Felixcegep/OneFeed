@@ -89,6 +89,12 @@ struct RetentionAndExtractionTests {
         #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == FeedServiceError.http(500).localizedDescription)
     }
 
+    @Test func readerFailuresStayInPlainLanguage() {
+        #expect(ReaderFailure.message(for: GeminiClientError.missingAPIKey) == "Add a Google AI Studio API key in Settings.")
+        #expect(ReaderFailure.message(for: URLError(.timedOut)) == "The connection dropped. Try again.")
+        #expect(ReaderFailure.message(for: FeedServiceError.http(500)) == "That did not finish. Try again.")
+    }
+
     @Test func automaticExtractSkipsSubstantialRSS() {
         let policy = ArticleExtractionPolicy()
         let long = Array(repeating: "word", count: 420).joined(separator: " ")

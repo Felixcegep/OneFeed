@@ -15,6 +15,7 @@ final class ReaderViewModel {
     var summaryError: String?
     var askError: String?
     private let gemini: GeminiClient
+    private var videoAsk: Task<Void, Never>?
 
     init(article: Article, gemini: GeminiClient = GeminiClient()) {
         self.article = article
@@ -75,7 +76,7 @@ final class ReaderViewModel {
 
     func summarizeYouTube() async {
         guard let url = youtubeURL else {
-            summaryError = GeminiClientError.missingVideo.localizedDescription
+            summaryError = ReaderFailure.message(for: GeminiClientError.missingVideo)
             return
         }
         isSummarizing = true
@@ -101,15 +102,25 @@ final class ReaderViewModel {
         } catch is CancellationError {
             return
         } catch {
-            summaryError = error.localizedDescription
+            summaryError = ReaderFailure.message(for: error)
         }
+    }
+
+    func beginVideoQuestion(_ question: String) {
+        videoAsk?.cancel()
+        videoAsk = Task { await self.askAboutVideo(question) }
+    }
+
+    func cancelVideoWork() {
+        videoAsk?.cancel()
+        videoAsk = nil
     }
 
     func askAboutVideo(_ question: String) async {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         guard let url = youtubeURL else {
-            askError = GeminiClientError.missingVideo.localizedDescription
+            askError = ReaderFailure.message(for: GeminiClientError.missingVideo)
             return
         }
 
@@ -151,7 +162,7 @@ final class ReaderViewModel {
         } catch is CancellationError {
             return
         } catch {
-            askError = error.localizedDescription
+            askError = ReaderFailure.message(for: error)
         }
     }
 

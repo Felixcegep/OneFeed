@@ -8,6 +8,19 @@ enum RefreshFailure {
     }
 }
 
+enum ReaderFailure {
+    /// Calm copy for Gemini and network failures. Raw API text stays out of the reader.
+    nonisolated static func message(for error: Error) -> String {
+        if let gemini = error as? GeminiClientError {
+            return gemini.errorDescription ?? "Gemini could not finish that."
+        }
+        if error.isTransientNetwork {
+            return "The connection dropped. Try again."
+        }
+        return "That did not finish. Try again."
+    }
+}
+
 extension Error {
     nonisolated var isCancellation: Bool {
         if self is CancellationError { return true }

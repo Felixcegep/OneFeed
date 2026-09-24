@@ -20,11 +20,14 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Finished Today stayed empty after refresh found new stories | Today | High | `generateIfNeeded` returned the existing deck and did not fill open slots | When no story is still open, the same deck appends a new batch. An open story is left alone | `DailyDeckTests.finishedDeckRefillsWhenNewStoriesArrive` |
 | Today hid the “already read” line Feed shows | Today | Medium | Rows did not read `ContentMemory.matchedConsumedAt` | Featured story and list rows show that caption | Code review |
 | Thumbnails decoded the full image for a 64pt slot | Today, Queue, Feed | High | `AsyncImage` decoded the network bitmap at full size | `ThumbnailCache` downsamples with ImageIO and keeps 64 images | Code review |
+| Each new story was compared with every stored vector | Today build | High | Classification scanned memories in other languages | Only the same language and embedding revision are scored | Code review |
+| Search regrouped the feed on every keystroke | Feed, Queue, History | Medium | The field and the filter shared one string | The field stays live. The filter waits 180ms, and clears immediately | Code review |
+| Reader alerts showed raw errors | Reader | Medium | `localizedDescription` included API text | Gemini copy stays. Other failures use one plain sentence | `RetentionAndExtractionTests.readerFailuresStayInPlainLanguage` |
+| Asking about a video kept running after the sheet closed | Reader | Medium | The ask task was unstructured | The sheet cancels that task on disappear | Code review |
 
 ## Still open
 
 - Today still does not list “N more sources” under a story. The deck keeps one slot per cluster. The already-read line is on the row.
 - Swiping the takeaway sheet closed still marks the article read. That matches Done → optional note. A draft is not saved on swipe.
-- `SemanticMemoryPass` still fetches the whole library on the ingest actor during “Building today.”
-- Search filters on every keystroke. The work is in memory, not a network call.
-- No Xcode on this machine, so the new progress test has not been executed here.
+- `SemanticMemoryPass` still loads every article and memory while building Today. Scoring is limited to one language and revision, but the fetch is not.
+- No Xcode on this machine, so the new tests have not been executed here. Scroll-to-top of the progress line still needs a device pass.

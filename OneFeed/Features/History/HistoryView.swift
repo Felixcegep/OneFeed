@@ -11,9 +11,10 @@ struct HistoryView: View {
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @State private var selectedArticle: Article?
     @State private var searchText = ""
+    @State private var appliedSearch = ""
 
     private var trimmedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Filters the history query already in memory. Search does not fetch.
@@ -119,6 +120,7 @@ struct HistoryView: View {
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
         .oneFeedSearchable($searchText, prompt: "Search history")
+        .debouncedSearch(searchText, into: $appliedSearch)
     }
 
     private func putInQueue(_ article: Article) {

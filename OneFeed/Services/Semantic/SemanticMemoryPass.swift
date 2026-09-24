@@ -237,7 +237,11 @@ nonisolated enum SemanticMemoryPass {
                 item.contentVector = vectors.content
                 item.embeddingLanguage = vectors.language
                 item.embeddingRevision = vectors.revision
-                let comparable = known.filter(hasVectors)
+                let comparable = known.filter { memory in
+                    hasVectors(memory)
+                        && memory.embeddingLanguage == vectors.language
+                        && memory.embeddingRevision == vectors.revision
+                }
                 verdict = SemanticClassifier.classify(item: item, against: comparable)
             }
         }
