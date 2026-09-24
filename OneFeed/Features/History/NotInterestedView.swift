@@ -4,11 +4,12 @@ import SwiftUI
 struct NotInterestedView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var entries: [NotInterestedEntry]
-    @Query private var feeds: [Feed]
     @State private var selectedArticle: Article?
     @State private var pendingRemoval: NotInterestedSourceGroup?
     @State private var librarianPrompt: LibrarianPrompt?
     @State private var listCache = NotInterestedListCache()
+    @State private var feedCache = NotInterestedFeedCache()
+    @State private var feedDetailTick = 0
     /// Source groups stay put while a row redraws. Rebuilt off the main thread when a mark is added, removed, or recorded again.
     @State private var grouped: [NotInterestedSourceGroup] = []
     @State private var logReady = false
@@ -236,7 +237,8 @@ struct NotInterestedView: View {
     }
 
     private func sourceHeader(_ group: NotInterestedSourceGroup) -> some View {
-        let feed = NotInterestedLog.feed(matching: group, in: feeds)
+        let _ = feedDetailTick
+        let feed = feedCache.feed(for: group, in: modelContext)
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.sourceTitle)
@@ -259,6 +261,7 @@ struct NotInterestedView: View {
                     Button("Move to Archive", systemImage: "archivebox") {
                         do {
                             try NotInterestedLog.archive(feed, in: modelContext)
+                            feedDetailTick += 1
                         } catch {
                             sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
                         }
@@ -267,6 +270,7 @@ struct NotInterestedView: View {
                         Button("Take out of Today", systemImage: "sun.min") {
                             do {
                                 try NotInterestedLog.takeOutOfToday(feed, in: modelContext)
+                                feedDetailTick += 1
                             } catch {
                                 sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
                             }
@@ -362,7 +366,7 @@ struct NotInterestedView: View {
 
     private func removeSource(_ group: NotInterestedSourceGroup) async {
         guard !isRemovingSource else { return }
-        guard let feed = NotInterestedLog.feed(matching: group, in: feeds) else { return }
+        guard let feed = feedCache.feed(for: group, in: modelContext) else { return }
         isRemovingSource = true
         defer { isRemovingSource = false }
         do {
@@ -377,6 +381,20 @@ struct NotInterestedView: View {
                 removeError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
             }
         }
+    }
+}
+
+private final class NotInterestedFeedCache {
+    private var feeds: [String: Feed?] = [:]
+
+    func feed(for group: NotInterestedSourceGroup, in context: ModelContext) -> Feed? {
+        let key = group.feedID?.uuidString ?? group.sourceFeedURL
+        if let cached = feeds[key] {
+            return cached?.modelContext == nil ? nil : cached
+        }
+        let found = NotInterestedLog.storedFeed(matching: group, in: context)
+        feeds[key] = found
+        return found
     }
 }
 

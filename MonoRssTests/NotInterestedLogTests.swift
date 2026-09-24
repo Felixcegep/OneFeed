@@ -112,6 +112,19 @@ struct NotInterestedLogTests {
         #expect(!NotInterestedListPlan.prefetchesStories(entryCount: 201))
         let copied = NotInterestedListPlan.snaps(in: context.container)
         #expect(copied.map(\.sourceTitle) == ["The Verge", "The Verge"])
+        let other = Feed(title: "Other", feedURL: URL(string: "https://other.test/rss")!)
+        context.insert(other)
+        try context.save()
+        let group = groups[0]
+        #expect(NotInterestedLog.storedFeed(matching: group, in: context)?.id == feed.id)
+        let unmarked = NotInterestedSourceGroup(
+            sourceTitle: "The Verge",
+            sourceFeedURL: ArticleIdentity.feedKey(feed.feedURL),
+            sourceWebsiteURL: nil,
+            feedID: nil,
+            entries: group.entries
+        )
+        #expect(NotInterestedLog.storedFeed(matching: unmarked, in: context)?.id == feed.id)
         #expect(NotInterestedListPlan.groups(from: copied).first?.entryIDs == plans.first?.entryIDs)
     }
 

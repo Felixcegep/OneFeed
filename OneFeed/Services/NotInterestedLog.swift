@@ -183,6 +183,32 @@ enum NotInterestedLog {
         return feed(matchingFeedURL: group.sourceFeedURL, in: feeds)
     }
 
+    /// The one source this group names. A refresh of other sources does not load them onto the log.
+    static func storedFeed(matching group: NotInterestedSourceGroup, in context: ModelContext) -> Feed? {
+        if let id = group.feedID, let feed = fetchFeed(id: id, in: context) { return feed }
+        guard let id = feedID(matchingFeedURL: group.sourceFeedURL, in: context.container) else { return nil }
+        return fetchFeed(id: id, in: context)
+    }
+
+    private static func fetchFeed(id: UUID, in context: ModelContext) -> Feed? {
+        let match = id
+        var descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.id == match })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    /// Matches an older mark that has no source id. The scan stays off the open screen.
+    nonisolated static func feedID(matchingFeedURL raw: String, in container: ModelContainer) -> UUID? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Feed>()
+        descriptor.propertiesToFetch = [\.id, \.feedURL]
+        let feeds = (try? context.fetch(descriptor)) ?? []
+        return feed(matchingFeedURL: trimmed, in: feeds)?.id
+    }
+
     nonisolated static func feed(matchingFeedURL raw: String, in feeds: [Feed]) -> Feed? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
