@@ -35,6 +35,7 @@ struct FoldersView: View {
     @State private var newFolderName = ""
     @State private var folderOrderTick = 0
     @State private var storyPlacements: [String: StoryPlacement] = [:]
+    @State private var placementTick = 0
     /// Folder rows stay put while refresh progress updates. Rebuilt only when sources, stories, or order change.
     @State private var directoryCache = FolderDirectoryCache()
     @FocusState private var focusedFolderName: String?
@@ -126,9 +127,11 @@ struct FoldersView: View {
         }
         .task(id: openQueryEdge) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+            placementTick &+= 1
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+            placementTick &+= 1
         }
         .sheet(isPresented: $showingAddSource) {
             AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
@@ -211,7 +214,7 @@ struct FoldersView: View {
         token = token &* 31 &+ openQuery.count
         token = token &* 31 &+ (openQuery.first?.id.hashValue ?? 0)
         token = token &* 31 &+ (openQuery.last?.id.hashValue ?? 0)
-        token = token &* 31 &+ storyPlacements.count
+        token = token &* 31 &+ placementTick
         for feed in feeds {
             token = token &* 31 &+ feed.id.hashValue
             token = token &* 31 &+ feed.memberships.hashValue
@@ -645,6 +648,7 @@ struct ArticleCollectionView: View {
     @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
     @State private var storyPlacements: [String: StoryPlacement] = [:]
+    @State private var placementTick = 0
     /// Story rows stay grouped while the open article changes. Rebuilt when the query, stories, or clusters change.
     @State private var storyRowCache = StoryRowCache()
 
@@ -695,7 +699,7 @@ struct ArticleCollectionView: View {
         token = token &* 31 &+ articles.count
         token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
         token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
-        token = token &* 31 &+ storyPlacements.count
+        token = token &* 31 &+ placementTick
         token = token &* 31 &+ expandedClusterIDs.count
         switch destination {
         case .unread: token = token &* 31 &+ 1
@@ -762,9 +766,11 @@ struct ArticleCollectionView: View {
         .background(OneFeedTheme.plaster)
         .task(id: articleEdge) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+            placementTick &+= 1
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+            placementTick &+= 1
         }
     }
 
