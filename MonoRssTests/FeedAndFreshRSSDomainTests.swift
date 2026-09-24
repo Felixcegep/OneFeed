@@ -661,6 +661,19 @@ struct FeedAndFreshRSSDomainTests {
         #expect(OneFeedDateLabel.monthAndDay(morning).isEmpty == false)
     }
 
+    @Test func historySectionKeepsTheYearWhenTheDayIsNotThisYear() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 12))!
+        let today = calendar.startOfDay(for: now)
+        let thisYear = calendar.date(from: DateComponents(year: 2026, month: 1, day: 3))!
+        let lastYear = calendar.date(from: DateComponents(year: 2025, month: 9, day: 24))!
+        #expect(OneFeedDateLabel.historySection(today, now: now, calendar: calendar) == "Today")
+        let recent = OneFeedDateLabel.historySection(thisYear, now: now, calendar: calendar)
+        #expect(recent.contains("2026") == false)
+        #expect(OneFeedDateLabel.historySection(lastYear, now: now, calendar: calendar).contains("2025"))
+    }
+
     @Test func aPassingHourDoesNotRewriteASameDaySimilarCaption() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

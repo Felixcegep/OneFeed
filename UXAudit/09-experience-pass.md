@@ -194,6 +194,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Finishing or restoring a Queue story reloaded every saved story | Queue | High | The list is already a live query, but Done, restore, and an opened import still fetched and collapsed the whole queue inside the update | Those actions change the one story. The queue on screen updates from the query | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 | Opening a story sanitized the article before the reader could appear | Reader | High | The first frame built and cleaned the whole page on the main thread | The reader chrome appears first. Cleaning and assembling the page happens off the main thread, and a later duration still does not reload it | `ReaderFocusTests.readerDocumentBuiltOffTheMainThreadMatchesTheCachedPage` |
 | Ask Gemini built the not-interested log before the librarian could open | Not interested | Medium | The button fetched and grouped the log on the main thread, then pushed the screen | The librarian opens immediately and builds that prompt off the main thread | `NotInterestedLogTests.reviewPromptMatchesABackgroundRead` |
+| History sections from another year looked like this year | History | Medium | A day older than this year was labeled month and day only, so two Januaries shared a heading | Today and Yesterday stay words. Another year keeps the year | `FeedAndFreshRSSDomainTests.historySectionKeepsTheYearWhenTheDayIsNotThisYear` |
 
 ## Still open
 

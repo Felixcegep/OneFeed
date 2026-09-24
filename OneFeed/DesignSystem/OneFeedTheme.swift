@@ -865,6 +865,16 @@ enum OneFeedDateLabel {
         label(for: date, in: &longDate) { $0.formatted(date: .long, time: .omitted) }
     }
 
+    /// Today and Yesterday stay words. An older year keeps the year so two Januaries do not share a label.
+    static func historySection(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            return monthAndDay(date)
+        }
+        return monthDayAndYear(date)
+    }
+
     /// Same-day reads stay one phrase, so a caption does not grow from “1 minute ago” to “2 hours ago”.
     static func readWhen(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
         if calendar.isDate(date, inSameDayAs: now) { return "earlier today" }
