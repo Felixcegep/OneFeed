@@ -124,7 +124,7 @@ struct FoldersView: View {
                 toolbarDestination = .notInterested
             }
         }
-        .task(id: openQuery.map(\.id)) {
+        .task(id: openQueryEdge) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
@@ -189,10 +189,10 @@ struct FoldersView: View {
         }
     }
 
-    /// Cached folder rows. A progress tick keeps the same stamp, so the list is not regrouped.
+    /// Cached folder rows. A progress tick keeps the same edge, so the list is not walked again.
     private var directorySummaries: [FolderSummary] {
-        let stamp = directoryStampValue
-        if directoryCache.stamp == stamp {
+        let edge = directoryEdge
+        if directoryCache.edge == edge {
             return directoryCache.summaries
         }
         let summaries = FeedRootDirectory(
@@ -200,25 +200,31 @@ struct FoldersView: View {
             articles: openQuery,
             placements: storyPlacements
         ).summaries
-        directoryCache.stamp = stamp
+        directoryCache.edge = edge
         directoryCache.summaries = summaries
         return summaries
     }
 
-    private var directoryStampValue: Int {
-        var hasher = Hasher()
-        hasher.combine(folderOrderTick)
-        hasher.combine(placementStamp(storyPlacements))
-        hasher.combine(openQuery.count)
-        for article in openQuery {
-            hasher.combine(article.id)
-            hasher.combine(article.feed?.id)
-        }
+    /// Count and ends, plus each source. A refresh tick does not walk every article.
+    private var directoryEdge: Int {
+        var token = folderOrderTick
+        token = token &* 31 &+ openQuery.count
+        token = token &* 31 &+ (openQuery.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (openQuery.last?.id.hashValue ?? 0)
+        token = token &* 31 &+ storyPlacements.count
         for feed in feeds {
-            hasher.combine(feed.id)
-            hasher.combine(feed.memberships)
+            token = token &* 31 &+ feed.id.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
         }
-        return hasher.finalize()
+        return token
+    }
+
+    private var openQueryEdge: Int {
+        var token = openQuery.count
+        token = token &* 31 &+ (openQuery.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (openQuery.last?.id.hashValue ?? 0)
+        return token
     }
 
     private func displayedFolderNames() -> [String] {
@@ -612,24 +618,13 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
     var id: Self { self }
 }
 
-private func placementStamp(_ placements: [String: StoryPlacement]) -> Int {
-    var stamp = placements.count
-    for (key, placement) in placements {
-        stamp ^= key.hashValue
-        stamp ^= placement.relationshipRaw.hashValue
-        stamp ^= placement.storyClusterID?.hashValue ?? 0
-        stamp ^= placement.matchedConsumedAt?.hashValue ?? 0
-    }
-    return stamp
-}
-
 private final class StoryRowCache {
-    var stamp = 0
+    var edge = Int.min
     var rows: [FeedStoryRow] = []
 }
 
 private final class FolderDirectoryCache {
-    var stamp = 0
+    var edge = Int.min
     var summaries: [FolderSummary] = []
 }
 
@@ -680,8 +675,8 @@ struct ArticleCollectionView: View {
     }
 
     private var storyRows: [FeedStoryRow] {
-        let stamp = storyRowStamp
-        if storyRowCache.stamp == stamp {
+        let edge = storyEdge
+        if storyRowCache.edge == edge {
             return storyRowCache.rows
         }
         let rows = StoryGrouping.rows(
@@ -689,26 +684,34 @@ struct ArticleCollectionView: View {
             placements: storyPlacements,
             expandedClusterIDs: expandedClusterIDs
         )
-        storyRowCache.stamp = stamp
+        storyRowCache.edge = edge
         storyRowCache.rows = rows
         return rows
     }
 
-    private var storyRowStamp: Int {
-        var hasher = Hasher()
-        hasher.combine(appliedSearch)
-        hasher.combine(expandedClusterIDs)
-        hasher.combine(placementStamp(storyPlacements))
+    /// Search, expansion, and the ends of the list. Opening a story does not walk every row.
+    private var storyEdge: Int {
+        var token = appliedSearch.hashValue
+        token = token &* 31 &+ articles.count
+        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
+        token = token &* 31 &+ storyPlacements.count
+        token = token &* 31 &+ expandedClusterIDs.count
         switch destination {
-        case .unread: hasher.combine(0)
-        case .folder(let id): hasher.combine(String(describing: id))
+        case .unread: token = token &* 31 &+ 1
+        case .folder(let id): token = token &* 31 &+ String(describing: id).hashValue
         }
-        for article in articles where article.isStored {
-            hasher.combine(article.id)
-            hasher.combine(article.feed?.id)
-            hasher.combine(article.stateRawValue)
+        for id in expandedClusterIDs {
+            token ^= id.hashValue
         }
-        return hasher.finalize()
+        return token
+    }
+
+    private var articleEdge: Int {
+        var token = articles.count
+        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
+        return token
     }
 
     var body: some View {
@@ -757,7 +760,7 @@ struct ArticleCollectionView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
-        .task(id: articles.map(\.id)) {
+        .task(id: articleEdge) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
