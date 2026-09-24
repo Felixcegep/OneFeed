@@ -84,6 +84,14 @@ struct FreshRSSTests {
         #expect(item.publishedAt == Date(timeIntervalSince1970: 1_700_000_000))
     }
 
+    @Test func aLongerStoredReadKeepsItsBodyDuringSync() {
+        #expect(FreshRSSBodyChoice.choice(isNew: true, storedMinutes: 1, remoteMinutes: 2) == .replace)
+        #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 8, remoteMinutes: 2) == .keep)
+        #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 2, remoteMinutes: 2) == .compareLengths)
+        #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 2, remoteMinutes: nil) == .compareLengths)
+        #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 1, remoteMinutes: 5) == .compareLengths)
+    }
+
     @Test func unreadIDsRequestUsesReaderReadExclusionAndAuthorizationHeader() async throws {
         let transport = RecordingFreshRSSTransport(responseData: Data(#"{"itemRefs":[]}"#.utf8))
         let configuration = try FreshRSSConfiguration(baseURL: URL(string: "https://rss.example.test")!, username: "reader")

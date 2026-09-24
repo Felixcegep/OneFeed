@@ -315,9 +315,19 @@ extension LibraryIngestActor {
         article.publishedAt = snapshot.publishedAt ?? article.publishedAt
         article.summary = snapshot.summary
         if let remoteHTML = snapshot.contentHTML {
-            let existingHTML = article.contentHTML ?? ""
-            if remoteHTML.count >= existingHTML.count {
+            switch FreshRSSBodyChoice.choice(
+                isNew: isNew,
+                storedMinutes: article.estimatedReadingMinutes,
+                remoteMinutes: snapshot.consumeMinutes
+            ) {
+            case .replace:
                 article.contentHTML = remoteHTML
+            case .keep:
+                break
+            case .compareLengths:
+                if remoteHTML.count >= (article.contentHTML ?? "").count {
+                    article.contentHTML = remoteHTML
+                }
             }
         }
         if let minutes = snapshot.consumeMinutes, minutes > 0 {
@@ -368,6 +378,19 @@ extension LibraryIngestActor {
 }
 
 extension FreshRSSSyncService: FreshRSSSyncing {}
+
+/// A longer stored read stays on disk during sync. Equal estimates still compare the text.
+enum FreshRSSBodyChoice: Equatable {
+    case replace
+    case keep
+    case compareLengths
+
+    static func choice(isNew: Bool, storedMinutes: Int, remoteMinutes: Int?) -> FreshRSSBodyChoice {
+        if isNew { return .replace }
+        if let remoteMinutes, remoteMinutes > 0, storedMinutes > remoteMinutes { return .keep }
+        return .compareLengths
+    }
+}
 
 enum FreshRSSSyncError: LocalizedError {
     case missingCredentials
