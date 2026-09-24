@@ -113,6 +113,9 @@ struct ReaderFocusTests {
         let resized = model.documentHTML(fontChoice: .serif, textSize: .large)
         #expect(resized != first)
         #expect(resized.contains("10 min"))
+        let bold = model.documentHTML(fontChoice: .serif, textSize: .standard, boldText: true)
+        #expect(bold != first)
+        #expect(bold.contains("font-weight: 650"))
     }
 
     @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {

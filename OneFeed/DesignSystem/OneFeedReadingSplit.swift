@@ -33,6 +33,7 @@ private struct MacReadingPlaceholder: View {
         VStack(spacing: 12) {
             Text("The story opens here")
                 .font(OneFeedTheme.serifDisplay(28))
+                .oneFeedLegibleWeight()
                 .foregroundStyle(OneFeedTheme.ink)
                 .multilineTextAlignment(.center)
             Text("Pick one from the list. This side of the window stays put.")

@@ -29,6 +29,7 @@ struct ReaderView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.legibilityWeight) private var legibilityWeight
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
     @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
@@ -632,7 +633,8 @@ struct ReaderView: View {
             ReaderWebContent(
                 html: viewModel.documentHTML(
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
-                    textSize: ReaderTextSize(rawValue: textSize) ?? .standard
+                    textSize: ReaderTextSize(rawValue: textSize) ?? .standard,
+                    boldText: legibilityWeight == .bold
                 ),
                 metaLine: viewModel.readerMetaLine,
                 title: article.title,

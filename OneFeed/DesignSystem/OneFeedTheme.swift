@@ -67,6 +67,25 @@ enum OneFeedTheme {
     }
 }
 
+/// Point-size fonts ignore Bold Text. Semantic styles already follow it.
+private struct OneFeedLegibleWeight: ViewModifier {
+    @Environment(\.legibilityWeight) private var legibilityWeight
+
+    func body(content: Content) -> some View {
+        if legibilityWeight == .bold {
+            content.fontWeight(.semibold)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func oneFeedLegibleWeight() -> some View {
+        modifier(OneFeedLegibleWeight())
+    }
+}
+
 /// Editorial labels: compact, scalable, and readable against paper or plaster.
 struct GalleryLabel: View {
     let text: String

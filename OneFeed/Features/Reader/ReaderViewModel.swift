@@ -206,7 +206,7 @@ final class ReaderViewModel {
         return ReaderWebWarmup.blankURL
     }
 
-    func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
+    func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) -> String {
         let fallback = switch article.contentKind {
         case "epub":
             "<p>This book couldn’t be opened. Import the EPUB again.</p>"
@@ -236,7 +236,7 @@ final class ReaderViewModel {
         #endif
         // Length and date stay out of this key. A late duration must not rebuild the page.
         // The body hash is remembered, so a redraw does not walk the article again.
-        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
@@ -261,6 +261,9 @@ final class ReaderViewModel {
         let horizontalPad = 48
         #endif
         let metaBits = readerMetaLine
+        let bodyWeight = boldText ? 650 : 400
+        let headingWeight = boldText ? 700 : 500
+        let metaWeight = boldText ? 600 : 400
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
@@ -274,7 +277,7 @@ final class ReaderViewModel {
           font-family: \(family);
           font-size: \(bodySize)px;
           font-optical-sizing: auto;
-          font-weight: 400;
+          font-weight: \(bodyWeight);
           line-height: 1.55;
           margin: 0 auto;
           padding: 36px \(horizontalPad)px 48px;
@@ -296,14 +299,14 @@ final class ReaderViewModel {
         h1 {
           font-family: \(family);
           font-size: \(titleSize)px;
-          font-weight: 500;
+          font-weight: \(headingWeight);
           line-height: 1.22;
           letter-spacing: -0.012em;
           color: var(--title);
           margin: 14px 0 10px;
         }
         .meta {
-          font: 400 \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(metaWeight) \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           margin: 0 0 32px;
           padding-bottom: 20px;
@@ -311,7 +314,7 @@ final class ReaderViewModel {
         }
         h2, h3 {
           font-family: \(family);
-          font-weight: 500;
+          font-weight: \(headingWeight);
           line-height: 1.3;
           letter-spacing: -0.01em;
           color: var(--title);
@@ -328,7 +331,7 @@ final class ReaderViewModel {
           border-radius: 10px;
         }
         figcaption, cite {
-          font: 400 \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(metaWeight) \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           display: block;
           margin-top: 8px;

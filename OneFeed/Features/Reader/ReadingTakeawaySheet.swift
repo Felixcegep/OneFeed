@@ -44,6 +44,7 @@ struct ReadingTakeawaySheet: View {
                         .focused($noteFocused)
                         .lineLimit(2...4)
                         .font(OneFeedTheme.serifBody(17))
+                        .oneFeedLegibleWeight()
                         .foregroundStyle(OneFeedTheme.ink)
                         .padding(12)
                         .background(

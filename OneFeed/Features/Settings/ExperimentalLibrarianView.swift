@@ -401,11 +401,23 @@ struct ExperimentalLibrarianView: View {
         }
     }
 
+    private struct SerifLegibility: ViewModifier {
+        var enabled: Bool
+        func body(content: Content) -> some View {
+            if enabled {
+                content.oneFeedLegibleWeight()
+            } else {
+                content
+            }
+        }
+    }
+
     private func labeledCard(label: String, text: String, serif: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             GalleryLabel(text: label)
             Text(text)
                 .font(serif ? OneFeedTheme.serifBody() : .body)
+                .modifier(SerifLegibility(enabled: serif))
                 .foregroundStyle(OneFeedTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }

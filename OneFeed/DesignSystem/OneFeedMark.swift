@@ -159,6 +159,7 @@ struct OneFeedBrandLockup: View {
             VStack(spacing: 6) {
                 Text("OneFeed")
                     .font(OneFeedTheme.serifDisplay(24))
+                    .oneFeedLegibleWeight()
                     .foregroundStyle(OneFeedTheme.ink)
                 if showsTagline {
                     GalleryLabel(text: "One article at a time")
