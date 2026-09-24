@@ -306,3 +306,48 @@ final class Article {
     /// SwiftData fatals if persisted properties are read after the row is gone.
     var isStored: Bool { modelContext != nil }
 }
+
+/// Columns a screen can read without opening the stored page or the video chat.
+/// A column left out of the fetch faults the whole row, including that page.
+nonisolated enum ArticleListFetch {
+    static let rowColumns: [PartialKeyPath<Article>] = [
+        \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary,
+        \.estimatedReadingMinutes, \.stateRawValue, \.firstDisplayedAt, \.completedAt,
+        \.remoteID, \.isRemoteStarred, \.contentKind, \.durationSeconds, \.imageURL,
+        \.videoID, \.enclosureURL, \.enclosureMIME, \.rating, \.notInterested,
+        \.aiSummary, \.declinedVideoSummary, \.videoGeminiInteractionID,
+        \.libraryUpdatedAt, \.readingReactionRawValue, \.readingNote,
+    ]
+
+    /// Fields the library file stores. The page is not one of them.
+    static let libraryColumns: [PartialKeyPath<Article>] = [
+        \.id, \.guid, \.title, \.url, \.stateRawValue, \.completedAt,
+        \.isRemoteStarred, \.libraryUpdatedAt, \.firstDisplayedAt,
+        \.readingReactionRawValue, \.readingNote, \.remoteID, \.videoID,
+    ]
+
+    static func rows(
+        predicate: Predicate<Article>? = nil,
+        sortBy: [SortDescriptor<Article>] = []
+    ) -> FetchDescriptor<Article> {
+        prepared(predicate: predicate, sortBy: sortBy, columns: rowColumns)
+    }
+
+    static func library(
+        predicate: Predicate<Article>? = nil,
+        sortBy: [SortDescriptor<Article>] = []
+    ) -> FetchDescriptor<Article> {
+        prepared(predicate: predicate, sortBy: sortBy, columns: libraryColumns)
+    }
+
+    private static func prepared(
+        predicate: Predicate<Article>?,
+        sortBy: [SortDescriptor<Article>],
+        columns: [PartialKeyPath<Article>]
+    ) -> FetchDescriptor<Article> {
+        var descriptor = FetchDescriptor(predicate: predicate, sortBy: sortBy)
+        descriptor.propertiesToFetch = columns
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        return descriptor
+    }
+}

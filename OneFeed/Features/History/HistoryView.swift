@@ -3,11 +3,18 @@ import SwiftData
 
 struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "read" || $0.stateRawValue == "skipped" },
-        sort: \Article.completedAt,
-        order: .reverse
-    ) private var history: [Article]
+    @Query private var history: [Article]
+
+    init() {
+        let read = ArticleState.read.rawValue
+        let skipped = ArticleState.skipped.rawValue
+        _history = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == read || article.stateRawValue == skipped
+            },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        ))
+    }
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedArticle: Article?

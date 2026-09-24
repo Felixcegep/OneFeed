@@ -25,11 +25,18 @@ enum FeedBrowseDestination: Hashable, Sendable {
 
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-        sort: \Article.publishedAt,
-        order: .reverse
-    ) private var openQuery: [Article]
+    @Query private var openQuery: [Article]
+
+    init() {
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        _openQuery = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        ))
+    }
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
@@ -774,11 +781,14 @@ struct ArticleCollectionView: View {
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
-        _articles = Query(
-            filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-            sort: \Article.publishedAt,
-            order: .reverse
-        )
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        _articles = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        ))
     }
 
     private func reloadStoryList() async {

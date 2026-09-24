@@ -248,6 +248,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening Today or finishing a story followed the deck row into the page | Today | High | The current card and Done loaded `item.article`, which brings the stored page into memory | The card, Done, and the next story use the stored id and the fields the row shows. The page stays on disk | `DailyDeckTests.finishingTodayUpdatesTheStoryByItsStoredID` |
 | A follow-up fetch opened the Today story before deciding to download it | Today, Feed | High | Enrichment and the video-duration pass followed each deck row’s article, which loads the stored page | Those passes use the stored id. The download decision still reads the page on a separate context | `RetentionAndExtractionTests.refreshExtractionUsesTheStoredDeckID` |
 | Applying another device’s current story loaded every page | Library | High | The apply fetched every article, including HTML, then followed each deck row into its story | That fetch reads identity and state. The deck row is matched by its stored id | `LibraryMergeTests.applyingTheCurrentStoryUsesTheStoredDeckID` |
+| Feed, Queue, History, and a library sync loaded every article page | Feed, Queue, History, Library | High | Those screens queried full articles, and the library file fetch did the same even though the file stores no page | List queries and the library fetch read the columns they show. The page and the video chat stay out of that fetch | `LibraryMergeTests.listAndLibraryFetchesLeaveThePageOut` |
 
 ## Still open
 

@@ -286,17 +286,13 @@ enum QueueFeedSuggestions {
     static func load(in context: ModelContext) -> [Article] {
         let queued = ArticleState.queued.rawValue
         let current = ArticleState.current.rawValue
-        var descriptor = FetchDescriptor<Article>(
+        var descriptor = ArticleListFetch.rows(
             predicate: #Predicate { article in
                 article.stateRawValue == queued || article.stateRawValue == current
             },
             sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
         )
         descriptor.fetchLimit = fetchCap
-        descriptor.propertiesToFetch = [
-            \.title, \.publishedAt, \.contentKind, \.imageURL, \.url, \.stateRawValue,
-            \.rating, \.readingNote, \.readingReactionRawValue, \.author, \.durationSeconds
-        ]
         let fetched = (try? context.fetch(descriptor)) ?? []
         return capped(fetched.filter(\.isStored))
     }

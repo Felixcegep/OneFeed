@@ -5,11 +5,15 @@ import UniformTypeIdentifiers
 struct SavedView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "saved" },
-        sort: \Article.completedAt,
-        order: .reverse
-    ) private var savedQuery: [Article]
+    @Query private var savedQuery: [Article]
+
+    init() {
+        let saved = ArticleState.saved.rawValue
+        _savedQuery = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        ))
+    }
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
     @State private var isImportingDrop = false

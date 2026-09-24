@@ -4,7 +4,7 @@ import SwiftData
 nonisolated enum LibraryMerge {
     static func snapshot(from context: ModelContext, now: Date = .now, extraTombstones: [LibraryTombstone] = []) throws -> LibraryDocument {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let articles = try context.fetch(ArticleListFetch.library())
         let feedRecords = feeds.map(record(from:))
         var articleRecords: [LibraryArticle] = []
         articleRecords.reserveCapacity(articles.count)
@@ -129,7 +129,7 @@ nonisolated enum LibraryMerge {
 
         FolderStore.remember(document.folderNames)
 
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let articles = try context.fetch(ArticleListFetch.library())
         var index = ArticleIdentityIndex(articles: articles)
         for record in document.articles {
             guard options.shouldApply(state: record.state) else { continue }

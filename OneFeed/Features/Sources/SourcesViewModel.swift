@@ -507,7 +507,7 @@ final class SourceDetailViewModel {
 
     private func newestStories(limit: Int) -> [Article] {
         let feedID = feed.id
-        var descriptor = FetchDescriptor<Article>(
+        var descriptor = ArticleListFetch.rows(
             predicate: #Predicate { $0.feed?.id == feedID },
             sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
         )

@@ -441,6 +441,60 @@ struct LibraryMergeTests {
         #expect(article.state == .current)
         #expect(article.contentHTML == html)
     }
+
+    @Test func listAndLibraryFetchesLeaveThePageOut() throws {
+        #expect(ArticleListFetch.rowColumns.contains { $0 == \Article.contentHTML } == false)
+        #expect(ArticleListFetch.rowColumns.contains { $0 == \Article.videoChatJSON } == false)
+        #expect(ArticleListFetch.libraryColumns.contains { $0 == \Article.contentHTML } == false)
+        #expect(ArticleListFetch.libraryColumns.contains { $0 == \Article.videoChatJSON } == false)
+
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let marker = "BODYMARKER-NOT-IN-LIBRARY"
+        let article = Article(
+            guid: "story",
+            title: "Story",
+            url: URL(string: "https://source.test/story"),
+            summary: "A short blurb",
+            contentHTML: "<p>\(marker)</p>",
+            state: .queued,
+            readingNote: "Keep this note",
+            feed: feed
+        )
+        article.videoChatJSON = Data(marker.utf8)
+        context.insert(article)
+        try context.save()
+
+        let listed = try context.fetch(ArticleListFetch.rows())
+        #expect(listed.first?.title == "Story")
+        #expect(listed.first?.estimatedReadingMinutes == article.estimatedReadingMinutes)
+        #expect(listed.first?.feed?.title == "Source")
+
+        let snapshot = try LibraryMerge.snapshot(from: context)
+        let encoded = try snapshot.encoded()
+        let text = String(decoding: encoded, as: UTF8.self)
+        #expect(text.contains(marker) == false)
+        #expect(snapshot.articles.first?.readingNote == "Keep this note")
+
+        var document = LibraryDocument.empty()
+        document.articles = [
+            LibraryArticle(
+                key: "url:https://source.test/story",
+                feedURL: "https://source.test/rss",
+                guid: "story",
+                title: "Renamed",
+                url: "https://source.test/story",
+                state: .queued,
+                completedAt: nil,
+                isRemoteStarred: false,
+                updatedAt: .now
+            )
+        ]
+        try LibraryMerge.apply(document, to: context)
+        #expect(article.title == "Renamed")
+        #expect(article.contentHTML?.contains(marker) == true)
+    }
 }
 
 private extension LibraryDocument {
