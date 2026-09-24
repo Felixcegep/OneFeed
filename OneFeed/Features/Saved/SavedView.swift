@@ -13,9 +13,29 @@ struct SavedView: View {
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
     @State private var appliedSearch = ""
+    /// Collapsed queue stays put while the open story changes.
+    @State private var queueCache = QueueListCache()
 
     private var waiting: [Article] {
-        ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
+        let stamp = queueStamp
+        if queueCache.stamp == stamp { return queueCache.articles }
+        let articles = ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
+        queueCache.stamp = stamp
+        queueCache.articles = articles
+        return articles
+    }
+
+    private var queueStamp: Int {
+        var hasher = Hasher()
+        hasher.combine(savedQuery.count)
+        for article in savedQuery {
+            hasher.combine(article.id)
+            hasher.combine(article.stateRawValue)
+            hasher.combine(article.guid)
+            hasher.combine(article.videoID)
+            hasher.combine(article.url?.absoluteString)
+        }
+        return hasher.finalize()
     }
 
     private var searchQuery: String {
@@ -412,6 +432,11 @@ private struct LaterQueueActions: ViewModifier {
                 }
             }
     }
+}
+
+private final class QueueListCache {
+    var stamp = 0
+    var articles: [Article] = []
 }
 
 private extension View {

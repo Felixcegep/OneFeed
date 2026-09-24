@@ -11,6 +11,8 @@ struct HistoryView: View {
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
+    /// Day groups stay put while the open story changes.
+    @State private var dayCache = HistoryDayCache()
 
     private var trimmedQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -30,7 +32,25 @@ struct HistoryView: View {
     }
 
     private var days: [HistoryDay] {
-        HistoryViewModel.days(from: visibleHistory)
+        let stamp = historyStamp
+        if dayCache.stamp == stamp { return dayCache.days }
+        let days = HistoryViewModel.days(from: visibleHistory)
+        dayCache.stamp = stamp
+        dayCache.days = days
+        return days
+    }
+
+    private var historyStamp: Int {
+        var hasher = Hasher()
+        hasher.combine(appliedSearch)
+        hasher.combine(history.count)
+        for article in history {
+            hasher.combine(article.id)
+            hasher.combine(article.stateRawValue)
+            hasher.combine(article.completedAt)
+            hasher.combine(article.publishedAt)
+        }
+        return hasher.finalize()
     }
 
     var body: some View {
@@ -130,4 +150,9 @@ struct HistoryView: View {
             try? ArticleQueueService().moveToQueue(article, in: modelContext)
         }
     }
+}
+
+private final class HistoryDayCache {
+    var stamp = 0
+    var days: [HistoryDay] = []
 }
