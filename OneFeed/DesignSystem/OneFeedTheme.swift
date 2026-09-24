@@ -295,7 +295,7 @@ struct ArticleRow: View {
         var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
-        parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
+        parts.append(OneFeedDateLabel.monthAndDay(article.publishedAt))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
         return parts.joined(separator: "  ·  ")
     }
@@ -376,7 +376,7 @@ struct FeaturedStory: View {
     }
 
     private var byline: String {
-        var parts = [article.publishedAt.formatted(.dateTime.month(.abbreviated).day().year())]
+        var parts = [OneFeedDateLabel.monthDayAndYear(article.publishedAt)]
         if let duration = article.timedDurationPhrase { parts.append(duration) }
         return parts.joined(separator: "  ·  ")
     }
@@ -789,5 +789,28 @@ extension View {
             #if os(macOS)
             .alternatingRowBackgrounds(.disabled)
             #endif
+    }
+}
+
+/// Month-and-day labels for list rows. The same calendar day is formatted once.
+enum OneFeedDateLabel {
+    private static var monthDay: [Date: String] = [:]
+    private static var monthDayYear: [Date: String] = [:]
+
+    static func monthAndDay(_ date: Date) -> String {
+        label(for: date, in: &monthDay) { $0.formatted(.dateTime.month(.abbreviated).day()) }
+    }
+
+    static func monthDayAndYear(_ date: Date) -> String {
+        label(for: date, in: &monthDayYear) { $0.formatted(.dateTime.month(.abbreviated).day().year()) }
+    }
+
+    private static func label(for date: Date, in store: inout [Date: String], make: (Date) -> String) -> String {
+        let day = Calendar.current.startOfDay(for: date)
+        if let cached = store[day] { return cached }
+        let value = make(date)
+        if store.count > 512 { store.removeAll(keepingCapacity: true) }
+        store[day] = value
+        return value
     }
 }

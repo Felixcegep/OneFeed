@@ -373,7 +373,7 @@ private struct QueueArticleRow: View {
         var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
-        parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
+        parts.append(OneFeedDateLabel.monthAndDay(article.publishedAt))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
         return parts.joined(separator: " · ")
     }

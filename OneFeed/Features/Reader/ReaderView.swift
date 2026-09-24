@@ -258,9 +258,9 @@ struct ReaderView: View {
             .accessibilityHint("Marks this article done")
 
             readerSecondaryAction(
-                "Queue",
+                (decision == .saved || article.state == .saved) ? "In Queue" : "Queue",
                 systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: "Adds this to Queue"
+                hint: (decision == .saved || article.state == .saved) ? "Already in Queue" : "Adds this to Queue"
             ) {
                 finish(.saved)
             }

@@ -649,6 +649,14 @@ struct FeedAndFreshRSSDomainTests {
         #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
     }
 
+    @Test @MainActor func listDateLabelReusesTheSameCalendarDay() {
+        let morning = Date(timeIntervalSince1970: 1_700_000_000)
+        let later = morning.addingTimeInterval(3 * 60 * 60)
+        #expect(OneFeedDateLabel.monthAndDay(morning) == OneFeedDateLabel.monthAndDay(later))
+        #expect(OneFeedDateLabel.monthDayAndYear(morning) == OneFeedDateLabel.monthDayAndYear(later))
+        #expect(OneFeedDateLabel.monthAndDay(morning).isEmpty == false)
+    }
+
     @Test func stripHTMLTurnsMarkupAndEntitiesIntoPlainPreviewText() {
         let aeon = #"<p><img src="https://images.aeonmedia.co/images/essay.jpg" alt="">More nothing now &amp; then</p>"#
         #expect(ContentClassifier.stripHTML(aeon) == "More nothing now & then")

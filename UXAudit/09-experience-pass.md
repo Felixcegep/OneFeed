@@ -68,6 +68,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A video length arriving mid-read reloaded the page | Reader | High | The reader document key included the duration, so the web view loaded again and the place in the article jumped | The page stays loaded. The byline updates in place. A font or body change still rebuilds the page, and that rebuild includes the current length | `ReaderFocusTests.lateDurationLeavesTheReaderPageInPlace` |
 | Refresh progress regrouped Feed and Today on every tick | Today, Feed | High | The folder list, story rows, and Today deck were rebuilt in the same view that reads the progress line | Folder rows and story rows are cached until the sources, stories, or clusters change. Today’s deck is a separate view, so a progress tick does not rebuild it | Code review |
 | Opening a Queue or History story regrouped the whole list | Queue, History | High | Each selection collapsed duplicates or rebuilt day groups, including URL normalization | The collapsed queue and the day groups are reused until the stories or the search query change | Code review |
+| List rows formatted a new date for every redraw | Today, Queue, Feed | Medium | Each row called `formatted` while scrolling | The same calendar day is formatted once and reused | `FeedAndFreshRSSDomainTests.listDateLabelReusesTheSameCalendarDay` |
+| VoiceOver still heard “Queue” after the story was saved | Reader | Medium | The accessibility action kept the idle label while the icon filled in | The action says “In Queue” once the story is saved | Code review |
 
 ## Still open
 
