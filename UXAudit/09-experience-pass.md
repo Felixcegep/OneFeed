@@ -245,6 +245,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A FreshRSS update with the same reading time loaded the stored article | Today, Feed | High | An equal estimate compared HTML on the article already in the sync, so a short remote item still pulled the full page into memory | The length is read on a short-lived context. A shorter remote item leaves the stored page in place, and a longer one still replaces it | `FreshRSSTests.anEqualEstimateLeavesTheLongerStoredBodyUnread` |
 | A refresh opened every Today story to keep it | Today, Feed | High | Cleanup and deck updates read `article.id` on each deck row, which loads the stored page | The row stores that id. Cleanup, a duplicate merge, and deck updates use the stored id | `RetentionAndExtractionTests.purgeKeepsADeckStoryByTheStoredArticleID` |
 | Today loaded every open story to draw the deck | Today | High | The deck list and a filter rebuild followed each row’s article relationship, which loads the stored page | Those lookups use the stored id and read identity and state only. The page stays on disk until the story is opened | `DailyDeckTests.todayListUsesTheStoredArticleID` |
+| Opening Today or finishing a story followed the deck row into the page | Today | High | The current card and Done loaded `item.article`, which brings the stored page into memory | The card, Done, and the next story use the stored id and the fields the row shows. The page stays on disk | `DailyDeckTests.finishingTodayUpdatesTheStoryByItsStoredID` |
 
 ## Still open
 

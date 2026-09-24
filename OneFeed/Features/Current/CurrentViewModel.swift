@@ -105,14 +105,15 @@ final class CurrentViewModel {
         guard let context else { return false }
         do {
             guard let item = try deckService.currentItem(in: context) else { return true }
-            if let article = item.article, article.isStored {
+            let article = item.resolvedArticleID().flatMap { DailyDeckService.lightweightArticle(id: $0, in: context) }
+            if let article {
                 if state == .skipped {
                     ReadingUndo.begin(article, in: context)
                 }
                 freshRSSService.enqueueMutation(for: article, transition: state, in: context)
             }
             let next = try deckService.advance(item: item, to: state, in: context)
-            if state == .skipped, let article = item.article, article.isStored {
+            if state == .skipped, let article {
                 ReadingUndo.commit(article, in: context)
             }
             apply(item: next, totalCount: item.deck?.items.count ?? totalCount)
@@ -230,7 +231,8 @@ final class CurrentViewModel {
     }
 
     private func apply(item: DailyDeckItem?, totalCount: Int) {
-        if let article = item?.article, article.isStored {
+        if let context, let id = item?.resolvedArticleID(),
+           let article = DailyDeckService.lightweightArticle(id: id, in: context) {
             currentArticle = article
             displayedArticleID = article.id
         } else {

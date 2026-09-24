@@ -270,4 +270,33 @@ struct DailyDeckTests {
         let current = try DailyDeckService().currentItem(in: context)
         #expect(current?.resolvedArticleID() == article.id)
     }
+
+    @Test func finishingTodayUpdatesTheStoryByItsStoredID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now,
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        _ = try DailyDeckService().advance(item: item, to: .read, in: context)
+
+        let stored = try #require(context.fetch(FetchDescriptor<Article>()).first)
+        #expect(stored.state == .read)
+        #expect(stored.contentHTML?.contains("word") == true)
+        #expect(item.status == .read)
+    }
 }

@@ -79,7 +79,7 @@ struct DailyDeckService {
         precondition([.read, .skipped, .saved].contains(state), "Deck items can only advance to a terminal state")
 
         item.status = state
-        if let article = item.article {
+        if let id = item.resolvedArticleID(), let article = Self.lightweightArticle(id: id, in: context) {
             article.state = state
             article.completedAt = .now
             if state == .saved { article.isRemoteStarred = true }
@@ -91,17 +91,21 @@ struct DailyDeckService {
             .sorted { $0.position < $1.position }
             .first
 
+        var promoted: Article?
         if let nextItem {
             nextItem.status = .current
-            if let article = nextItem.article {
-                article.state = .current
-                article.firstDisplayedAt = .now
-                LibraryChange.note(article)
+            if let id = nextItem.resolvedArticleID() {
+                promoted = Self.lightweightArticle(id: id, in: context)
+                if let article = promoted {
+                    article.state = .current
+                    article.firstDisplayedAt = .now
+                    LibraryChange.note(article)
+                }
             }
         }
 
         try context.save()
-        WidgetSnapshotStore.write(article: nextItem?.article)
+        WidgetSnapshotStore.write(article: promoted)
         return nextItem
     }
 
@@ -271,9 +275,11 @@ struct DailyDeckService {
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
         descriptor.fetchLimit = 1
         descriptor.propertiesToFetch = [
-            \.id, \.guid, \.url, \.title, \.publishedAt, \.stateRawValue, \.videoID,
-            \.firstDisplayedAt, \.completedAt, \.libraryUpdatedAt, \.estimatedReadingMinutes,
-            \.contentKind, \.isRemoteStarred,
+            \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary, \.aiSummary,
+            \.stateRawValue, \.videoID, \.firstDisplayedAt, \.completedAt, \.libraryUpdatedAt,
+            \.estimatedReadingMinutes, \.contentKind, \.isRemoteStarred, \.remoteID,
+            \.imageURL, \.durationSeconds, \.readingNote, \.readingReactionRawValue,
+            \.notInterested, \.rating,
         ]
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         return try? context.fetch(descriptor).first
