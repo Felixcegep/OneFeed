@@ -229,6 +229,13 @@ struct StoryRowPlan: Sendable, Identifiable {
 
 /// Same row order as `StoryGrouping.rows`, from copied fields.
 nonisolated enum StoryListPlan {
+    /// A modest open library can be collapsed on the open screen. A long one, or a search, waits for the off-screen plan.
+    static let synchronousRowLimit = 200
+
+    static func rowsOnTheOpenScreen(storyCount: Int, isSearching: Bool) -> Bool {
+        !isSearching && storyCount > 0 && storyCount <= synchronousRowLimit
+    }
+
     static func rows(
         destination: FeedBrowseDestination,
         feeds: [UUID: FolderFeedSnap],

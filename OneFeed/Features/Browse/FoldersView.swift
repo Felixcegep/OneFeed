@@ -826,6 +826,17 @@ struct ArticleCollectionView: View {
         let placements = storyPlacements
         let expanded = expandedClusterIDs
         let now = Date()
+        if StoryListPlan.rowsOnTheOpenScreen(storyCount: snaps.count, isSearching: searching) {
+            publishStoryRows(StoryListPlan.rows(
+                destination: destination,
+                feeds: feedsByID,
+                stories: snaps,
+                placements: placements,
+                expanded: expanded,
+                query: query,
+                now: now
+            ))
+        }
         let plans = await Task.detached(priority: .userInitiated) {
             StoryListPlan.rows(
                 destination: destination,
@@ -838,8 +849,12 @@ struct ArticleCollectionView: View {
             )
         }.value
         guard !Task.isCancelled, edge == storyEdge else { return }
+        publishStoryRows(plans)
+    }
+
+    private func publishStoryRows(_ plans: [StoryRowPlan]) {
         let byID = Dictionary(articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        displayedStoryRows = plans.compactMap { plan in
+        let rows = plans.compactMap { plan -> FeedStoryRow? in
             switch plan.kind {
             case .article(let id, let caption):
                 guard let article = byID[id], article.isStored else { return nil }
@@ -848,7 +863,25 @@ struct ArticleCollectionView: View {
                 return FeedStoryRow(id: plan.id, kind: .moreSources(clusterID: clusterID, count: count))
             }
         }
+        guard !showsSameStoryRows(rows, as: displayedStoryRows) else {
+            storyListReady = true
+            return
+        }
+        displayedStoryRows = rows
         storyListReady = true
+    }
+
+    private func showsSameStoryRows(_ next: [FeedStoryRow], as current: [FeedStoryRow]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { storyRowToken($0) == storyRowToken($1) }
+    }
+
+    private func storyRowToken(_ row: FeedStoryRow) -> String {
+        switch row.kind {
+        case .article(let article, let caption):
+            return "a:\(article.id.uuidString):\(caption ?? "")"
+        case .moreSources(let clusterID, let count):
+            return "m:\(clusterID.uuidString):\(count)"
+        }
     }
 
     /// Stories already loaded for this folder. Collapse and similar-story rows still arrive with the plan.

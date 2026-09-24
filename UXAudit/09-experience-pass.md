@@ -273,6 +273,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening Queue fetched and collapsed every saved story again | Queue | High | The screen query already had the rows, and opening the tab fetched them a second time on the main thread | Opening keeps the context for saves and for one imported story. It does not fetch the queue again | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 | Opening Sources fetched every feed again | Sources | Medium | The folder list already grouped the feeds on screen, and opening the tab fetched them a second time | Opening keeps the context for later edits. A later edit can still reload the stored feeds | `FeedAndFreshRSSDomainTests.openingSourcesDoesNotFetchEveryFeed` |
 | Opening Settings fetched every feed | Settings | Medium | The root screen does not list feeds, and opening the tab fetched every source anyway | Opening keeps the context. Accounts and the export list load when those screens appear | `SettingsGoogleDriveLinkTests.openingSettingsDoesNotFetchEveryFeed` |
+| A folder’s stories stayed blank, then showed every copy, then collapsed | Feed | Medium | Grouping waited off screen, so a modest library first showed a blank row and then the uncollapsed list | A modest library is collapsed on the open screen, including a similar-story line already known. A search and a long library still wait. The same rows are not published again | `FeedAndFreshRSSDomainTests.feedRowsDropCopiesAndKeepASimilarCaption` |
 
 ## Still open
 

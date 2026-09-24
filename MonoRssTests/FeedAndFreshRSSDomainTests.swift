@@ -367,6 +367,10 @@ struct FeedAndFreshRSSDomainTests {
             now: now
         )
         #expect(plans.map(\.id) == rows.map(\.id))
+        #expect(StoryListPlan.rowsOnTheOpenScreen(storyCount: 3, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 0, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 201, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 3, isSearching: true))
         #expect(rows.count == 3)
         guard case .article(let primary, _) = rows[0].kind else {
             Issue.record("Expected the newest story first")
