@@ -1,6 +1,16 @@
 import SwiftData
 import SwiftUI
 
+/// Loads cluster captions away from the list, and skips the update when nothing changed.
+private func refreshedStoryPlacements(
+    from container: ModelContainer,
+    current: [String: StoryPlacement]
+) async -> [String: StoryPlacement]? {
+    let placements = await DailyDeckService.loadStoryPlacements(from: container)
+    guard !Task.isCancelled, placements != current else { return nil }
+    return placements
+}
+
 enum FeedBrowseDestination: Hashable {
     case unread
     case folder(FeedFolderID)
@@ -122,12 +132,10 @@ struct FoldersView: View {
             }
         }
         .task(id: openQueryEdge) {
-            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
-            placementTick &+= 1
+            await reloadStoryPlacements()
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
-            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
-            placementTick &+= 1
+            Task { await reloadStoryPlacements() }
         }
         .sheet(isPresented: $showingAddSource) {
             AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
@@ -160,6 +168,12 @@ struct FoldersView: View {
         } message: {
             Text(sourceSaveError ?? "")
         }
+    }
+
+    private func reloadStoryPlacements() async {
+        guard let placements = await refreshedStoryPlacements(from: modelContext.container, current: storyPlacements) else { return }
+        storyPlacements = placements
+        placementTick &+= 1
     }
 
     private func folderRow(_ summary: FolderSummary) -> some View {
@@ -760,6 +774,12 @@ struct ArticleCollectionView: View {
     }
 
     /// Search, expansion, and every story id. Opening a story does not regroup the rows.
+    private func reloadStoryPlacements() async {
+        guard let placements = await refreshedStoryPlacements(from: modelContext.container, current: storyPlacements) else { return }
+        storyPlacements = placements
+        placementTick &+= 1
+    }
+
     private var storyEdge: Int {
         var token = appliedSearch.hashValue
         token = token &* 31 &+ articleEdge
@@ -862,12 +882,10 @@ struct ArticleCollectionView: View {
             Text(refresh.presentedError ?? "")
         }
         .task(id: articleEdge) {
-            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
-            placementTick &+= 1
+            await reloadStoryPlacements()
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
-            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
-            placementTick &+= 1
+            Task { await reloadStoryPlacements() }
         }
     }
 

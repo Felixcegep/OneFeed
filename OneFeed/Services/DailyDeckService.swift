@@ -286,6 +286,13 @@ struct DailyDeckService {
         (try? storyPlacements(in: context)) ?? [:]
     }
 
+    /// Reads cluster captions off the main actor so opening Feed does not stall the list.
+    static func loadStoryPlacements(from container: ModelContainer) async -> [String: StoryPlacement] {
+        await Task.detached(priority: .utility) {
+            loadStoryPlacements(in: ModelContext(container))
+        }.value
+    }
+
     nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
         var descriptor = FetchDescriptor<ContentMemory>()
         descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID, \.matchedConsumedAt]
@@ -361,7 +368,7 @@ struct DailyDeckService {
     }
 }
 
-nonisolated struct StoryPlacement: Sendable {
+nonisolated struct StoryPlacement: Equatable, Sendable {
     var relationshipRaw: String
     var storyClusterID: UUID?
     var matchedConsumedAt: Date? = nil
