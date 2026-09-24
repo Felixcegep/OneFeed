@@ -53,12 +53,19 @@ final class ReaderViewModel {
             return
         }
         guard article.contentKind == "article" else { return }
-        let existing = article.contentHTML ?? article.summary
-        let kind = article.contentKind
-        let shouldFetch = await Task.detached(priority: .utility) {
-            ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: kind)
-        }.value
-        guard shouldFetch else { return }
+        let articleID = article.id
+        let shouldFetch: Bool
+        if let container = article.modelContext?.container {
+            shouldFetch = await Task.detached(priority: .utility) {
+                Self.shouldFetchFullArticle(id: articleID, in: container)
+            }.value
+        } else {
+            shouldFetch = ArticleExtractionPolicy().shouldFetchPage(
+                rssHTML: article.contentHTML ?? article.summary,
+                kind: article.contentKind
+            )
+        }
+        guard !Task.isCancelled, shouldFetch else { return }
         isExtracting = true
         defer { isExtracting = false }
         guard let html = await ArticleExtractionService().extractedHTML(for: article, alreadyEligible: true) else { return }
@@ -75,6 +82,19 @@ final class ReaderViewModel {
         if let failure = saveArticleChanges() {
             bodyError = failure
         }
+    }
+
+    /// Reads the stored body on another context so opening the reader does not copy it on the main thread.
+    nonisolated private static func shouldFetchFullArticle(id articleID: UUID, in container: ModelContainer) -> Bool {
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return false }
+        return ArticleExtractionPolicy().shouldFetchPage(
+            rssHTML: stored.contentHTML ?? stored.summary,
+            kind: stored.contentKind
+        )
     }
 
     func declineYouTubeSummary() {

@@ -214,6 +214,26 @@ struct RetentionAndExtractionTests {
         #expect(off.shouldFetchPage(rssHTML: "<p>Short</p>", kind: "article") == false)
     }
 
+    @Test @MainActor func aFullArticleDoesNotStartAPageFetch() async throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let long = Array(repeating: "word", count: 420).joined(separator: " ")
+        let article = Article(
+            guid: "full",
+            title: "Full",
+            url: URL(string: "https://source.test/story")!,
+            contentHTML: "<p>\(long)</p>",
+            feed: feed
+        )
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        await model.enrichReadableHTML()
+        #expect(model.isExtracting == false)
+        #expect(article.contentHTML == "<p>\(long)</p>")
+    }
+
     @Test func swiftReadabilityExtractsArticleAndAbsoluteURLs() throws {
         let html = """
         <!doctype html><html><head><title>Site chrome</title></head>
