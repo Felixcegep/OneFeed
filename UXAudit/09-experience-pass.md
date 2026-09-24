@@ -95,6 +95,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Filing a source left the open folder on the previous stories | Feed | High | The row cache ignored source membership, so a move that kept the same article count and ends did not regroup | Folder membership is part of the row cache. Opening a story still does not walk every article | Code review |
 | Today kept yesterday’s “already read” line after the story index updated | Today | Medium | Captions were reused for the hour and did not notice a new story index | A story-index update reloads captions. The same deck still reuses them until then | Code review |
 | Skip had no way to file Not interested without hunting the menu | Today, Feed, reader | Medium | The undo bar only put the story back | After Skip, the bar offers Not interested. Undo still restores the story from before the skip, including that filing | `NotInterestedLogTests.skipUndoCanFileNotInterestedAndStillRestore` |
+| The in-app browser shifted Back and Share when loading started | Reader browser | Medium | The loading mark was inserted as a toolbar item | The mark is a 2-point line in the top safe area. It still waits 160ms, and the toolbar stays still | Code review |
 
 ## Still open
 

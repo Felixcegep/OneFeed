@@ -26,16 +26,12 @@ struct ArticleBrowserView: View {
                 .ignoresSafeArea(edges: .bottom)
                 .navigationTitle(page.title ?? url.host() ?? "Article")
                 .oneFeedInlineTitle()
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    BrowserLoadingLine(isShown: showLoadingMark)
+                }
                 .toolbar {
                     ToolbarItem(placement: .oneFeedLeading) {
                         Button("Close", systemImage: "xmark") { dismiss() }
-                    }
-                    if showLoadingMark {
-                        ToolbarItem(placement: .oneFeedTrailing) {
-                            OneFeedMarkPulse(isActive: true, size: 18)
-                                .frame(minWidth: 44, minHeight: 44)
-                                .accessibilityLabel("Loading page")
-                        }
                     }
                     ToolbarItemGroup(placement: .oneFeedTrailing) {
                         Button("Back", systemImage: "chevron.backward") {
@@ -64,5 +60,23 @@ struct ArticleBrowserView: View {
                     showLoadingMark = true
                 }
         }
+    }
+}
+
+/// A 2-point line in the top safe area. It does not take a toolbar slot, so Back and Share stay put while the page loads.
+private struct BrowserLoadingLine: View {
+    var isShown: Bool
+
+    var body: some View {
+        Rectangle()
+            .fill(OneFeedTheme.accent)
+            .frame(height: isShown ? 2 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+            .animation(nil, value: isShown)
+            .allowsHitTesting(false)
+            .accessibilityHidden(!isShown)
+            .accessibilityLabel("Loading page")
+            .accessibilityAddTraits(isShown ? .updatesFrequently : [])
     }
 }
