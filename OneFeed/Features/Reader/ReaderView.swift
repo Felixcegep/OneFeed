@@ -94,14 +94,14 @@ struct ReaderView: View {
             }
             #endif
             .overlay {
-                if let decision {
-                    OneFeedDecisionCurtain(state: decision)
+                ZStack {
+                    if let decision {
+                        OneFeedDecisionCurtain(state: decision)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isExtracting)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isSummarizing)
-            .animation(reduceMotion ? nil : OneFeedMotion.page, value: mode)
             .onChange(of: viewModel.hasAISummary) { _, ready in
                 if ready, article.contentKind == "youtube" {
                     mode = .reader
