@@ -142,6 +142,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Done or Skip in a History story only closed the reader | History | High | The reader’s finish callback ignored the new state | Done, Skip, and Queue update the story, the same way they do in Feed | Code review |
 | Putting a story back in Queue could fail silently | History | Medium | The save error was discarded | The story stays in History and an alert explains what happened | Code review |
 | Done or Queue from Not interested only closed the reader | Not interested | High | The finish callback ignored the new state, and a story already in Queue kept its set-aside mark | Done and Skip update the story. Queue clears the set-aside mark, including when it was already saved | `ArticleStateTests.moveToQueueClearsNotInterestedWhenAlreadySaved` |
+| A cloud file could replace the library while a History story was open | History, library | High | History never marked an active reading session, and a folder sync pulled anyway | History counts as reading. A folder change waits until the story is closed, then pulls once | Code review |
 
 ## Still open
 

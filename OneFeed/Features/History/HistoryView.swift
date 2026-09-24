@@ -72,6 +72,8 @@ struct HistoryView: View {
                     selectedArticle = nil
                 }
             )
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
     }
 

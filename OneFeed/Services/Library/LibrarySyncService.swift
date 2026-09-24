@@ -46,7 +46,14 @@ final class LibrarySyncService {
     private(set) var linkedRecord: CloudFileLinkRecord?
 
     /// Reader presented. Automatic and manual pulls wait; `useCloudFile` still pulls.
-    var hasActiveReadingSession = false
+    var hasActiveReadingSession = false {
+        didSet {
+            guard oldValue, !hasActiveReadingSession, pullAgain else { return }
+            Task { await pullAndMerge() }
+        }
+    }
+    /// A folder change arrived while a story was open. Pull once reading ends.
+    private var pullAgain = false
 
     private var context: ModelContext?
     private var scopedURL: URL?
@@ -142,7 +149,7 @@ final class LibrarySyncService {
             let isFile = !isDirectory
             try LibraryFolderStore.saveBookmark(for: url, isFile: isFile)
             await restoreIfNeeded()
-            await pullAndMerge()
+            await pullAndMerge(replacingDuringReading: true)
             await pushNow()
         } catch {
             present(error)
@@ -166,6 +173,7 @@ final class LibrarySyncService {
         isLinked = false
         isSyncing = false
         pushAgain = false
+        pullAgain = false
         status = .unlinked
     }
 
@@ -539,7 +547,12 @@ final class LibrarySyncService {
         return latest
     }
 
-    private func pullAndMerge() async {
+    private func pullAndMerge(replacingDuringReading: Bool = false) async {
+        if hasActiveReadingSession, !replacingDuringReading {
+            pullAgain = true
+            return
+        }
+        pullAgain = false
         guard let context, let libraryFileURL, isLinked else { return }
         status = .syncing
         do {
