@@ -307,6 +307,11 @@ struct FeedAndFreshRSSDomainTests {
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) == stories)
         feed.setMemberships(["News"])
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) != before)
+        let today = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 20)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) == today)
+        feed.includeInToday = false
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) != today)
     }
 
     @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {

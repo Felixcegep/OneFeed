@@ -1166,23 +1166,23 @@ struct ArticleCollectionView: View {
     }
 }
 
-/// The Feed screens keep this copy. A refresh of fetch time does not publish a new copy.
-private final class FeedDirectoryBox {
+/// Screens keep this copy. A refresh of fetch time does not publish a new copy.
+final class FeedDirectoryBox {
     private var loaded = false
     private var stored: [Feed] = []
     private var edge = Int.min
 
-    func feeds(in context: ModelContext, includesEnabled: Bool) -> [Feed] {
+    func feeds(in context: ModelContext, includesEnabled: Bool, includesToday: Bool = false) -> [Feed] {
         if !loaded {
             stored = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
-            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled)
+            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled, includesToday: includesToday)
             loaded = true
         }
         return stored
     }
 
-    func apply(_ feeds: [Feed], includesEnabled: Bool) -> Bool {
-        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled)
+    func apply(_ feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false) -> Bool {
+        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday)
         guard !loaded || next != edge else { return false }
         stored = feeds
         edge = next
@@ -1191,14 +1191,15 @@ private final class FeedDirectoryBox {
     }
 }
 
-/// Watches sources without making the folder or story list redraw on every fetch timestamp.
-private struct FeedMembershipWatch: View {
+/// Watches sources without redrawing a list on every fetch timestamp.
+struct FeedMembershipWatch: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     var includesEnabled: Bool
+    var includesToday: Bool = false
     var onChange: ([Feed]) -> Void
 
     private var edge: Int {
-        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled)
+        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday)
     }
 
     var body: some View {

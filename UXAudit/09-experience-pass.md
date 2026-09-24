@@ -291,6 +291,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Not interested watched every source | Not interested | High | The log queried every feed, so a refresh of unrelated sources redraw the groups | Each group looks up its own source once. An older mark without a source id still matches the address away from the open screen | `NotInterestedLogTests.groupPlanKeepsNewestFirstInsideTheSource` |
 | History loaded every set-aside mark to show a count | History | High | The History screen queried every Not interested entry, including titles, just to say how many were set aside | History asks for the count. Closing the log, closing a story, or returning to the app reads that count again | `NotInterestedLogTests.groupPlanKeepsNewestFirstInsideTheSource` |
 | A refresh redraw the Feed list for every source timestamp | Feed | High | The folder list and a story list observed every feed, so each fetched source rebuilt those screens | Those screens keep the sources they already showed. They update when a source is added, removed, or moved, not when its fetch time changes | `FeedAndFreshRSSDomainTests.aFeedRefreshDoesNotChangeTheFolderEdge` |
+| A refresh redraw Today for every source timestamp | Today | High | Today observed every feed, so each fetched source rebuilt the deck screen | Today keeps the sources it already showed. It updates when a source is enabled or included in Today, not when its fetch time changes | `FeedAndFreshRSSDomainTests.aFeedRefreshDoesNotChangeTheFolderEdge` |
 
 ## Still open
 

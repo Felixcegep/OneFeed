@@ -3,7 +3,8 @@ import SwiftData
 
 struct CurrentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var viewModel = CurrentViewModel()
     @State private var readerArticle: Article?
     @State private var showingAddSource = false
@@ -12,6 +13,11 @@ struct CurrentView: View {
     @State private var keepReadingPaneClear = false
     @State private var todayFilterError: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesToday: true)
+    }
 
     private var stories: [Article] {
         viewModel.remainingArticles.filter(\.isStored)
@@ -23,7 +29,8 @@ struct CurrentView: View {
     }
 
     var body: some View {
-        OneFeedReadingSplit(article: $readerArticle) {
+        let _ = feedTick
+        return OneFeedReadingSplit(article: $readerArticle) {
             todayColumn
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
@@ -88,6 +95,13 @@ struct CurrentView: View {
                     .accessibilityLabel("Choose what fills Today")
                     .accessibilityValue(todayFilterIsNarrowed ? "Filtered" : "All sources")
                     .accessibilityIdentifier("today-filter")
+                }
+            }
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesToday: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesToday: true) {
+                    feedTick += 1
                 }
             }
         }
