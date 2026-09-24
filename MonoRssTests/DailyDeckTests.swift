@@ -242,4 +242,32 @@ struct DailyDeckTests {
         #expect(items.contains { $0.article?.guid == "waiting" && $0.status == .current })
         #expect(items.map(\.position) == Array(1...items.count))
     }
+
+    @Test func todayListUsesTheStoredArticleID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now,
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        let open = try DailyDeckService().remainingArticles(in: context)
+        #expect(open.map(\.guid) == ["deck"])
+        #expect(open.first?.title == "Deck")
+        let current = try DailyDeckService().currentItem(in: context)
+        #expect(current?.resolvedArticleID() == article.id)
+    }
 }

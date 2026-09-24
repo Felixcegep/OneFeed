@@ -40,4 +40,13 @@ final class DailyDeckItem {
         linkedArticleID = id
         return id
     }
+
+    /// The linked story is still in the store. Uses the stored id, so the page stays on disk.
+    func articleExists(in context: ModelContext) -> Bool {
+        guard let id = resolvedArticleID() else { return false }
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+    }
 }

@@ -51,7 +51,7 @@ struct DailyDeckService {
     func currentItem(in context: ModelContext) throws -> DailyDeckItem? {
         guard let deck = try Self.todayDeck(in: context) else { return nil }
         let items = deck.items.sorted { $0.position < $1.position }
-        if let current = items.first(where: { $0.status == .current && $0.article?.isStored == true }) {
+        if let current = items.first(where: { $0.status == .current && $0.articleExists(in: context) }) {
             return current
         }
         var repaired = false
@@ -59,9 +59,9 @@ struct DailyDeckService {
             orphan.status = .skipped
             repaired = true
         }
-        if let next = items.first(where: { $0.status == .queued && $0.article?.isStored == true }) {
+        if let next = items.first(where: { $0.status == .queued && $0.articleExists(in: context) }) {
             next.status = .current
-            if let article = next.article {
+            if let id = next.resolvedArticleID(), let article = Self.lightweightArticle(id: id, in: context) {
                 article.state = .current
                 article.firstDisplayedAt = article.firstDisplayedAt ?? .now
                 LibraryChange.note(article)
@@ -110,8 +110,10 @@ struct DailyDeckService {
         return deck.items
             .filter { $0.status == .current || $0.status == .queued }
             .sorted { $0.position < $1.position }
-            .compactMap(\.article)
-            .filter(\.isStored)
+            .compactMap { item in
+                guard let id = item.resolvedArticleID() else { return nil }
+                return Self.lightweightArticle(id: id, in: context)
+            }
     }
 
     /// Turns sources on or off for Today and rebuilds the open part of today's stack.
@@ -151,8 +153,9 @@ struct DailyDeckService {
 
         var droppedIDs = Set<UUID>()
         for item in deck.items where item.status == .current || item.status == .queued {
-            guard !isEligibleForToday(item.article) else { continue }
-            if let article = item.article, article.isStored, article.state == .current {
+            let linked = item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+            guard !isEligibleForToday(linked) else { continue }
+            if let article = linked, article.state == .current {
                 article.state = .queued
                 article.touchLibrary()
             }
@@ -166,7 +169,7 @@ struct DailyDeckService {
         let open = live.filter { $0.status == .current || $0.status == .queued }
         if !open.contains(where: { $0.status == .current }), let next = open.first {
             next.status = .current
-            if let article = next.article, article.isStored {
+            if let id = next.resolvedArticleID(), let article = lightweightArticle(id: id, in: context) {
                 article.state = .current
                 article.firstDisplayedAt = article.firstDisplayedAt ?? .now
                 article.touchLibrary()
@@ -182,7 +185,9 @@ struct DailyDeckService {
             let selected = selectCandidates(
                 from: pool,
                 maxItems: room,
-                alreadySelected: live.compactMap(\.article),
+                alreadySelected: live.compactMap { item in
+                    item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+                },
                 placements: placements
             )
             var placedCurrent = live.contains { $0.status == .current }
@@ -222,7 +227,7 @@ struct DailyDeckService {
         persist: Bool
     ) throws {
         let hasOpenStory = deck.items.contains {
-            ($0.status == .current || $0.status == .queued) && $0.article?.isStored == true
+            ($0.status == .current || $0.status == .queued) && $0.articleExists(in: context)
         }
         guard !hasOpenStory else { return }
 
@@ -232,7 +237,9 @@ struct DailyDeckService {
         let selected = selectCandidates(
             from: pool,
             maxItems: maxItems,
-            alreadySelected: deck.items.compactMap(\.article),
+            alreadySelected: deck.items.compactMap { item in
+                item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+            },
             placements: placements
         )
         guard !selected.isEmpty else { return }
@@ -256,6 +263,20 @@ struct DailyDeckService {
 
         if persist { try context.save() }
         WidgetSnapshotStore.write(article: selected.first)
+    }
+
+    /// Identity and state for a deck row. The stored page stays on disk.
+    nonisolated static func lightweightArticle(id: UUID, in context: ModelContext) -> Article? {
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.url, \.title, \.publishedAt, \.stateRawValue, \.videoID,
+            \.firstDisplayedAt, \.completedAt, \.libraryUpdatedAt, \.estimatedReadingMinutes,
+            \.contentKind, \.isRemoteStarred,
+        ]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        return try? context.fetch(descriptor).first
     }
 
     nonisolated private static func dayStart(for date: Date) -> Date {

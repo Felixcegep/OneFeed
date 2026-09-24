@@ -180,12 +180,12 @@ enum ReadingUndo {
             deckStatusRaw = item.statusRawValue
             if item.status == .current {
                 let next = deck.items
-                    .filter { $0.status == .queued && $0.article?.isStored == true }
+                    .filter { $0.status == .queued && $0.articleExists(in: context) }
                     .sorted { $0.position < $1.position }
                     .first
                 promotedItemID = next?.id
                 promotedStatusRaw = next?.statusRawValue
-                if let nextArticle = next?.article {
+                if let id = next?.resolvedArticleID(), let nextArticle = DailyDeckService.lightweightArticle(id: id, in: context) {
                     promotedArticleID = nextArticle.id
                     promotedStateRaw = nextArticle.stateRawValue
                     promotedCompletedAt = nextArticle.completedAt
