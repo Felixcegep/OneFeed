@@ -55,18 +55,8 @@ struct ArticleQueueService {
         return selected
     }
 
-    /// Enough to choose the next story and update its state. Article bodies stay on disk.
-    private static let selectionFields: [PartialKeyPath<Article>] = [
-        \Article.id,
-        \Article.guid,
-        \Article.title,
-        \Article.publishedAt,
-        \Article.stateRawValue,
-        \Article.firstDisplayedAt,
-        \Article.libraryUpdatedAt,
-        \Article.estimatedReadingMinutes,
-        \Article.contentKind,
-    ]
+    /// The columns a row reads. A narrower fetch registers the next story on the open screen, and the card then faults its page.
+    private static let selectionFields = ArticleListFetch.rowColumns
 
     @discardableResult
     func transition(

@@ -40,8 +40,11 @@ struct ArticleStateTests {
         let next = Article(
             guid: "next",
             title: "Next",
+            url: URL(string: "https://source.test/next"),
             publishedAt: .now.addingTimeInterval(10),
+            summary: "Next blurb",
             contentHTML: body,
+            imageURL: URL(string: "https://source.test/next.jpg"),
             feed: feed
         )
         let later = Article(
@@ -63,6 +66,8 @@ struct ArticleStateTests {
         )
         let replacement = try ArticleQueueService().transition(storedCurrent, to: .skipped, in: context)
         #expect(replacement?.guid == "next")
+        #expect(replacement?.summary == "Next blurb")
+        #expect(replacement?.imageURL == URL(string: "https://source.test/next.jpg"))
         #expect(replacement?.contentHTML == body)
         let laterID = later.id
         let storedLater = try #require(

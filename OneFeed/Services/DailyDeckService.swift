@@ -274,13 +274,7 @@ struct DailyDeckService {
         let matchID = id
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
         descriptor.fetchLimit = 1
-        descriptor.propertiesToFetch = [
-            \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary, \.aiSummary,
-            \.stateRawValue, \.videoID, \.firstDisplayedAt, \.completedAt, \.libraryUpdatedAt,
-            \.estimatedReadingMinutes, \.contentKind, \.isRemoteStarred, \.remoteID,
-            \.imageURL, \.durationSeconds, \.readingNote, \.readingReactionRawValue,
-            \.notInterested, \.rating,
-        ]
+        descriptor.propertiesToFetch = ArticleListFetch.rowColumns
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         return try? context.fetch(descriptor).first
     }
@@ -307,11 +301,8 @@ struct DailyDeckService {
         })
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
         descriptor.fetchLimit = 80
-        // The body stays on disk. Choosing today's stories only needs identity, state, and the source.
-        descriptor.propertiesToFetch = [
-            \.id, \.guid, \.url, \.title, \.publishedAt, \.stateRawValue, \.videoID,
-            \.firstDisplayedAt, \.libraryUpdatedAt, \.estimatedReadingMinutes, \.contentKind,
-        ]
+        // The body stays on disk. These are the same columns a row reads, so a later card does not fault the page.
+        descriptor.propertiesToFetch = ArticleListFetch.rowColumns
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let fetched = try context.fetch(descriptor)
 

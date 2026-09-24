@@ -29,16 +29,17 @@ final class SavedViewModel {
     func reload() {
         guard let context else { return }
         let saved = ArticleState.saved.rawValue
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == saved })
-        descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
-        descriptor.propertiesToFetch = [\.id, \.guid, \.stateRawValue]
+        var descriptor = ArticleListFetch.rows(
+            predicate: #Predicate { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
         do { articles = ArticleIdentity.collapsingDuplicates(try context.fetch(descriptor)) }
         catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
     func openArticle(id: UUID) {
         guard let context else { return }
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == id })
+        var descriptor = ArticleListFetch.rows(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         selectedArticle = try? context.fetch(descriptor).first
     }
