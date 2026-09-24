@@ -62,6 +62,7 @@ struct SourcesView: View {
         .searchable(text: $searchText, prompt: "Folders or sources")
         .navigationTitle("Sources")
         .oneFeedLargeTitle()
+        .oneFeedScrollEdge()
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
@@ -297,6 +298,7 @@ private struct FolderFeedsView: View {
         .searchable(text: $searchText, prompt: "Sources in this folder")
         .navigationTitle(folderID.title)
         .oneFeedLargeTitle()
+        .oneFeedScrollEdge()
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add Source", systemImage: "plus") { onAddInFolder() }

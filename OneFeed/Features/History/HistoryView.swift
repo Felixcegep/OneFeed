@@ -118,6 +118,7 @@ struct HistoryView: View {
         .navigationTitle("History")
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
         .oneFeedSearchable($searchText, prompt: "Search history")
         .debouncedSearch(searchText, into: $appliedSearch)

@@ -39,6 +39,7 @@ struct NotInterestedView: View {
         .navigationTitle("Not interested")
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
         .toolbar {
             if !groups.isEmpty {

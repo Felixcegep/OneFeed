@@ -679,6 +679,7 @@ struct ArticleCollectionView: View {
         .navigationTitle(destination.title)
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
         .searchable(text: $searchText, prompt: "Search articles")
         .debouncedSearch(searchText, into: $appliedSearch)

@@ -37,6 +37,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Folder unread counts were higher than the stories in the folder | Feed | High | The badge counted every open article, including copies the folder list collapses | The badge uses the same same-story collapse as the list. The lookup fetches cluster ids only, not embedding vectors | `FeedAndFreshRSSDomainTests.folderUnreadCountCollapsesSameStoryInsideOneFolder` |
 | Opening a folder loaded every embedding | Feed | High | The list queried full `ContentMemory` rows, including vector blobs | Rows use the same cluster-id lookup as the badges. A similar-read line still appears on a story that is not part of a cluster | `FeedAndFreshRSSDomainTests.feedRowsDropCopiesAndKeepASimilarCaption` |
 | Library, FreshRSS, and Drive errors showed system text | Settings, librarian | Medium | `localizedDescription` included URL and HTTP text | App sentences stay. Other failures use a short fallback. Offline does not raise a refresh alert | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
+| Folder, Sources, History, and Not interested lists could slide under the bar | Feed, Sources, History | Medium | Those screens omitted the hard top scroll edge used on Today and Feed | The same hard top edge is on each of those lists | Code review. Needs a device pass for scroll-to-top |
 
 ## Still open
 
