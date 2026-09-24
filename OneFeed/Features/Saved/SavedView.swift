@@ -398,13 +398,13 @@ private struct LaterQueueActions: ViewModifier {
     let onChanged: () -> Void
     @Environment(\.modelContext) private var modelContext
     @State private var ratingError: String?
+    @State private var actionError: String?
 
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
-                    guard (try? ArticleActions.apply(.read, to: article, in: modelContext)) != nil else { return }
-                    onChanged()
+                    markDone()
                 }
                 .tint(OneFeedTheme.sage)
                 Button("Remove", systemImage: "arrow.uturn.backward") {
@@ -417,11 +417,13 @@ private struct LaterQueueActions: ViewModifier {
                     restore(article)
                 }
                 Button("Done", systemImage: "checkmark") {
-                    guard (try? ArticleActions.apply(.read, to: article, in: modelContext)) != nil else { return }
-                    onChanged()
+                    markDone()
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    guard ArticleActions.markNotInterested(article, in: modelContext) else { return }
+                    guard ArticleActions.markNotInterested(article, in: modelContext) else {
+                        actionError = "Couldn’t file that as not interested."
+                        return
+                    }
                     onChanged()
                 }
                 Menu("Rate") {
@@ -442,6 +444,14 @@ private struct LaterQueueActions: ViewModifier {
                     }
                 }
             }
+            .alert("Couldn’t update that story", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "")
+            }
             .alert("Couldn’t save that rating", isPresented: Binding(
                 get: { ratingError != nil },
                 set: { if !$0 { ratingError = nil } }
@@ -450,6 +460,15 @@ private struct LaterQueueActions: ViewModifier {
             } message: {
                 Text(ratingError ?? "")
             }
+    }
+
+    private func markDone() {
+        do {
+            try ArticleActions.apply(.read, to: article, in: modelContext)
+            onChanged()
+        } catch {
+            actionError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+        }
     }
 
     private func saveRating(_ stars: Int) {

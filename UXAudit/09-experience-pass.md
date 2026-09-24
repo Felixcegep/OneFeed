@@ -160,6 +160,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A failed video enrichment still told Today and Feed the index changed | Today, Feed | Medium | The save was discarded and the notification was posted anyway | The index notification waits until the summary is stored | Code review |
 | A FreshRSS change was stored before the story save finished | Today, Queue, Feed | High | The pending sync row was saved on its own, so a failed story write could still sync | The sync row stays with the story until that save succeeds. A rollback drops it | `SwiftDataFreshRSSSyncTests.aRolledBackSaveDropsTheQueuedMutation` |
 | Folder editing rebuilt the source list on every keystroke | Feed | Medium | The suggestion rows used the live field | Suggestions wait 180ms. A pasted address still shows Add immediately, and clearing the field clears the suggestions at once | Code review |
+| Done, Skip, Queue, or Not interested on a row failed with no explanation | Today, Feed, Queue | High | The swipe and menu discarded the save error | The row stays, and an alert explains the failure | Code review |
 
 ## Still open
 

@@ -80,49 +80,42 @@ struct ArticleSwipeActions: ViewModifier {
     let context: ModelContext
     var onChanged: (() -> Void)? = nil
     @State private var ratingError: String?
+    @State private var actionError: String?
 
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
-                    guard (try? ArticleActions.apply(.read, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.read)
                 }
                 .tint(OneFeedTheme.sage)
                 Button("Skip", systemImage: "forward") {
-                    guard (try? ArticleActions.apply(.skipped, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.skipped)
                 }
                 .tint(OneFeedTheme.stone)
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    guard ArticleActions.markNotInterested(article, in: context) else { return }
-                    onChanged?()
+                    fileNotInterested()
                 }
                 .tint(OneFeedTheme.graphite)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button("Queue", systemImage: "square.stack") {
-                    guard (try? ArticleActions.apply(.saved, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.saved)
                 }
                 .tint(OneFeedTheme.accent)
             }
             .contextMenu {
                 Button("Add to Queue", systemImage: "square.stack") {
-                    guard (try? ArticleActions.apply(.saved, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.saved)
                 }
                 Button("Done", systemImage: "checkmark") {
-                    guard (try? ArticleActions.apply(.read, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.read)
                 }
                 Button("Skip", systemImage: "forward") {
-                    guard (try? ArticleActions.apply(.skipped, to: article, in: context)) != nil else { return }
-                    onChanged?()
+                    apply(.skipped)
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    guard ArticleActions.markNotInterested(article, in: context) else { return }
-                    onChanged?()
+                    fileNotInterested()
                 }
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
@@ -142,6 +135,14 @@ struct ArticleSwipeActions: ViewModifier {
                     }
                 }
             }
+            .alert("Couldn’t update that story", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "")
+            }
             .alert("Couldn’t save that rating", isPresented: Binding(
                 get: { ratingError != nil },
                 set: { if !$0 { ratingError = nil } }
@@ -150,6 +151,23 @@ struct ArticleSwipeActions: ViewModifier {
             } message: {
                 Text(ratingError ?? "")
             }
+    }
+
+    private func apply(_ state: ArticleState) {
+        do {
+            try ArticleActions.apply(state, to: article, in: context)
+            onChanged?()
+        } catch {
+            actionError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+        }
+    }
+
+    private func fileNotInterested() {
+        guard ArticleActions.markNotInterested(article, in: context) else {
+            actionError = "Couldn’t file that as not interested."
+            return
+        }
+        onChanged?()
     }
 
     private func saveRating(_ stars: Int) {
