@@ -85,12 +85,8 @@ struct FoldersView: View {
                     hasPlannedRows: !summaries.isEmpty
                 ) {
                     emptySourceInvite
-                } else if !folderDirectoryReady {
-                    Color.clear
-                        .frame(height: 1)
-                        .accessibilityHidden(true)
                 } else {
-                    ForEach(summaries) { summary in
+                    ForEach(folderDirectoryReady ? summaries : folderNames) { summary in
                         folderRow(summary)
                     }
                 }
@@ -196,6 +192,14 @@ struct FoldersView: View {
         guard let placements = await refreshedStoryPlacements(from: modelContext.container, current: storyPlacements) else { return }
         storyPlacements = placements
         placementTick &+= 1
+    }
+
+    /// Same folders as the counted list, with the unread badge still hidden.
+    private var folderNames: [FolderSummary] {
+        FolderDirectoryCount.names(
+            feeds: feeds.map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) },
+            folderOrder: FolderStore.knownNames()
+        )
     }
 
     private func folderRow(_ summary: FolderSummary) -> some View {
@@ -781,6 +785,7 @@ struct ArticleCollectionView: View {
     /// Story rows stay grouped while the open article changes. Rebuilt off the main thread when the query, stories, or clusters change.
     @State private var displayedStoryRows: [FeedStoryRow] = []
     @State private var storyListReady = false
+    @State private var storyHoldRevealed = false
     @State private var refresh = BrowseRefresh()
 
     init(destination: FeedBrowseDestination) {
@@ -844,6 +849,26 @@ struct ArticleCollectionView: View {
             }
         }
         storyListReady = true
+    }
+
+    /// Stories already loaded for this folder. Collapse and similar-story rows still arrive with the plan.
+    private var provisionalStories: [Article] {
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return articles.filter { article in
+            guard article.isStored else { return false }
+            guard StoryListPlan.belongs(
+                feedID: article.feed?.id,
+                memberships: article.feed?.memberships,
+                to: destination
+            ) else { return false }
+            guard !query.isEmpty else { return true }
+            if article.title.localizedStandardContains(query) { return true }
+            return article.feed?.title.localizedStandardContains(query) == true
+        }
+    }
+
+    private var storyHoldWaiting: Bool {
+        !storyListReady && !provisionalStories.isEmpty
     }
 
     /// Search, expansion, and every story id. Opening a story does not regroup the rows.
@@ -915,7 +940,7 @@ struct ArticleCollectionView: View {
     private var collectionColumn: some View {
         Group {
             if LibraryHold.showsExplanation(
-                hasStoredRows: articles.contains(where: \.isStored),
+                hasStoredRows: !provisionalStories.isEmpty || !displayedStoryRows.isEmpty,
                 ready: storyListReady,
                 hasPlannedRows: !displayedStoryRows.isEmpty
             ) {
@@ -929,9 +954,19 @@ struct ArticleCollectionView: View {
                         : nil
                 )
             } else if !storyListReady {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
+                if LibraryHold.showsStoredRows(waiting: storyHoldWaiting, revealed: storyHoldRevealed) {
+                    List {
+                        ForEach(provisionalStories) { article in
+                            articleButton(article, caption: nil)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                    .refreshable { await refresh.refresh(in: modelContext) }
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
                     ForEach(displayedStoryRows) { row in
@@ -967,6 +1002,13 @@ struct ArticleCollectionView: View {
         }
         .task(id: storyEdge) {
             await reloadStoryList()
+        }
+        .task(id: storyHoldWaiting) {
+            storyHoldRevealed = false
+            guard storyHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, storyHoldWaiting else { return }
+            storyHoldRevealed = true
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             Task { await reloadStoryPlacements() }

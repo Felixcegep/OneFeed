@@ -261,6 +261,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening Queue grew the title bar when the count arrived | Queue | Medium | The subtitle stayed empty until the section plan finished, so the large title resized | A stored queue shows its count on the first frame. The plan’s line replaces that count in the same bar | `RetentionAndExtractionTests.queuePlanKeepsTheSavedStoryAndSplitsTheVideo` |
 | A primary button tapped on press, then again when the action finished | Reader, Onboarding | Medium | The ink button played a haptic on press. Done and Queue play another haptic after the save | The press still scales. The haptic waits until the story is saved | Code review |
 | A similar-story line grew the card after Today had drawn | Today | Medium | The caption lookup finished after the deck, then inserted a line under the byline | A caption already known is shown with the card. One that arrives later is spoken, and the line appears with the next deck | `TodayRefreshCoverTests.aLateCaptionWaitsForTheNextDeck` |
+| Feed folders and a folder’s stories stayed blank while sources and stories were already loaded | Feed | Medium | The directory waited for unread counts, and a story list waited for grouping, so a folder with stories showed a blank row | Folder names appear with the sources. Unread badges fill in on those same rows. A folder’s stories appear after a brief hold, and only stories in that folder | `FeedAndFreshRSSDomainTests.folderNamesMatchTheCountedFoldersBeforeUnreadBadges` |
 
 ## Still open
 

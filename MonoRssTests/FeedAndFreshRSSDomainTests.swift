@@ -279,6 +279,26 @@ struct FeedAndFreshRSSDomainTests {
         #expect(counted.map(\.feedCount) == summaries.map(\.feedCount))
     }
 
+    @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)
+        let snaps = [development, loose].map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) }
+        let names = FolderDirectoryCount.names(feeds: snaps, folderOrder: ["Development"])
+        #expect(names.map(\.name) == ["Development", "Unfiled"])
+        #expect(names.map(\.unreadCount) == [0, 0])
+        #expect(names.map(\.folderID) == FolderDirectoryCount.summaries(
+            feeds: snaps,
+            stories: [],
+            placements: [:],
+            folderOrder: ["Development"]
+        ).map(\.folderID))
+        #expect(StoryListPlan.belongs(feedID: development.id, memberships: development.memberships, to: .folder(.named("Development"))))
+        #expect(StoryListPlan.belongs(feedID: loose.id, memberships: loose.memberships, to: .folder(.named("Development"))) == false)
+        #expect(StoryListPlan.belongs(feedID: loose.id, memberships: loose.memberships, to: .folder(.unfiled)))
+        #expect(StoryListPlan.belongs(feedID: nil, memberships: nil, to: .folder(.unfiled)))
+        #expect(StoryListPlan.belongs(feedID: development.id, memberships: nil, to: .folder(.unfiled)))
+    }
+
     private func folderStorySnap(_ article: Article) -> FolderStorySnap {
         FolderStorySnap(
             feedID: article.feed?.id,

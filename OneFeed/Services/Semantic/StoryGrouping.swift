@@ -239,22 +239,23 @@ nonisolated enum StoryListPlan {
         now: Date = .now
     ) -> [StoryRowPlan] {
         let open = collapsed(stories.filter { $0.stateRaw == "queued" || $0.stateRaw == "current" }.sorted { $0.publishedAt > $1.publishedAt })
-        let inFolder = open.filter { belongs($0, to: destination, feeds: feeds) }
+        let inFolder = open.filter { belongs(feedID: $0.feedID, memberships: $0.feedID.flatMap { feeds[$0]?.memberships }, to: destination) }
         let visibleStories = query.isEmpty ? inFolder : inFolder.filter { matches($0, query: query) }
         return rowPlans(from: visibleStories, placements: placements, expanded: expanded, now: now)
     }
 
-    private static func belongs(_ story: StoryListSnap, to destination: FeedBrowseDestination, feeds: [UUID: FolderFeedSnap]) -> Bool {
+    /// Same folder membership as the planned rows. Missing source membership is Unfiled.
+    static func belongs(feedID: UUID?, memberships: [String]?, to destination: FeedBrowseDestination) -> Bool {
         switch destination {
         case .unread:
             return true
         case .folder(let folderID):
-            guard let feedID = story.feedID, let feed = feeds[feedID] else { return folderID == .unfiled }
+            guard feedID != nil, let memberships else { return folderID == .unfiled }
             switch folderID {
             case .unfiled:
-                return feed.memberships.isEmpty
+                return memberships.isEmpty
             case .named(let name):
-                return feed.memberships.contains(name)
+                return memberships.contains(name)
             }
         }
     }

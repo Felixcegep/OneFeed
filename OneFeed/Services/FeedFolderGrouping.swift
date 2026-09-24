@@ -72,6 +72,13 @@ nonisolated enum FolderDirectoryCount {
         }
     }
 
+    /// Folder names in the same order as `summaries`, before unread counts exist. A zero count stays hidden.
+    static func names(feeds: [FolderFeedSnap], folderOrder: [String]) -> [FolderSummary] {
+        groups(from: feeds, folderOrder: folderOrder).map { group in
+            FolderSummary(folderID: group.folderID, unreadCount: 0, feedCount: group.feedCount)
+        }
+    }
+
     private struct SnapGroup {
         var folderID: FeedFolderID
         var feedIDs: Set<UUID>
