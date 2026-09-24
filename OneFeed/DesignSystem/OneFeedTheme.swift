@@ -339,6 +339,9 @@ struct ArticleRow: View {
 struct FeaturedStory: View {
     let article: Article
     var status: String? = nil
+    /// Set when the excerpt was already prepared off the main thread. A nil value then means the card has no preview.
+    var preparedExcerpt: String? = nil
+    var usesPreparedExcerpt = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
@@ -368,7 +371,7 @@ struct FeaturedStory: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                if let excerpt = article.displayExcerpt {
+                if let excerpt = usesPreparedExcerpt ? preparedExcerpt : article.displayExcerpt {
                     Text(excerpt)
                         .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)

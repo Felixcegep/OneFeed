@@ -200,7 +200,10 @@ final class Article {
         if cachedExcerptSource == source, cachedExcerptLimit == limit {
             return cachedExcerpt
         }
-        let value = ContentClassifier.proseExcerpt(source, maxCharacters: limit)
+        let value = ContentClassifier.cardExcerpt(
+            aiSummary: limit == 280 ? source : nil,
+            summary: limit == 220 ? source : nil
+        )
         cachedExcerptSource = source
         cachedExcerptLimit = limit
         cachedExcerpt = value

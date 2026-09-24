@@ -307,7 +307,12 @@ private struct TodayStoryList: View {
             if let featured = stories.first {
                 Section {
                     Button { open(featured) } label: {
-                        FeaturedStory(article: featured, status: viewModel.storyCaptions[featured.id])
+                        FeaturedStory(
+                            article: featured,
+                            status: viewModel.storyCaptions[featured.id],
+                            preparedExcerpt: viewModel.featuredExcerptID == featured.id ? viewModel.featuredExcerpt : nil,
+                            usesPreparedExcerpt: true
+                        )
                     }
                     .buttonStyle(ArticleCardButtonStyle())
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))

@@ -25,6 +25,8 @@ final class CurrentViewModel {
     private var captionTask: Task<Void, Never>?
     private var cachedCaptions: [UUID: String] = [:]
     private(set) var storyCaptions: [UUID: String] = [:]
+    private(set) var featuredExcerpt: String?
+    private(set) var featuredExcerptID: UUID?
     let progress = RefreshProgress()
     var presentedError: String?
     var storyError: String?
@@ -261,6 +263,8 @@ final class CurrentViewModel {
             captionStamp = Int.min
             cachedCaptions = [:]
             storyCaptions = [:]
+            featuredExcerpt = nil
+            featuredExcerptID = nil
             return
         }
         let stamp = Self.captionStamp(for: articles, generation: captionGeneration)
@@ -268,15 +272,30 @@ final class CurrentViewModel {
         let subjects = articles.map {
             StoryCaptionSubject(id: $0.id, identityKey: ArticleIdentity.identityKey(for: $0))
         }
+        let featured = articles.first
+        let excerptSample = CardExcerptSample(
+            aiSummary: ContentClassifier.cardExcerptSample(featured?.aiSummary),
+            summary: ContentClassifier.cardExcerptSample(featured?.summary)
+        )
+        if featured?.id != featuredExcerptID {
+            featuredExcerpt = nil
+            featuredExcerptID = nil
+        }
         let container = context.container
         let generation = captionGeneration
         captionTask?.cancel()
         captionTask = Task {
-            let built = await StoryGrouping.captions(for: subjects, in: container)
+            async let built = StoryGrouping.captions(for: subjects, in: container)
+            let excerpt = await Task.detached(priority: .userInitiated) {
+                ContentClassifier.cardExcerpt(aiSummary: excerptSample.aiSummary, summary: excerptSample.summary)
+            }.value
+            let captions = await built
             guard !Task.isCancelled, generation == captionGeneration else { return }
             captionStamp = stamp
-            cachedCaptions = built
-            storyCaptions = built
+            cachedCaptions = captions
+            storyCaptions = captions
+            featuredExcerpt = excerpt
+            featuredExcerptID = featured?.id
         }
     }
 

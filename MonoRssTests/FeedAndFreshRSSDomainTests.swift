@@ -705,8 +705,10 @@ struct FeedAndFreshRSSDomainTests {
         )
         #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
         #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+        #expect(ContentClassifier.cardExcerpt(aiSummary: article.aiSummary, summary: article.summary) == article.displayExcerpt)
         article.aiSummary = nil
         #expect(article.displayExcerpt == "Feed blurb")
+        #expect(ContentClassifier.cardExcerpt(aiSummary: nil, summary: "<p>Feed blurb</p>") == "Feed blurb")
     }
 
     @Test @MainActor func listDateLabelReusesTheSameCalendarDay() {

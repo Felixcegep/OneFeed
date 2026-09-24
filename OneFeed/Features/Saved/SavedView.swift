@@ -69,17 +69,27 @@ struct SavedView: View {
         }.value
         guard !Task.isCancelled, edge == queuePlanEdge else { return }
         let byID = Dictionary(savedQuery.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let featuredArticle = plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil }
+        let excerptSample = CardExcerptSample(
+            aiSummary: ContentClassifier.cardExcerptSample(featuredArticle?.aiSummary),
+            summary: ContentClassifier.cardExcerptSample(featuredArticle?.summary)
+        )
+        let excerpt = await Task.detached(priority: .userInitiated) {
+            ContentClassifier.cardExcerpt(aiSummary: excerptSample.aiSummary, summary: excerptSample.summary)
+        }.value
+        guard !Task.isCancelled, edge == queuePlanEdge else { return }
         func articles(_ ids: [UUID]) -> [Article] {
             ids.compactMap { byID[$0] }.filter(\.isStored)
         }
         queueLayout = QueueLayout(
-            upNext: plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil },
+            upNext: featuredArticle,
             videos: articles(plan.videos),
             audio: articles(plan.audio),
             files: articles(plan.files),
             articles: articles(plan.articles),
             hasQueue: !plan.collapsedIDs.isEmpty,
-            subtitle: plan.subtitle
+            subtitle: plan.subtitle,
+            upNextExcerpt: excerpt
         )
         queueReady = true
     }
@@ -117,7 +127,7 @@ struct SavedView: View {
                     if let upNext = layout.upNext {
                         Section {
                             Button { viewModel.selectedArticle = upNext } label: {
-                                FeaturedStory(article: upNext)
+                                FeaturedStory(article: upNext, preparedExcerpt: layout.upNextExcerpt, usesPreparedExcerpt: true)
                             }
                             .buttonStyle(ArticleCardButtonStyle())
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -598,6 +608,7 @@ private struct QueueLayout {
     var articles: [Article] = []
     var hasQueue = false
     var subtitle = ""
+    var upNextExcerpt: String?
 }
 
 private extension View {

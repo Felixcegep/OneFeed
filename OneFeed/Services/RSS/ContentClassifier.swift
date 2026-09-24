@@ -18,6 +18,11 @@ nonisolated struct ClassifiedEntry: Sendable {
     let estimatedMinutes: Int
 }
 
+struct CardExcerptSample: Sendable {
+    var aiSummary: String?
+    var summary: String?
+}
+
 nonisolated enum ContentClassifier: Sendable {
     private static let wordsPerMinute = 220
     private static let defaultMinVideoSeconds = 180
@@ -41,6 +46,23 @@ nonisolated enum ContentClassifier: Sendable {
             return String(plain[..<space]) + "…"
         }
         return String(plain[..<limit]) + "…"
+    }
+
+    /// The featured-card preview. A summary is preferred, then the feed blurb. Markup stays out of the line.
+    static func cardExcerpt(aiSummary: String?, summary: String?) -> String? {
+        if let aiSummary, !aiSummary.isEmpty {
+            return proseExcerpt(aiSummary, maxCharacters: 280)
+        }
+        if let summary, !summary.isEmpty {
+            return proseExcerpt(summary, maxCharacters: 220)
+        }
+        return nil
+    }
+
+    /// The first characters the card excerpt needs. Copying this on the main thread avoids moving the whole article.
+    static func cardExcerptSample(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        return String(text.prefix(8_000))
     }
 
     /// Drops Hacker News link dumps and bare URLs so a card never leads with "Article URL:".
