@@ -225,6 +225,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Today copied a full story before deciding not to fetch it | Today | High | The follow-up fetch read `contentHTML` on the main thread, then skipped the download | That read happens on a separate store context. A full story is left alone | `RetentionAndExtractionTests.aFullTodayStoryIsNotFetchedAgain` |
 | Saving a fetched article counted every word on the main thread | Reader, Today | High | After the page arrived, the reading time walked the new HTML before the next frame | The count runs off the main thread. The stored time only goes up. A duplicate merge still counts on the thread that already opened those two bodies | `RetentionAndExtractionTests.enrichUpcomingExtractsOnlyCurrentAndNextQueued` |
 | Opening a saved article copied its body on the main thread | Reader | High | The page read `contentHTML` before it could sanitize off the main thread | A saved article is read on a separate store context when that store has no unsaved edits. An unsaved edit still uses the body already in memory | `ReaderFocusTests.savedReaderPageDoesNotCopyTheBodyOnTheMainThread` |
+| Refresh unpacked every video memory on the main thread | Today, Feed | High | The opt-in video pass fetched every YouTube story and every vector, then classified them on the main thread | That pass runs on the ingest actor. Article bodies stay unread. Turning the setting off leaves the memories alone | `RetentionAndExtractionTests.videoEnrichmentLeavesAPreliminaryMemoryWhenTheSettingIsOff` |
 
 ## Still open
 

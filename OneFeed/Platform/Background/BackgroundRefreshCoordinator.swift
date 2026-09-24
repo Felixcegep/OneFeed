@@ -106,7 +106,9 @@ enum BackgroundRefreshCoordinator {
             defer { enrichTask = nil }
             let current = item ?? (try? DailyDeckService().currentItem(in: context))
             await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: extraQueued)
-            await SemanticEnrichment.enrichUpcoming(in: context)
+            if let ingest = try? SwiftDataIngest.actor(from: context) {
+                await ingest.enrichSemanticVideos()
+            }
         }
         enrichTask = task
         await task.value

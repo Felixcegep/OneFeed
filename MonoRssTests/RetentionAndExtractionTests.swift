@@ -352,6 +352,44 @@ struct RetentionAndExtractionTests {
         }.value
         #expect(minutes == 2)
     }
+
+    @Test func videoEnrichmentLeavesAPreliminaryMemoryWhenTheSettingIsOff() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let article = Article(
+            guid: "yt-enrich",
+            title: "Talk",
+            url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            contentHTML: "<p>" + String(repeating: "word ", count: 800) + "</p>",
+            contentKind: "youtube",
+            videoID: "dQw4w9WgXcQ"
+        )
+        context.insert(article)
+        let memory = ContentMemory(
+            identityKey: "video:dQw4w9WgXcQ",
+            externalID: "dQw4w9WgXcQ",
+            title: "Talk",
+            stateRaw: SemanticState.preliminary.rawValue
+        )
+        context.insert(memory)
+        try context.save()
+        let defaults = UserDefaults.standard
+        let key = AppPreferenceKey.semanticVideoEnrichment
+        let previous = defaults.object(forKey: key)
+        defaults.set(false, forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        let actor = LibraryIngestActor(modelContainer: container)
+        await actor.enrichSemanticVideos()
+        #expect(memory.stateRaw == SemanticState.preliminary.rawValue)
+        #expect(memory.semanticSummary.isEmpty)
+        #expect(article.contentHTML?.contains("word") == true)
+    }
 }
 
 private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {
