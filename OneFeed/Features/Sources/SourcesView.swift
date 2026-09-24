@@ -104,24 +104,31 @@ struct SourcesView: View {
     }
 
     private var sourcesList: some View {
-        List {
+        Group {
             if visibleFolders.isEmpty {
-                Section {
-                    if folderQuery.isEmpty {
-                        ContentUnavailableView {
-                            Label("No folders yet", systemImage: "folder")
-                        } description: {
-                            Text("Add a source or create a folder to organize your reading.")
-                        } actions: {
-                            Button("Add Source") { presentAdd() }
-                                .buttonStyle(PrimaryActionStyle(expands: false))
-                        }
-                    } else {
-                        ContentUnavailableView.search(text: folderQuery)
-                    }
+                if folderQuery.isEmpty {
+                    EmptyLibraryState(
+                        title: "No folders yet",
+                        systemImage: "folder",
+                        description: "Add a source or create a folder to organize your reading.",
+                        actionTitle: "Add Source",
+                        action: { presentAdd() }
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a folder or source name."
+                    )
                 }
-                .listRowBackground(OneFeedTheme.paper)
             } else {
+                sourcesFolderList
+            }
+        }
+    }
+
+    private var sourcesFolderList: some View {
+        List {
                 if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
                     Section {
                         ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
@@ -140,7 +147,6 @@ struct SourcesView: View {
                         GallerySectionHeader(text: "Empty folders")
                     }
                 }
-            }
         }
         .oneFeedGroupedListStyle()
     }
@@ -261,24 +267,40 @@ private struct FolderFeedsView: View {
     }
 
     private var folderFeedList: some View {
-        List {
+        Group {
             if visibleFeeds.isEmpty {
-                Section {
-                    if appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        ContentUnavailableView {
-                            Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
-                        } description: {
-                            Text("Add a source to start filling this folder.")
-                        } actions: {
-                            Button("Add Source") { onAddInFolder() }
-                                .buttonStyle(PrimaryActionStyle(expands: false))
-                        }
-                    } else {
-                        ContentUnavailableView.search(text: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines))
-                    }
+                if appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    EmptyLibraryState(
+                        title: "No sources yet",
+                        systemImage: "dot.radiowaves.left.and.right",
+                        description: "Add a source to start filling this folder.",
+                        actionTitle: "Add Source",
+                        action: onAddInFolder
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a source name."
+                    )
                 }
-                .listRowBackground(OneFeedTheme.paper)
             } else {
+                folderFeedRows
+            }
+        }
+        .navigationTitle(folderID.title)
+        .oneFeedLargeTitle()
+        .oneFeedScrollEdge()
+        .background(OneFeedTheme.plaster)
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { onAddInFolder() }
+            }
+        }
+    }
+
+    private var folderFeedRows: some View {
+        List {
             Section {
                 ForEach(visibleFeeds) { feed in
                     NavigationLink {
@@ -309,17 +331,8 @@ private struct FolderFeedsView: View {
                     }
                 }
             }
-            }
         }
         .oneFeedGroupedListStyle()
-        .navigationTitle(folderID.title)
-        .oneFeedLargeTitle()
-        .oneFeedScrollEdge()
-        .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
-                Button("Add Source", systemImage: "plus") { onAddInFolder() }
-            }
-        }
     }
 }
 
