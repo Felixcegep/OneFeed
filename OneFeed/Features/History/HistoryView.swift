@@ -12,6 +12,7 @@ struct HistoryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
+    @State private var queueError: String?
     /// Day groups stay put while the open story changes.
     @State private var dayCache = HistoryDayCache()
 
@@ -60,7 +61,11 @@ struct HistoryView: View {
         } reader: { article in
             ReaderView(
                 article: article,
-                onFinish: { _ in selectedArticle = nil },
+                onFinish: { state in
+                    selectedArticle = nil
+                    guard article.isStored else { return }
+                    ArticleActions.apply(state, to: article, in: modelContext)
+                },
                 onClose: { selectedArticle = nil },
                 onPutInQueue: {
                     putInQueue(article)
@@ -142,13 +147,29 @@ struct HistoryView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
+        .alert("Couldn’t put that in Queue", isPresented: Binding(
+            get: { queueError != nil },
+            set: { if !$0 { queueError = nil } }
+        )) {
+            Button("OK", role: .cancel) { queueError = nil }
+        } message: {
+            Text(queueError ?? "")
+        }
     }
 
     private func putInQueue(_ article: Article) {
         guard article.isStored else { return }
         let motion: Animation? = OneFeedMotion.allowsMotion ? OneFeedMotion.list : nil
+        var failure: Error?
         withAnimation(motion) {
-            try? ArticleQueueService().moveToQueue(article, in: modelContext)
+            do {
+                try ArticleQueueService().moveToQueue(article, in: modelContext)
+            } catch {
+                failure = error
+            }
+        }
+        if let failure {
+            queueError = UserFacingFailure.message(for: failure, fallback: "Couldn’t put that in Queue.")
         }
     }
 }

@@ -139,6 +139,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A second file dropped on Add to Queue was rejected | Queue | Medium | The sheet returned unhandled while an add was already running | The files wait in the same import line and still copy one at a time | Code review |
 | Remove Source sat under the tab bar | Source | Medium | The source form had no tab-bar clearance, unlike Settings | The same clearance sits under the form, and it leaves while a docked keyboard is up | Code review |
 | A folder checkmark was the only sign a source belonged there | Source | Medium | The row did not expose a selected state, and VoiceOver could hear the checkmark image | The row is selected when the source is in that folder, and the icon is decorative | Code review |
+| Done or Skip in a History story only closed the reader | History | High | The reader’s finish callback ignored the new state | Done, Skip, and Queue update the story, the same way they do in Feed | Code review |
+| Putting a story back in Queue could fail silently | History | Medium | The save error was discarded | The story stays in History and an alert explains what happened | Code review |
 
 ## Still open
 
