@@ -86,6 +86,7 @@ struct RetentionAndExtractionTests {
         #expect(RefreshFailure.message(for: URLError(.cancelled)) == nil)
         #expect(RefreshFailure.message(for: URLError(.timedOut)) == nil)
         #expect(RefreshFailure.message(for: URLError(.cannotConnectToHost)) == nil)
+        #expect(RefreshFailure.message(for: URLError(.notConnectedToInternet)) == nil)
         #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == FeedServiceError.http(500).localizedDescription)
     }
 
@@ -99,6 +100,8 @@ struct RetentionAndExtractionTests {
         #expect(UserFacingFailure.message(for: QueueLinkError.invalidAddress, fallback: "Couldn’t add that link.") == "That doesn’t look like a link.")
         let system = NSError(domain: "SwiftData", code: 1)
         #expect(UserFacingFailure.message(for: system, fallback: "Couldn’t update Queue.") == "Couldn’t update Queue.")
+        #expect(UserFacingFailure.message(for: URLError(.notConnectedToInternet), fallback: "Couldn’t sync the library.") == "Couldn’t sync the library.")
+        #expect(GoogleDriveOAuthError.tokenExchangeFailed("invalid_grant").errorDescription == "Google Drive sign-in failed. Try again.")
     }
 
     @Test func automaticExtractSkipsSubstantialRSS() {

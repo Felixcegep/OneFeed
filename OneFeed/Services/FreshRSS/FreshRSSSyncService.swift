@@ -86,7 +86,7 @@ final class FreshRSSSyncService {
         } catch {
             try? await SwiftDataIngest.actor(from: context).setFreshRSSSyncError(
                 accountID: accountID,
-                message: error.localizedDescription
+                message: UserFacingFailure.message(for: error, fallback: "Couldn’t reach FreshRSS.")
             )
             throw error
         }

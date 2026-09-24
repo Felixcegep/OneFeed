@@ -53,7 +53,7 @@ extension Error {
         let code = (self as? URLError)?.code
             ?? URLError.Code(rawValue: (self as NSError).code)
         switch code {
-        case .timedOut, .networkConnectionLost, .cannotConnectToHost, .dnsLookupFailed:
+        case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet:
             return true
         default:
             let nsError = self as NSError

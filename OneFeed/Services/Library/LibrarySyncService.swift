@@ -265,11 +265,7 @@ final class LibrarySyncService {
             status = outcome == .unlinked ? .unlinked : .idle
             return outcome
         } catch {
-            let message = error.localizedDescription
-            lastError = message
-            lastErrorMessage = message
-            lastOutcome = .failed(message)
-            status = .error(message)
+            present(error)
             return lastOutcome
         }
     }
@@ -671,9 +667,21 @@ final class LibrarySyncService {
     }
 
     private func present(_ error: Error) {
-        lastError = error.localizedDescription
-        lastErrorMessage = error.localizedDescription
-        status = .error(error.localizedDescription)
+        guard UserFacingFailure.shouldSurface(error) else {
+            lastError = nil
+            lastErrorMessage = nil
+            lastOutcome = .failed("Couldn’t sync the library.")
+            if case .unlinked = status {
+                return
+            }
+            status = .idle
+            return
+        }
+        let message = UserFacingFailure.message(for: error, fallback: "Couldn’t sync the library.")
+        lastError = message
+        lastErrorMessage = message
+        lastOutcome = .failed(message)
+        status = .error(message)
     }
 }
 

@@ -36,7 +36,10 @@ extension LibraryIngestActor {
                             loaded: nil,
                             cancelled: error.isCancellation,
                             transient: error.isTransientNetwork,
-                            errorDescription: error.localizedDescription
+                            errorDescription: UserFacingFailure.message(
+                                for: error,
+                                fallback: "The source returned an unexpected response."
+                            )
                         )
                     }
                 }

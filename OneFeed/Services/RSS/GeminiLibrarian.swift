@@ -418,7 +418,7 @@ final class GeminiLibrarian {
             }
             return .init(ok: true, message: "Added \(feed.title).")
         } catch {
-            return .init(ok: false, message: error.localizedDescription)
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t add that source."))
         }
     }
 
