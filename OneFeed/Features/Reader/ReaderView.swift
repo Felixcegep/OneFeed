@@ -842,6 +842,7 @@ private struct ReaderWebContent: View {
     @State private var page = ReaderWebWarmup.makeReaderPage()
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
     @State private var didRestoreTrail = false
+    @State private var lastPersistedTrail: ReadingTrail?
 
     private var showCover: Bool { !hasCommitted }
     private var resolvedMode: ReaderFocusMode {
@@ -889,14 +890,17 @@ private struct ReaderWebContent: View {
             }
             .task(id: html) {
                 didRestoreTrail = false
+                lastPersistedTrail = nil
                 page.load(html: html, baseURL: baseURL)
                 try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
                 hasCommitted = true
                 await applyFocus(restore: !didRestoreTrail)
             }
-            .task {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(2.5))
+                    if Task.isCancelled { return }
                     await persistTrail()
                 }
             }
@@ -952,10 +956,17 @@ private struct ReaderWebContent: View {
         guard let trail = ReaderFocus.snapshot(from: value, articleID: articleID, fallbackZoneY: focusZoneY) else {
             return
         }
+        if let last = lastPersistedTrail,
+           last.blockIndex == trail.blockIndex,
+           last.anchor == trail.anchor,
+           abs(last.scrollRatio - trail.scrollRatio) < 0.002,
+           abs(last.zoneY - trail.zoneY) < 0.002 {
+            return
+        }
+        lastPersistedTrail = trail
         ReadingTrailStore.save(trail)
-        let zone = ReaderFocus.clampZone(trail.zoneY)
-        if abs(zone - focusZoneY) > 0.002 {
-            focusZoneY = zone
+        if abs(trail.zoneY - focusZoneY) > 0.002 {
+            focusZoneY = trail.zoneY
         }
     }
 }

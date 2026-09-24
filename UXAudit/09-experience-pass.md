@@ -38,6 +38,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a folder loaded every embedding | Feed | High | The list queried full `ContentMemory` rows, including vector blobs | Rows use the same cluster-id lookup as the badges. A similar-read line still appears on a story that is not part of a cluster | `FeedAndFreshRSSDomainTests.feedRowsDropCopiesAndKeepASimilarCaption` |
 | Library, FreshRSS, and Drive errors showed system text | Settings, librarian | Medium | `localizedDescription` included URL and HTTP text | App sentences stay. Other failures use a short fallback. Offline does not raise a refresh alert | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
 | Folder, Sources, History, and Not interested lists could slide under the bar | Feed, Sources, History | Medium | Those screens omitted the hard top scroll edge used on Today and Feed | The same hard top edge is on each of those lists | Code review. Needs a device pass for scroll-to-top |
+| The reader wrote a reading position every few seconds | Reader | Medium | A timer saved the trail even when the page had not moved, and kept running in the background | The timer runs only while the app is active, and it writes when the position or focus band actually changes | Code review |
 
 ## Still open
 
