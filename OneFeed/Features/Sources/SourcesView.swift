@@ -575,7 +575,6 @@ private struct SourceDetailView: View {
                 let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else { return }
                 FolderStore.remember(name)
-                viewModel.reloadFolders()
                 viewModel.addFolder(name)
                 newFolderName = ""
             }

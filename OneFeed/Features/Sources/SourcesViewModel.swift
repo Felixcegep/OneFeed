@@ -273,6 +273,8 @@ final class SourceDetailViewModel {
     private var cachedRecentStories: [Article] = []
     /// Loads of the newest-twenty list. A redraw does not increment this.
     private(set) var recentStoryLoads = 0
+    /// Fetches of every source, used to build the folder name list.
+    private(set) var folderListLoads = 0
     private nonisolated(unsafe) var saveObserver: NSObjectProtocol?
 
     init(feed: Feed, context: ModelContext, freshRSSService: any FreshRSSSyncing = FreshRSSSyncService()) {
@@ -318,6 +320,7 @@ final class SourceDetailViewModel {
     }
 
     func reloadFolders() {
+        folderListLoads += 1
         let feeds = (try? context.fetch(FetchDescriptor<Feed>())) ?? []
         availableFolders = FolderStore.allNames(from: feeds)
     }
@@ -342,7 +345,6 @@ final class SourceDetailViewModel {
                 feed.removeFolder(name)
             }
         })
-        reloadFolders()
     }
 
     var isEnabled: Bool {

@@ -75,6 +75,28 @@ struct SourceDetailTests {
         #expect(feed.blockedWords == "AI, Sponsored")
     }
 
+    @Test func checkingAFolderDoesNotReloadTheFolderList() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!, folderName: "Philosophy")
+        let other = Feed(title: "Other", feedURL: URL(string: "https://other.test/rss")!, folderName: "Development")
+        context.insert(feed)
+        context.insert(other)
+        try context.save()
+        let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+        let loads = model.folderListLoads
+        #expect(model.availableFolders.contains("Philosophy"))
+        #expect(model.availableFolders.contains("Development"))
+
+        model.toggleFolder("Development")
+        #expect(model.folderListLoads == loads)
+        #expect(feed.containsFolder("Development"))
+        #expect(feed.containsFolder("Philosophy"))
+
+        model.toggleFolder("Development")
+        #expect(model.folderListLoads == loads)
+        #expect(!feed.containsFolder("Development"))
+    }
+
     @Test func aSecondRemoveIsIgnoredWhileTheFirstIsRunning() async throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
