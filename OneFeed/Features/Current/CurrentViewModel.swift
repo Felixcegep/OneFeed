@@ -21,6 +21,7 @@ final class CurrentViewModel {
     private(set) var totalCount = 0
     private(set) var isRefreshing = false
     private var captionStamp = 0
+    private var captionGeneration = 0
     private var cachedCaptions: [UUID: String] = [:]
     private(set) var storyCaptions: [UUID: String] = [:]
     let progress = RefreshProgress()
@@ -235,7 +236,14 @@ final class CurrentViewModel {
         }
     }
 
-    /// Same deck within the hour reuses captions. A finished story or a new hour loads them again.
+    /// The story index can land after the deck is already on screen. Reload the captions without rebuilding the deck.
+    func noteStoryIndexChanged() {
+        captionGeneration &+= 1
+        guard let context else { return }
+        storyCaptions = captions(for: remainingArticles, in: context)
+    }
+
+    /// Same deck within the hour reuses captions. A finished story, a new hour, or a new story index loads them again.
     private func captions(for articles: [Article], in context: ModelContext) -> [UUID: String] {
         guard !articles.isEmpty else {
             captionStamp = 0
@@ -243,6 +251,7 @@ final class CurrentViewModel {
             return [:]
         }
         var stamp = articles.count
+        stamp ^= captionGeneration
         stamp ^= Int(Date().timeIntervalSince1970 / 3600)
         for article in articles {
             stamp ^= article.id.hashValue

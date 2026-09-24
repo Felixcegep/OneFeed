@@ -113,6 +113,9 @@ struct CurrentView: View {
             }
         }
         .onAppear { viewModel.syncVisibleDeck() }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
+            viewModel.noteStoryIndexChanged()
+        }
         .onOpenURL { url in
             guard url.scheme == "onefeed", url.host() == "reader", let article = viewModel.currentArticle else { return }
             open(article)

@@ -91,6 +91,9 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Adding a source faded the whole form | Add Source | Medium | The success animation sat on the form, so the fields moved with the cover | The cover fades in its own overlay. The form underneath stays still | Code review |
 | A new story index could leave folder badges on the old grouping | Feed | High | The row cache treated an equal placement count as the same index | Each placement load bumps a tick, and the rows rebuild | Code review |
 | Focus was configured again about eight seconds into reading | Reader | High | The page applied focus when loading finished, then the opening task applied it again after a fixed sleep and dropped the saved place | Focus is applied once, when the page has settled or the timeout ends | Code review |
+| The progress line’s bar height animated while a fling reached the top | Today, Feed, Settings | High | Showing the line animated its safe-area height, so the inset moved with the large title | The line still waits 160ms, then the height snaps. Width still does not animate | Code review. Still needs a device pass for scroll-to-top |
+| Filing a source left the open folder on the previous stories | Feed | High | The row cache ignored source membership, so a move that kept the same article count and ends did not regroup | Folder membership is part of the row cache. Opening a story still does not walk every article | Code review |
+| Today kept yesterday’s “already read” line after the story index updated | Today | Medium | Captions were reused for the hour and did not notice a new story index | A story-index update reloads captions. The same deck still reuses them until then | Code review |
 
 ## Still open
 

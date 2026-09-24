@@ -3,7 +3,6 @@ import SwiftUI
 /// A slim progress line pinned to the top safe-area bar, outside the scrolling content.
 struct RefreshProgressBanner: View {
     var progress: RefreshProgress
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isShown = false
 
     var body: some View {
@@ -17,7 +16,8 @@ struct RefreshProgressBanner: View {
         .frame(height: isShown ? 2 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .clipped()
-        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: isShown)
+        // Height is a safe-area inset. Animating it fights a fling to the top and draws the line over the title.
+        .animation(nil, value: isShown)
         .animation(nil, value: progress.displayedFraction)
         .allowsHitTesting(false)
             .accessibilityHidden(!isShown)

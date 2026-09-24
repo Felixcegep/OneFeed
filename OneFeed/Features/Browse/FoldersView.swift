@@ -643,6 +643,7 @@ private struct FeedRootDirectory {
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
+    @Query(sort: \Feed.title) private var feeds: [Feed]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
@@ -707,6 +708,10 @@ struct ArticleCollectionView: View {
         }
         for id in expandedClusterIDs {
             token ^= id.hashValue
+        }
+        for feed in feeds {
+            token = token &* 31 &+ feed.id.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
         }
         return token
     }
