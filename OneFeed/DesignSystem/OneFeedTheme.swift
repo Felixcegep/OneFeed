@@ -262,12 +262,16 @@ struct ArticleRow: View {
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    thumbnailPlaceholder
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
+                        imageFailed = true
+                    }
+                    .frame(width: 64, height: 64)
+                    .clipped()
                 }
-                .frame(width: 64, height: 64)
-                .clipped()
             }
         }
         .padding(.leading, isCurrent ? 10 : 0)
@@ -291,6 +295,13 @@ struct ArticleRow: View {
         }
     }
 
+    private var thumbnailPlaceholder: some View {
+        RoundedRectangle(cornerRadius: OneFeedTheme.radius, style: .continuous)
+            .fill(OneFeedTheme.warm1)
+            .frame(width: 64, height: 64)
+            .accessibilityHidden(true)
+    }
+
     private var meta: String {
         var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
@@ -310,13 +321,21 @@ struct FeaturedStory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, maxPixel: 1200, fadesIn: true) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
+                        .fill(OneFeedTheme.warm1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: OneFeedTheme.featuredHeight)
+                        .accessibilityHidden(true)
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, maxPixel: 1200, fadesIn: true) {
+                        imageFailed = true
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: OneFeedTheme.featuredHeight)
+                    .clipped()
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: OneFeedTheme.featuredHeight)
-                .clipped()
             }
 
             VStack(alignment: .leading, spacing: 12) {

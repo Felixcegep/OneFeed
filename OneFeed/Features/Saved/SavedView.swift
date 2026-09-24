@@ -354,11 +354,18 @@ private struct QueueArticleRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    RoundedRectangle(cornerRadius: OneFeedTheme.radius, style: .continuous)
+                        .fill(OneFeedTheme.warm1)
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
+                        imageFailed = true
+                    }
+                    .frame(width: 64, height: 64)
                 }
-                .frame(width: 64, height: 64)
             }
         }
         .padding(.vertical, 4)

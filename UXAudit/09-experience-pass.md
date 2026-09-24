@@ -71,6 +71,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | List rows formatted a new date for every redraw | Today, Queue, Feed | Medium | Each row called `formatted` while scrolling | The same calendar day is formatted once and reused | `FeedAndFreshRSSDomainTests.listDateLabelReusesTheSameCalendarDay` |
 | VoiceOver still heard “Queue” after the story was saved | Reader | Medium | The accessibility action kept the idle label while the icon filled in | The action says “In Queue” once the story is saved | Code review |
 | Save redrew a particle burst thirty times a second | Reader | Medium | A timeline drove a canvas for the whole burst | The chips move once with opacity and offset, then leave. Reduce Motion shows no burst | Code review |
+| A missing image collapsed the row while scrolling | Today, Queue, Feed | High | The thumbnail was removed when the download failed, so the row height changed under the finger | The same slot stays, filled with paper, so the list does not jump | Code review |
 
 ## Still open
 
