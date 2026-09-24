@@ -122,9 +122,12 @@ nonisolated enum ArticleIdentity {
     }
 
     private static func mergeDuplicateArticles(in context: ModelContext) throws -> Int {
+        let scan = ModelContext(context.container)
+        scan.autosaveEnabled = false
         var descriptor = FetchDescriptor<Article>()
         descriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID, \.stateRawValue, \.remoteID, \.isRemoteStarred]
-        let articles = try context.fetch(descriptor)
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let articles = try scan.fetch(descriptor)
         var videoGroups: [String: [Article]] = [:]
         var urlGroups: [String: [Article]] = [:]
         for article in articles {
@@ -134,30 +137,38 @@ nonisolated enum ArticleIdentity {
                 urlGroups[url, default: []].append(article)
             }
         }
-        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
+        var keeperIDs: [UUID: UUID] = [:]
         var removedIDs = Set<UUID>()
-        var removed = 0
-
-        func merge(_ groups: [String: [Article]]) {
+        func plan(_ groups: [String: [Article]]) {
             for group in groups.values where group.count > 1 {
                 let alive = group.filter { !removedIDs.contains($0.id) }
                 guard alive.count > 1 else { continue }
                 let keeper = preferred(in: alive)
                 for duplicate in alive where duplicate.id != keeper.id {
-                    absorb(duplicate, into: keeper)
-                    for item in deckItems where item.resolvedArticleID() == duplicate.id {
-                        item.article = keeper
-                        item.linkedArticleID = keeper.id
-                    }
-                    context.delete(duplicate)
+                    keeperIDs[duplicate.id] = keeper.id
                     removedIDs.insert(duplicate.id)
-                    removed += 1
                 }
             }
         }
+        plan(videoGroups)
+        plan(urlGroups)
+        guard !keeperIDs.isEmpty else { return 0 }
 
-        merge(videoGroups)
-        merge(urlGroups)
+        let neededIDs = Array(Set(keeperIDs.keys).union(keeperIDs.values))
+        let rows = try context.fetch(ArticleListFetch.rows(predicate: #Predicate { neededIDs.contains($0.id) }))
+        let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
+        var removed = 0
+        for (duplicateID, keeperID) in keeperIDs {
+            guard let duplicate = byID[duplicateID], let keeper = byID[keeperID] else { continue }
+            absorb(duplicate, into: keeper)
+            for item in deckItems where item.resolvedArticleID() == duplicate.id {
+                item.article = keeper
+                item.linkedArticleID = keeper.id
+            }
+            context.delete(duplicate)
+            removed += 1
+        }
         return removed
     }
 

@@ -94,4 +94,24 @@ struct ArticleIdentityVideoTests {
         #expect(remaining.estimatedReadingMinutes >= 2)
         #expect(ArticleIdentity.liveHTMLReads == 0)
     }
+
+    @Test func mergingDuplicatesLeavesAnUnrelatedStoryOnDisk() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let url = URL(string: "https://source.test/story")!
+        let html = "<p>\(String(repeating: "word ", count: 40))</p>"
+        setup.insert(Article(guid: "keeper", title: "Story", url: url, contentHTML: "<p>Short</p>"))
+        setup.insert(Article(guid: "copy", title: "Story", url: url, contentHTML: "<p>Longer page</p>"))
+        let unrelated = Article(guid: "other", title: "Other", url: URL(string: "https://source.test/other"), contentHTML: html)
+        setup.insert(unrelated)
+        try setup.save()
+
+        let screen = ModelContext(container)
+        let removed = try ArticleIdentity.mergeDuplicates(in: screen)
+        #expect(removed == 1)
+        let matchID = unrelated.id
+        let stored = try #require(setup.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })).first)
+        #expect(stored.contentHTML == html)
+        #expect(try screen.fetchCount(FetchDescriptor<Article>()) == 2)
+    }
 }
