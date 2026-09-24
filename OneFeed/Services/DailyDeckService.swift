@@ -125,13 +125,19 @@ struct DailyDeckService {
     }
 
     nonisolated static func setIncludedInToday(_ included: Bool, feeds: [Feed], in context: ModelContext) throws {
+        try storeIncludedInToday(included, feeds: feeds, in: context)
+        try reconcileMembership(in: context)
+    }
+
+    /// Saves the switches and leaves today's stack alone. The filter sheet reconciles once when it closes.
+    nonisolated static func storeIncludedInToday(_ included: Bool, feeds: [Feed], in context: ModelContext) throws {
         let targets = feeds.filter { $0.includeInToday != included }
         guard !targets.isEmpty else { return }
         for feed in targets {
             feed.includeInToday = included
             feed.touchLibrary()
         }
-        try reconcileMembership(in: context)
+        try context.save()
         Task { @MainActor in
             LibrarySyncService.shared.schedulePush()
         }

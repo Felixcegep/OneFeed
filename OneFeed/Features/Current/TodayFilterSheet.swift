@@ -12,8 +12,10 @@ struct TodayFilterSheet: View {
     @State private var appliedSearch = ""
     @State private var presentedError: String?
     @State private var folderCache = TodayFolderCache()
+    @State private var deckNeedsUpdate = false
 
     var onUpdated: () -> Void
+    var onFailed: (String) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -25,7 +27,9 @@ struct TodayFilterSheet: View {
             .oneFeedInlineTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button("Close") {
+                        if commitDeckIfNeeded() { dismiss() }
+                    }
                 }
             }
             .alert("Couldn’t update Today", isPresented: Binding(
@@ -38,6 +42,7 @@ struct TodayFilterSheet: View {
             }
         }
         .oneFeedMacFormSheet()
+        .onDisappear { _ = commitDeckIfNeeded(reportFailure: true) }
         #if os(iOS)
         .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
@@ -138,10 +143,30 @@ struct TodayFilterSheet: View {
 
     private func apply(_ included: Bool, to feeds: [Feed]) {
         do {
-            try DailyDeckService.setIncludedInToday(included, feeds: feeds, in: modelContext)
-            onUpdated()
+            try DailyDeckService.storeIncludedInToday(included, feeds: feeds, in: modelContext)
+            deckNeedsUpdate = true
         } catch {
             presentedError = RefreshFailure.message(for: error, fallback: "Try again.")
+        }
+    }
+
+    /// Rebuilds Today once. Close keeps the sheet up when that rebuild fails. A swipe reports the failure on Today.
+    @discardableResult
+    private func commitDeckIfNeeded(reportFailure: Bool = false) -> Bool {
+        guard deckNeedsUpdate else { return true }
+        do {
+            try DailyDeckService.reconcileMembership(in: modelContext)
+            deckNeedsUpdate = false
+            onUpdated()
+            return true
+        } catch {
+            let message = RefreshFailure.message(for: error, fallback: "Try again.")
+            if reportFailure {
+                onFailed(message)
+            } else if presentedError == nil {
+                presentedError = message
+            }
+            return false
         }
     }
 

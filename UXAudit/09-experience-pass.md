@@ -218,6 +218,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Typing on a source counted every stored story | Source | High | Each letter in blocked words asked the store how many stories the feed had, then kept the same twenty | The newest twenty stay on screen. A saved insert or delete loads them again. A refresh loads them once when it finishes. A setting save does not | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 | Turning a source on for Today regrouped every folder | Today | Medium | Each switch rebuilt and sorted the folder list, including the sources that did not move | The groups stay until a source is added, renamed, or moved. The switch still updates that source | `FeedAndFreshRSSDomainTests.todayFilterKeepsFolderGroupsWhenASourceJoinsToday` |
 | Checking a folder on a source fetched every source | Source | Medium | Each check rebuilt the folder name list from the whole library | The names stay. The check only updates that source. A new folder still reloads the list once | `SourceDetailTests.checkingAFolderDoesNotReloadTheFolderList` |
+| Each Today switch rebuilt the deck | Today | High | Turning one source on or off fetched candidates and story memories, then reloaded Today under the sheet | The switch is saved immediately. Today rebuilds once when the sheet closes | `DailyDeckTests.todayFilterStoresTheSwitchAndRebuildsTheDeckOnce` |
 
 ## Still open
 

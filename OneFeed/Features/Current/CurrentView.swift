@@ -10,6 +10,7 @@ struct CurrentView: View {
     @State private var showingTodayFilter = false
     @State private var celebrateClear = false
     @State private var keepReadingPaneClear = false
+    @State private var todayFilterError: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var stories: [Article] {
@@ -123,7 +124,7 @@ struct CurrentView: View {
             AddSourceView(onAdded: { Task { await viewModel.refresh() } })
         }
         .sheet(isPresented: $showingTodayFilter) {
-            TodayFilterSheet { viewModel.loadCurrent() }
+            TodayFilterSheet(onUpdated: { viewModel.loadCurrent() }, onFailed: { todayFilterError = $0 })
         }
         .onChange(of: stories.count) { oldCount, newCount in
             if oldCount > 0, newCount == 0, !viewModel.isRefreshing {
@@ -136,6 +137,12 @@ struct CurrentView: View {
             guard !Task.isCancelled else { return }
             celebrateClear = false
         }
+        .alert("Couldn’t update Today", isPresented: Binding(
+            get: { todayFilterError != nil },
+            set: { if !$0 { todayFilterError = nil } }
+        )) {
+            Button("OK", role: .cancel) { todayFilterError = nil }
+        } message: { Text(todayFilterError ?? "") }
         .alert("Couldn’t refresh", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }

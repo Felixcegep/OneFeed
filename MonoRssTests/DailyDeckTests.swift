@@ -170,6 +170,27 @@ struct DailyDeckTests {
         #expect(try DailyDeckService.todayDeck(in: context)?.items.count == 1)
     }
 
+    @Test func todayFilterStoresTheSwitchAndRebuildsTheDeckOnce() throws {
+        let context = try context()
+        let keep = Feed(title: "Keep", feedURL: URL(string: "https://keep.test/rss")!)
+        let drop = Feed(title: "Drop", feedURL: URL(string: "https://drop.test/rss")!)
+        context.insert(keep)
+        context.insert(drop)
+        let kept = Article(guid: "keep", title: "Keep", publishedAt: .now.addingTimeInterval(-60), feed: keep)
+        let dropped = Article(guid: "drop", title: "Drop", publishedAt: .now, feed: drop)
+        context.insert(kept)
+        context.insert(dropped)
+        _ = try DailyDeckService().generateIfNeeded(in: context)
+
+        try DailyDeckService.storeIncludedInToday(false, feeds: [drop], in: context)
+        #expect(drop.includeInToday == false)
+        #expect(try DailyDeckService().remainingArticles(in: context).map(\.guid) == ["drop", "keep"])
+
+        try DailyDeckService.reconcileMembership(in: context)
+        #expect(try DailyDeckService().remainingArticles(in: context).map(\.guid) == ["keep"])
+        #expect(kept.state == .current)
+    }
+
     @Test func turningASourceOnFillsAnOpenSlot() throws {
         let context = try context()
         let first = Feed(title: "First", feedURL: URL(string: "https://first.test/rss")!)
