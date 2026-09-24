@@ -289,6 +289,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A ready Feed list filtered every story on each redraw | Feed | High | The empty-state check scanned folder membership and search on every body pass after the plan had already settled | A ready list skips that scan. While the plan is still running, the provisional rows are still filtered once | `TodayRefreshCoverTests.anEmptyLibraryExplainsItselfBeforeThePlan` |
 | A ready Queue or History walked every story on each redraw | Queue, History | High | The empty-state check and the Queue count scanned the stored list after the section plan had already settled | A ready list skips that scan. The Queue title uses the planned subtitle, and the stored count runs only before that plan arrives | `RetentionAndExtractionTests.queuePlanKeepsTheSavedStoryAndSplitsTheVideo` |
 | Not interested watched every source | Not interested | High | The log queried every feed, so a refresh of unrelated sources redraw the groups | Each group looks up its own source once. An older mark without a source id still matches the address away from the open screen | `NotInterestedLogTests.groupPlanKeepsNewestFirstInsideTheSource` |
+| History loaded every set-aside mark to show a count | History | High | The History screen queried every Not interested entry, including titles, just to say how many were set aside | History asks for the count. Closing the log, closing a story, or returning to the app reads that count again | `NotInterestedLogTests.groupPlanKeepsNewestFirstInsideTheSource` |
 
 ## Still open
 

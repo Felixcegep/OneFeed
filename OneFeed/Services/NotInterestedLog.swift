@@ -66,6 +66,11 @@ enum NotInterestedLog {
         return byGUID + byURL.filter { seen.insert($0.id).inserted }
     }
 
+    /// How many marks exist. History only shows this number, so it does not load every title.
+    static func count(in context: ModelContext) -> Int {
+        (try? context.fetchCount(FetchDescriptor<NotInterestedEntry>())) ?? 0
+    }
+
     nonisolated static func entries(in context: ModelContext) -> [NotInterestedEntry] {
         let descriptor = FetchDescriptor<NotInterestedEntry>(
             sortBy: [SortDescriptor(\.recordedAt, order: .reverse)]

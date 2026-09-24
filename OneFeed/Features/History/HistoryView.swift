@@ -15,7 +15,6 @@ struct HistoryView: View {
             sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
         ))
     }
-    @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
@@ -25,13 +24,20 @@ struct HistoryView: View {
     @State private var historyDays: [HistoryDay] = []
     @State private var historyReady = false
     @State private var historyHoldRevealed = false
+    @State private var setAside = NotInterestedCountBox()
+    @State private var setAsideTick = 0
 
     private var trimmedQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var notInterestedCount: Int {
+        _ = setAsideTick
+        return setAside.value(in: modelContext)
+    }
+
     private var historyHoldWaiting: Bool {
-        !historyReady && historyDays.isEmpty && notInterested.isEmpty && history.contains(where: \.isStored)
+        !historyReady && historyDays.isEmpty && notInterestedCount == 0 && history.contains(where: \.isStored)
     }
 
     private func reloadHistoryDays() async {
@@ -82,7 +88,6 @@ struct HistoryView: View {
         _ = scenePhase
         var token = ListIdentity.token(ids: history.lazy.map(\.id))
         token = token &* 31 &+ appliedSearch.hashValue
-        token = token &* 31 &+ notInterested.count
         token = token &* 31 &+ Calendar.current.startOfDay(for: .now).hashValue
         return token
     }
@@ -125,11 +130,11 @@ struct HistoryView: View {
             if LibraryHold.showsExplanation(
                 hasStoredRows: LibraryHold.storedRowsAreKnown(
                     planReady: historyReady,
-                    provisionalHasRows: history.contains(where: \.isStored) || !notInterested.isEmpty,
-                    plannedHasRows: !historyDays.isEmpty || !notInterested.isEmpty
+                    provisionalHasRows: history.contains(where: \.isStored) || notInterestedCount > 0,
+                    plannedHasRows: !historyDays.isEmpty || notInterestedCount > 0
                 ),
                 ready: historyReady,
-                hasPlannedRows: !historyDays.isEmpty || !notInterested.isEmpty
+                hasPlannedRows: !historyDays.isEmpty || notInterestedCount > 0
             ) {
                 if trimmedQuery.isEmpty {
                     EmptyLibraryState(
@@ -146,7 +151,7 @@ struct HistoryView: View {
                         description: "Try a title, note, or source name."
                     )
                 }
-            } else if !historyReady && historyDays.isEmpty && notInterested.isEmpty {
+            } else if !historyReady && historyDays.isEmpty && notInterestedCount == 0 {
                 if LibraryHold.showsStoredRows(
                     waiting: history.contains(where: \.isStored),
                     revealed: historyHoldRevealed
@@ -172,14 +177,15 @@ struct HistoryView: View {
                         Section {
                             NavigationLink {
                                 NotInterestedView()
+                                    .onDisappear { refreshSetAsideCount() }
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Not interested")
                                         .font(.body)
                                         .foregroundStyle(OneFeedTheme.ink)
-                                    Text(notInterested.isEmpty
+                                    Text(notInterestedCount == 0
                                          ? "Set aside, grouped by source"
-                                         : notInterested.count == 1 ? "1 set aside" : "\(notInterested.count) set aside")
+                                         : notInterestedCount == 1 ? "1 set aside" : "\(notInterestedCount) set aside")
                                         .font(.subheadline)
                                         .foregroundStyle(OneFeedTheme.graphite)
                                 }
@@ -222,6 +228,12 @@ struct HistoryView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
+        .onChange(of: selectedArticle?.id) { _, id in
+            if id == nil { refreshSetAsideCount() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshSetAsideCount() }
+        }
         .task(id: historyEdge) {
             await reloadHistoryDays()
         }
@@ -250,6 +262,11 @@ struct HistoryView: View {
         }
     }
 
+    private func refreshSetAsideCount() {
+        setAside.refresh(in: modelContext)
+        setAsideTick += 1
+    }
+
     private func putInQueue(_ article: Article) {
         guard article.isStored else { return }
         let motion: Animation? = OneFeedMotion.allowsMotion ? OneFeedMotion.list : nil
@@ -264,5 +281,23 @@ struct HistoryView: View {
         if let failure {
             queueError = UserFacingFailure.message(for: failure, fallback: "Couldn’t put that in Queue.")
         }
+    }
+}
+
+/// History’s “N set aside” line. The count is one query, then reused until the log screen closes or the app returns.
+private final class NotInterestedCountBox {
+    private var count = 0
+    private var loaded = false
+
+    func value(in context: ModelContext) -> Int {
+        if loaded { return count }
+        count = NotInterestedLog.count(in: context)
+        loaded = true
+        return count
+    }
+
+    func refresh(in context: ModelContext) {
+        count = NotInterestedLog.count(in: context)
+        loaded = true
     }
 }

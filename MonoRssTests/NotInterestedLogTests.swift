@@ -125,6 +125,7 @@ struct NotInterestedLogTests {
             entries: group.entries
         )
         #expect(NotInterestedLog.storedFeed(matching: unmarked, in: context)?.id == feed.id)
+        #expect(NotInterestedLog.count(in: context) == 2)
         #expect(NotInterestedListPlan.groups(from: copied).first?.entryIDs == plans.first?.entryIDs)
     }
 
