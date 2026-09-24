@@ -79,12 +79,16 @@ struct FoldersView: View {
                         editingRow(row)
                     }
                     newFolderRow
+                } else if LibraryHold.showsExplanation(
+                    hasStoredRows: !feeds.isEmpty,
+                    ready: folderDirectoryReady,
+                    hasPlannedRows: !summaries.isEmpty
+                ) {
+                    emptySourceInvite
                 } else if !folderDirectoryReady {
                     Color.clear
                         .frame(height: 1)
                         .accessibilityHidden(true)
-                } else if summaries.isEmpty {
-                    emptySourceInvite
                 } else {
                     ForEach(summaries) { summary in
                         folderRow(summary)
@@ -910,11 +914,11 @@ struct ArticleCollectionView: View {
 
     private var collectionColumn: some View {
         Group {
-            if !storyListReady {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-            } else if displayedStoryRows.isEmpty {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: articles.contains(where: \.isStored),
+                ready: storyListReady,
+                hasPlannedRows: !displayedStoryRows.isEmpty
+            ) {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
@@ -924,6 +928,10 @@ struct ArticleCollectionView: View {
                         ? { Task { await refresh.refresh(in: modelContext) } }
                         : nil
                 )
+            } else if !storyListReady {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
             } else {
                 List {
                     ForEach(displayedStoryRows) { row in

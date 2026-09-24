@@ -31,6 +31,13 @@ struct TodayRefreshCoverTests {
         #expect(next.advancing(to: nil, preview: "Gone").text == nil)
     }
 
+    @Test func anEmptyLibraryExplainsItselfBeforeThePlan() {
+        #expect(LibraryHold.showsExplanation(hasStoredRows: false, ready: false, hasPlannedRows: false))
+        #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: false, hasPlannedRows: false) == false)
+        #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: true, hasPlannedRows: false))
+        #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: true, hasPlannedRows: true) == false)
+    }
+
     @Test func theFirstLoadStillUsesTheCover() {
         #expect(TodayRefreshCover.isShown(isRefreshing: true, hasStories: false, hasFeeds: false, skipsOpeningCover: false))
         #expect(TodayRefreshCover.isShown(isRefreshing: true, hasStories: true, hasFeeds: false, skipsOpeningCover: false) == false)

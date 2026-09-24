@@ -723,6 +723,14 @@ struct ArticleRatingControl: View {
     }
 }
 
+/// An empty library explains itself on the first frame. Rows that are already stored wait for their plan.
+enum LibraryHold {
+    static func showsExplanation(hasStoredRows: Bool, ready: Bool, hasPlannedRows: Bool) -> Bool {
+        if !hasStoredRows { return true }
+        return ready && !hasPlannedRows
+    }
+}
+
 struct EmptyLibraryState: View {
     let title: String
     let systemImage: String

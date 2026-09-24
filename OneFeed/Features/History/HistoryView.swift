@@ -110,24 +110,30 @@ struct HistoryView: View {
 
     private var historyColumn: some View {
         Group {
-            if !historyReady && historyDays.isEmpty && notInterested.isEmpty {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: history.contains(where: \.isStored) || !notInterested.isEmpty,
+                ready: historyReady,
+                hasPlannedRows: !historyDays.isEmpty || !notInterested.isEmpty
+            ) {
+                if trimmedQuery.isEmpty {
+                    EmptyLibraryState(
+                        title: "No history yet",
+                        systemImage: "clock",
+                        description: "Read and skipped pieces from Today and Queue land here.",
+                        actionTitle: "Open Today",
+                        action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a title, note, or source name."
+                    )
+                }
+            } else if !historyReady && historyDays.isEmpty {
                 Color.clear
                     .frame(height: 1)
                     .accessibilityHidden(true)
-            } else if trimmedQuery.isEmpty && historyDays.isEmpty && notInterested.isEmpty {
-                EmptyLibraryState(
-                    title: "No history yet",
-                    systemImage: "clock",
-                    description: "Read and skipped pieces from Today and Queue land here.",
-                    actionTitle: "Open Today",
-                    action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
-                )
-            } else if historyReady && !trimmedQuery.isEmpty && historyDays.isEmpty {
-                EmptyLibraryState(
-                    title: "No matches",
-                    systemImage: "magnifyingglass",
-                    description: "Try a title, note, or source name."
-                )
             } else {
                 List {
                     if trimmedQuery.isEmpty {

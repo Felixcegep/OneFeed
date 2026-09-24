@@ -119,14 +119,20 @@ struct SavedView: View {
     private var queueColumn: some View {
         let layout = queueLayout
         return Group {
-            if !queueReady && !layout.hasQueue {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: savedQuery.contains(where: \.isStored),
+                ready: queueReady,
+                hasPlannedRows: layout.hasQueue
+            ) {
+                if searchQuery.isEmpty {
+                    empty
+                } else {
+                    noMatches
+                }
+            } else if !queueReady && !layout.hasQueue {
                 Color.clear
                     .frame(height: 1)
                     .accessibilityHidden(true)
-            } else if queueReady && !layout.hasQueue && searchQuery.isEmpty {
-                empty
-            } else if queueReady && layout.upNext == nil && !searchQuery.isEmpty {
-                noMatches
             } else {
                 List {
                     if let upNext = layout.upNext {

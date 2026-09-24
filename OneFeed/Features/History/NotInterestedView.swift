@@ -54,16 +54,20 @@ struct NotInterestedView: View {
 
     var body: some View {
         Group {
-            if !logReady && grouped.isEmpty {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-            } else if grouped.isEmpty {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: !entries.isEmpty,
+                ready: logReady,
+                hasPlannedRows: !grouped.isEmpty
+            ) {
                 EmptyLibraryState(
                     title: "Nothing set aside",
                     systemImage: "hand.thumbsdown",
                     description: "Skip a story, then choose Not interested. Those articles stay here, grouped by source."
                 )
+            } else if !logReady && grouped.isEmpty {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
             } else {
                 List {
                     ForEach(grouped) { group in
