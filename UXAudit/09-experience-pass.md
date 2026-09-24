@@ -63,6 +63,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Launch and Undo animated the screen behind them | Launch, reader, lists | High | The fade sat on the root and on the list, so tabs and rows moved with the cover or the banner | The launch cover and the Undo bar animate inside their own overlay. The screen behind them stays still | Code review |
 | Save on the takeaway sheet could write twice | Reader | Medium | The button stayed active until the sheet finished dismissing | A second Save is ignored. The curtain’s caption wait also stops if the curtain is already gone | Code review |
 | Adding a link loaded every article body to see if it was already saved | Queue, Feed | High | The lookup fetched full articles, including HTML, then compared URLs | The lookup reads ids and URLs only. The matching story is opened after it is found | Code review |
+| Opening a set-aside story or importing a file scanned every article body | Not interested, import | High | Those lookups fetched the full library to compare a URL | They use the same id-and-URL lookup. A guid match stops after one row | Code review |
 
 ## Still open
 

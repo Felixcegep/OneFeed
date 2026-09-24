@@ -167,13 +167,12 @@ enum NotInterestedLog {
     static func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {
         let guid = entry.articleGUID
         if !guid.isEmpty {
-            let descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == guid })
+            var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == guid })
+            descriptor.fetchLimit = 1
             if let match = try? context.fetch(descriptor).first { return match }
         }
-        guard let url = entry.articleURL, !url.isEmpty else { return nil }
-        return (try? context.fetch(FetchDescriptor<Article>()))?.first {
-            ArticleIdentity.normalizedURLString($0.url) == url
-        }
+        guard let url = entry.articleURL, let parsed = URL(string: url) else { return nil }
+        return ArticleIdentity.storedArticle(matching: parsed, in: context)
     }
 
     private static func trim(in context: ModelContext) {
