@@ -223,6 +223,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The reader checked the disk for an imported file on every redraw | Reader | Medium | The PDF pane, the mode switch, and Share each asked whether the file exists | The lookup happens once. Later redraws reuse that result | `RetentionAndExtractionTests.readerRedrawDoesNotLookUpTheImportedFileAgain` |
 | Typing on a source rebuilt every folder membership | Source | Medium | Each letter asked every folder whether the source belonged there, and each row asked twice | The membership set is built once. A folder check rebuilds it. Typing reuses it | `SourceDetailTests.typingDoesNotRebuildFolderMembership` |
 | Today copied a full story before deciding not to fetch it | Today | High | The follow-up fetch read `contentHTML` on the main thread, then skipped the download | That read happens on a separate store context. A full story is left alone | `RetentionAndExtractionTests.aFullTodayStoryIsNotFetchedAgain` |
+| Saving a fetched article counted every word on the main thread | Reader, Today | High | After the page arrived, the reading time walked the new HTML before the next frame | The count runs off the main thread. The stored time only goes up. A duplicate merge still counts on the thread that already opened those two bodies | `RetentionAndExtractionTests.enrichUpcomingExtractsOnlyCurrentAndNextQueued` |
 
 ## Still open
 

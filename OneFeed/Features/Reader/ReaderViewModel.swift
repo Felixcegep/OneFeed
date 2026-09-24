@@ -82,6 +82,9 @@ final class ReaderViewModel {
         isExtracting = true
         defer { isExtracting = false }
         guard let html = await ArticleExtractionService().extractedHTML(for: article, alreadyEligible: true) else { return }
+        let minutes = await Task.detached(priority: .utility) {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+        }.value
         do {
             try Task.checkCancellation()
         } catch {
@@ -91,7 +94,7 @@ final class ReaderViewModel {
             article.contentHTML = html
             noteDocumentChanged()
         }
-        article.refreshEstimatedReadingMinutes()
+        article.raiseReadingEstimate(minutes)
         if let failure = saveArticleChanges() {
             bodyError = failure
         }

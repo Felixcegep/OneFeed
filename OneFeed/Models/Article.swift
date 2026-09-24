@@ -153,12 +153,17 @@ final class Article {
     /// Raises the persisted estimate when current HTML is longer than ingest.
     func refreshEstimatedReadingMinutes() {
         guard contentKind == "article" else { return }
-        let minutes = ContentClassifier.readingMinutes(
-            words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+        raiseReadingEstimate(
+            ContentClassifier.readingMinutes(
+                words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+            )
         )
-        if minutes > estimatedReadingMinutes {
-            estimatedReadingMinutes = minutes
-        }
+    }
+
+    /// Keeps a longer estimate. A shorter count does not replace one already stored.
+    func raiseReadingEstimate(_ minutes: Int) {
+        guard contentKind == "article", minutes > estimatedReadingMinutes else { return }
+        estimatedReadingMinutes = minutes
     }
 
     /// The reader asks for this on redraws. The check stops at the first visible character.

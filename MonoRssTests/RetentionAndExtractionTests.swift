@@ -344,6 +344,14 @@ struct RetentionAndExtractionTests {
         #expect(extractor.urls.isEmpty)
         #expect(article.contentHTML == "<p>\(long)</p>")
     }
+
+    @Test func readingMinutesForAFetchedBodyAreCountedOffTheMainActor() async {
+        let html = "<p>" + String(repeating: "word ", count: 440) + "</p>"
+        let minutes = await Task.detached {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+        }.value
+        #expect(minutes == 2)
+    }
 }
 
 private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {

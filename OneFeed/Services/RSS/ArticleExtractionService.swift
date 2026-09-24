@@ -112,8 +112,11 @@ final class ArticleExtractionService {
         for article in targets {
             guard let html = await extractedHTML(for: article) else { continue }
             if html != article.contentHTML {
+                let minutes = await Task.detached(priority: .utility) {
+                    ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+                }.value
                 article.contentHTML = html
-                article.refreshEstimatedReadingMinutes()
+                article.raiseReadingEstimate(minutes)
                 bodies.append(
                     ExtractedBody(
                         articleID: article.id,
