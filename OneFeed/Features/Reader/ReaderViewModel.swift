@@ -66,6 +66,7 @@ final class ReaderViewModel {
         }
         if html != article.contentHTML {
             article.contentHTML = html
+            noteDocumentChanged()
         }
         article.refreshEstimatedReadingMinutes()
         if let failure = saveArticleChanges() {
@@ -102,7 +103,11 @@ final class ReaderViewModel {
         do {
             let reply = try await gemini.summarizeYouTube(url: url)
             try Task.checkCancellation()
+            let previousSummary = article.aiSummary
             article.aiSummary = reply.text
+            if previousSummary != reply.text {
+                noteDocumentChanged()
+            }
             article.videoGeminiInteractionID = reply.id
             var messages = VideoChatLog.decode(article.videoChatJSON)
             if messages.isEmpty {
@@ -204,6 +209,8 @@ final class ReaderViewModel {
         }
     }
 
+    /// Bumps when the stored article body changes, so the page reloads without reading that body in the view.
+    private(set) var bodyRevision = 0
     private var cachedDocument: (key: String, html: String)?
     private var cachedBodyHash: (text: String, hash: Int)?
     private var cachedSummaryHash: (text: String, hash: Int)?
@@ -228,7 +235,44 @@ final class ReaderViewModel {
         return ReaderWebWarmup.blankURL
     }
 
+    /// Changes when the page should load again. A duration update stays off this id.
+    func readerLoadID(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) -> String {
+        "\(article.id.uuidString)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(bodyRevision)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+    }
+
+    /// Sanitizes and assembles the page away from the main thread. A cached page returns immediately.
+    func loadDocumentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) async -> String {
+        let draft = makeDraft(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
+        if let cachedDocument, cachedDocument.key == draft.cacheKey {
+            return cachedDocument.html
+        }
+        let key = draft.cacheKey
+        let html = await Task.detached(priority: .userInitiated) {
+            Self.render(draft)
+        }.value
+        guard !Task.isCancelled else { return html }
+        if cachedDocument?.key == key || cachedDocument == nil {
+            cachedDocument = (key, html)
+        }
+        return html
+    }
+
     func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) -> String {
+        let draft = makeDraft(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
+        if let cachedDocument, cachedDocument.key == draft.cacheKey {
+            return cachedDocument.html
+        }
+        let html = Self.render(draft)
+        cachedDocument = (draft.cacheKey, html)
+        return html
+    }
+
+    private func noteDocumentChanged() {
+        bodyRevision += 1
+        cachedDocument = nil
+    }
+
+    private func makeDraft(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool) -> ReaderDocumentDraft {
         let fallback = switch article.contentKind {
         case "epub":
             "<p>This book couldn’t be opened. Import the EPUB again.</p>"
@@ -251,18 +295,9 @@ final class ReaderViewModel {
         } else {
             rawBody = article.readableHTML ?? fallback
         }
-        #if canImport(UIKit)
-        let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
-        #else
-        let typeSize = "standard"
-        #endif
         // Length and date stay out of this key. A late duration must not rebuild the page.
         // The body hash is remembered, so a redraw does not walk the article again.
-        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
-        if let cachedDocument, cachedDocument.key == key {
-            return cachedDocument.html
-        }
-        let body = ReaderHTML.sanitizedBody(rawBody)
+        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
         case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
@@ -282,27 +317,49 @@ final class ReaderViewModel {
         let sourceSize: CGFloat = 11
         let horizontalPad = 48
         #endif
-        let metaBits = readerMetaLine
-        let bodyWeight = boldText ? 650 : 400
-        let headingWeight = boldText ? 700 : 500
-        let metaWeight = boldText ? 600 : 400
+        return ReaderDocumentDraft(
+            cacheKey: key,
+            rawBody: rawBody,
+            metaLine: readerMetaLine,
+            title: article.title,
+            sourceName: ArticlePresentation.sourceName(for: article),
+            family: family,
+            bodySize: bodySize,
+            headingSize: headingSize,
+            sectionSize: sectionSize,
+            titleSize: titleSize,
+            metaSize: metaSize,
+            sourceSize: sourceSize,
+            horizontalPad: horizontalPad,
+            bodyWeight: boldText ? 650 : 400,
+            headingWeight: boldText ? 700 : 500,
+            metaWeight: boldText ? 600 : 400,
+            rootCSS: OneFeedPalette.readerRootCSS,
+            contrastCSS: OneFeedPalette.readerContrastCSS,
+            focusCSS: ReaderFocus.pageCSS,
+            focusScript: ReaderFocus.pageScriptTag
+        )
+    }
+
+    nonisolated private static func render(_ draft: ReaderDocumentDraft) -> String {
+        let body = ReaderHTML.sanitizedBody(draft.rawBody)
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
           color-scheme: light dark;
-        \(OneFeedPalette.readerRootCSS)
+        \(draft.rootCSS)
         }
-        \(OneFeedPalette.readerContrastCSS)
+        \(draft.contrastCSS)
         html { overflow-x: hidden; }
         body {
-          font-family: \(family);
-          font-size: \(bodySize)px;
+          font-family: \(draft.family);
+          font-size: \(draft.bodySize)px;
           font-optical-sizing: auto;
-          font-weight: \(bodyWeight);
+          font-weight: \(draft.bodyWeight);
           line-height: 1.55;
           margin: 0 auto;
-          padding: 36px \(horizontalPad)px 48px;
+          padding: 36px \(draft.horizontalPad)px 48px;
           max-width: 36em;
           color: var(--ink);
           background: var(--paper);
@@ -313,37 +370,37 @@ final class ReaderViewModel {
           -webkit-hyphens: auto;
         }
         .source {
-          font: 700 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: 700 \(draft.sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
           letter-spacing: 0.04em;
           text-transform: uppercase;
           color: var(--meta);
         }
         h1 {
-          font-family: \(family);
-          font-size: \(titleSize)px;
-          font-weight: \(headingWeight);
+          font-family: \(draft.family);
+          font-size: \(draft.titleSize)px;
+          font-weight: \(draft.headingWeight);
           line-height: 1.22;
           letter-spacing: -0.012em;
           color: var(--title);
           margin: 14px 0 10px;
         }
         .meta {
-          font: \(metaWeight) \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(draft.metaWeight) \(draft.metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           margin: 0 0 32px;
           padding-bottom: 20px;
           border-bottom: 1px solid var(--rule);
         }
         h2, h3 {
-          font-family: \(family);
-          font-weight: \(headingWeight);
+          font-family: \(draft.family);
+          font-weight: \(draft.headingWeight);
           line-height: 1.3;
           letter-spacing: -0.01em;
           color: var(--title);
           margin: 1.6em 0 0.45em;
         }
-        h2 { font-size: \(headingSize)px; }
-        h3 { font-size: \(sectionSize)px; }
+        h2 { font-size: \(draft.headingSize)px; }
+        h3 { font-size: \(draft.sectionSize)px; }
         p { margin: 0 0 1.05em; }
         img, video, iframe, figure {
           max-width: 100%;
@@ -353,7 +410,7 @@ final class ReaderViewModel {
           border-radius: 10px;
         }
         figcaption, cite {
-          font: \(metaWeight) \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(draft.metaWeight) \(draft.metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           display: block;
           margin-top: 8px;
@@ -374,11 +431,41 @@ final class ReaderViewModel {
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
-        \(ReaderFocus.pageCSS)
-        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(escape(metaBits))</div><div id="onefeed-article">\(body)</div>\(ReaderFocus.pageScriptTag)</body></html>
+        \(draft.focusCSS)
+        </style></head><body><div class="source">\(escape(draft.sourceName))</div><h1>\(escape(draft.title))</h1><div class="meta">\(escape(draft.metaLine))</div><div id="onefeed-article">\(body)</div>\(draft.focusScript)</body></html>
         """
-        cachedDocument = (key, html)
         return html
+    }
+
+    private static var typeSizeToken: String {
+        #if canImport(UIKit)
+        UIApplication.shared.preferredContentSizeCategory.rawValue
+        #else
+        "standard"
+        #endif
+    }
+
+    private struct ReaderDocumentDraft: Sendable {
+        var cacheKey: String
+        var rawBody: String
+        var metaLine: String
+        var title: String
+        var sourceName: String
+        var family: String
+        var bodySize: CGFloat
+        var headingSize: CGFloat
+        var sectionSize: CGFloat
+        var titleSize: CGFloat
+        var metaSize: CGFloat
+        var sourceSize: CGFloat
+        var horizontalPad: Int
+        var bodyWeight: Int
+        var headingWeight: Int
+        var metaWeight: Int
+        var rootCSS: String
+        var contrastCSS: String
+        var focusCSS: String
+        var focusScript: String
     }
 
     /// Reuses the hash when the text is the same buffer. A redraw should not walk the article.
@@ -402,6 +489,7 @@ final class ReaderViewModel {
         let persisted = ImportedDocumentService.persistedHTML(html)
         guard let persisted else { return }
         article.contentHTML = persisted
+        noteDocumentChanged()
         let minutes = ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
         if minutes > article.estimatedReadingMinutes {
             article.estimatedReadingMinutes = minutes
@@ -425,6 +513,7 @@ final class ReaderViewModel {
                 try EPUBReader.html(fromEPUB: file, extractedTo: extracted)
             }.value
             article.contentHTML = html
+            noteDocumentChanged()
             if let failure = saveArticleChanges() {
                 bodyError = failure
             }
@@ -447,7 +536,7 @@ final class ReaderViewModel {
         }
     }
 
-    private func escape(_ text: String) -> String {
+    nonisolated private static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")

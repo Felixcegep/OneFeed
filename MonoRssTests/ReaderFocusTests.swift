@@ -167,6 +167,24 @@ struct ReaderFocusTests {
         let bold = model.documentHTML(fontChoice: .serif, textSize: .standard, boldText: true)
         #expect(bold != first)
         #expect(bold.contains("font-weight: 650"))
+        #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == model.readerLoadID(fontChoice: .serif, textSize: .standard))
+    }
+
+    @Test @MainActor func readerDocumentBuiltOffTheMainThreadMatchesTheCachedPage() async {
+        let article = Article(
+            guid: "off-main",
+            title: "Essay",
+            contentHTML: #"<p>Hello reader</p><script>alert(1)</script>"#
+        )
+        let model = ReaderViewModel(article: article)
+        let built = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        let cached = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(built == cached)
+        #expect(built.contains("Hello reader"))
+        #expect(!built.contains("alert(1)"))
+        let loadID = model.readerLoadID(fontChoice: .serif, textSize: .standard)
+        article.durationSeconds = 600
+        #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == loadID)
     }
 
     @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {

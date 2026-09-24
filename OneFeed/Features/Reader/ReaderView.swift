@@ -669,11 +669,18 @@ struct ReaderView: View {
             inAppWebsite(url)
         } else {
             ReaderWebContent(
-                html: viewModel.documentHTML(
+                loadID: viewModel.readerLoadID(
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
                     textSize: ReaderTextSize(rawValue: textSize) ?? .standard,
                     boldText: legibilityWeight == .bold
                 ),
+                loadHTML: {
+                    await viewModel.loadDocumentHTML(
+                        fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
+                        textSize: ReaderTextSize(rawValue: textSize) ?? .standard,
+                        boldText: legibilityWeight == .bold
+                    )
+                },
                 metaLine: viewModel.readerMetaLine,
                 title: article.title,
                 articleID: article.id,
@@ -937,7 +944,8 @@ private struct WebsiteReaderPane: View {
 }
 
 private struct ReaderWebContent: View {
-    let html: String
+    let loadID: String
+    let loadHTML: () async -> String
     let metaLine: String
     let title: String
     let articleID: UUID
@@ -1014,13 +1022,15 @@ private struct ReaderWebContent: View {
                 pendingMeta = nil
                 scheduleTrailPersist()
             }
-            .task(id: html) {
+            .task(id: loadID) {
                 if hasCommitted, didRestoreTrail {
                     await persistTrailBeforeReplace()
                 }
                 didRestoreTrail = false
                 lastPersistedTrail = nil
                 ignoreNextZoneApply = false
+                let html = await loadHTML()
+                guard !Task.isCancelled else { return }
                 allowCover = false
                 async let cover: Void = revealCoverIfStillWaiting()
                 page.load(html: html, baseURL: baseURL)
