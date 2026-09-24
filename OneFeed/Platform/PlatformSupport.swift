@@ -6,6 +6,50 @@ import UIKit
 #endif
 import SwiftUI
 
+/// Whether a keyboard frame covers the floating tab bar. A docked keyboard meets the bottom of the screen. A floating one does not.
+enum OneFeedKeyboardClearance {
+    static func coversBottom(keyboardMinY: CGFloat, keyboardMaxY: CGFloat, screenMaxY: CGFloat) -> Bool {
+        guard screenMaxY > 1, keyboardMaxY > keyboardMinY else { return false }
+        let overlap = screenMaxY - keyboardMinY
+        return keyboardMaxY >= screenMaxY - 1 && overlap > 44
+    }
+}
+
+#if os(iOS)
+private struct OneFeedTabBarClearance: ViewModifier {
+    @State private var keyboardCoversBottom = false
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: keyboardCoversBottom ? 0 : 96)
+            }
+            .animation(nil, value: keyboardCoversBottom)
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+                keyboardCoversBottom = Self.coversBottom(note)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                keyboardCoversBottom = false
+            }
+    }
+
+    private static func coversBottom(_ note: Notification) -> Bool {
+        guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return false }
+        guard let screenMaxY = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .bounds.maxY
+        else { return false }
+        return OneFeedKeyboardClearance.coversBottom(
+            keyboardMinY: frame.minY,
+            keyboardMaxY: frame.maxY,
+            screenMaxY: screenMaxY
+        )
+    }
+}
+#endif
+
 extension Color {
     static var oneFeedSystemBackground: Color {
         #if os(macOS)
@@ -158,12 +202,11 @@ extension View {
     }
 
     /// Phone tab-bar clearance only. Mac windows have no floating tabs.
+    /// A docked keyboard already covers the tab bar, so the spacer leaves while it is up.
     @ViewBuilder
     func oneFeedTabBarClearance() -> some View {
         #if os(iOS)
-        safeAreaInset(edge: .bottom, spacing: 0) {
-            Color.clear.frame(height: 96)
-        }
+        modifier(OneFeedTabBarClearance())
         #else
         self
         #endif

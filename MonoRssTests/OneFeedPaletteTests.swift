@@ -53,6 +53,13 @@ struct OneFeedPaletteTests {
         #expect(OneFeedPalette.text.contrastLight == OneFeedPalette.text.light)
     }
 
+    @Test func dockedKeyboardDropsTabClearance() {
+        #expect(OneFeedKeyboardClearance.coversBottom(keyboardMinY: 508, keyboardMaxY: 844, screenMaxY: 844))
+        #expect(!OneFeedKeyboardClearance.coversBottom(keyboardMinY: 200, keyboardMaxY: 500, screenMaxY: 844))
+        #expect(!OneFeedKeyboardClearance.coversBottom(keyboardMinY: 844, keyboardMaxY: 1180, screenMaxY: 844))
+        #expect(!OneFeedKeyboardClearance.coversBottom(keyboardMinY: 820, keyboardMaxY: 844, screenMaxY: 844))
+    }
+
     @Test func currentArticleUsesALabelNotOnlyColor() {
         let current = Article(guid: "now", title: "Current", state: .current)
         let queued = Article(guid: "later", title: "Queued", state: .queued)
