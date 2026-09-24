@@ -15,8 +15,7 @@ enum HistoryViewModel {
         let stored = articles.filter(\.isStored)
         let groups = Dictionary(grouping: stored) { calendar.startOfDay(for: $0.completedAt ?? $0.publishedAt) }
         return groups.keys.sorted(by: >).map { day in
-            let label: String
-            label = OneFeedDateLabel.historySection(day, calendar: calendar)
+            let label = OneFeedDateLabel.historySection(day, calendar: calendar)
             let articles = (groups[day] ?? []).sorted {
                 ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt)
             }
