@@ -199,4 +199,37 @@ struct NotInterestedLibrarianTests {
         )
         #expect(again.message.contains("already in Archive"))
     }
+
+    @Test func skipUndoCanFileNotInterestedAndStillRestore() throws {
+        let context = try context()
+        let article = Article(
+            guid: "skip-1",
+            title: "A story to set aside",
+            url: URL(string: "https://example.com/skip"),
+            state: .current
+        )
+        context.insert(article)
+        try context.save()
+
+        ReadingUndo.begin(article, in: context)
+        article.state = .skipped
+        article.completedAt = .now
+        ReadingUndo.commit(article, in: context)
+
+        let center = ReadingUndoCenter.shared
+        #expect(center.offer?.title == "Skipped")
+        #expect(center.offer?.strongerTitle == "Not interested")
+        center.performStronger()
+        #expect(article.notInterested)
+        #expect(center.offer?.title == "Not interested")
+        #expect(center.offer?.strongerTitle == nil)
+        center.performStronger()
+        #expect(try context.fetch(FetchDescriptor<NotInterestedEntry>()).count == 1)
+
+        center.performUndo()
+        #expect(article.state == .current)
+        #expect(article.notInterested == false)
+        #expect(try context.fetch(FetchDescriptor<NotInterestedEntry>()).isEmpty)
+        #expect(center.offer == nil)
+    }
 }

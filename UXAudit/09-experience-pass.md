@@ -94,6 +94,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The progress line’s bar height animated while a fling reached the top | Today, Feed, Settings | High | Showing the line animated its safe-area height, so the inset moved with the large title | The line still waits 160ms, then the height snaps. Width still does not animate | Code review. Still needs a device pass for scroll-to-top |
 | Filing a source left the open folder on the previous stories | Feed | High | The row cache ignored source membership, so a move that kept the same article count and ends did not regroup | Folder membership is part of the row cache. Opening a story still does not walk every article | Code review |
 | Today kept yesterday’s “already read” line after the story index updated | Today | Medium | Captions were reused for the hour and did not notice a new story index | A story-index update reloads captions. The same deck still reuses them until then | Code review |
+| Skip had no way to file Not interested without hunting the menu | Today, Feed, reader | Medium | The undo bar only put the story back | After Skip, the bar offers Not interested. Undo still restores the story from before the skip, including that filing | `NotInterestedLogTests.skipUndoCanFileNotInterestedAndStillRestore` |
 
 ## Still open
 

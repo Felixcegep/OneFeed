@@ -12,21 +12,27 @@ final class ReadingUndoCenter {
 
     struct Offer: Identifiable {
         let id = UUID()
-        let title: String
+        var title: String
+        var strongerTitle: String?
         let undo: () -> Void
+        var stronger: (() -> Void)?
     }
 
-    func present(title: String, undo: @escaping () -> Void) {
+    func present(
+        title: String,
+        strongerTitle: String? = nil,
+        stronger: (() -> Void)? = nil,
+        undo: @escaping () -> Void
+    ) {
         dismissTask?.cancel()
-        let shown = Offer(title: title, undo: undo)
+        let shown = Offer(
+            title: title,
+            strongerTitle: strongerTitle,
+            undo: undo,
+            stronger: stronger
+        )
         offer = shown
-        dismissTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
-            guard !Task.isCancelled else { return }
-            if offer?.id == shown.id {
-                offer = nil
-            }
-        }
+        scheduleDismiss(of: shown.id)
     }
 
     func performUndo() {
@@ -34,6 +40,29 @@ final class ReadingUndoCenter {
         offer = nil
         dismissTask?.cancel()
         action?()
+    }
+
+    /// Skip can become Not interested. Undo still restores the story from before the skip.
+    func performStronger() {
+        guard let action = offer?.stronger else { return }
+        action()
+        guard var current = offer else { return }
+        current.stronger = nil
+        current.strongerTitle = nil
+        current.title = String(localized: "Not interested")
+        offer = current
+        scheduleDismiss(of: current.id)
+    }
+
+    private func scheduleDismiss(of id: UUID) {
+        dismissTask?.cancel()
+        dismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            if offer?.id == id {
+                offer = nil
+            }
+        }
     }
 }
 
@@ -84,8 +113,15 @@ enum ReadingUndo {
                 .map(\.id)
         }
         let marked = article.notInterested && !snapshot.notInterested
+        let articleID = article.id
+        let stronger: (() -> Void)? = marked ? nil : {
+            guard let article = storedArticle(id: articleID, in: context) else { return }
+            NotInterestedLog.record(article, in: context)
+        }
         ReadingUndoCenter.shared.present(
-            title: marked ? String(localized: "Not interested") : String(localized: "Skipped")
+            title: marked ? String(localized: "Not interested") : String(localized: "Skipped"),
+            strongerTitle: marked ? nil : String(localized: "Not interested"),
+            stronger: stronger
         ) {
             restore(snapshot, in: context)
         }
@@ -271,13 +307,22 @@ struct ReadingUndoBanner: ViewModifier {
     }
 
     private func bar(_ offer: ReadingUndoCenter.Offer) -> some View {
-        HStack(spacing: 12) {
-            Text(offer.title)
-                .font(.subheadline.weight(.medium))
+        let title = Text(offer.title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(OneFeedTheme.ink)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: false, vertical: true)
+        let actions = HStack(spacing: 8) {
+            if let strongerTitle = offer.strongerTitle {
+                Button(strongerTitle) {
+                    center.performStronger()
+                    onApplied()
+                }
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(OneFeedTheme.ink)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
+                .frame(minHeight: 44)
+                .accessibilityHint("Files this story as not interested. Undo still puts it back.")
+            }
             Button("Undo") {
                 center.performUndo()
                 onApplied()
@@ -288,6 +333,20 @@ struct ReadingUndoBanner: ViewModifier {
             .frame(minHeight: 44)
             .background(OneFeedTheme.ink, in: Capsule())
             .accessibilityHint("Puts the story back")
+        }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    title
+                    actions
+                }
+            } else {
+                HStack(spacing: 12) {
+                    title
+                    Spacer(minLength: 8)
+                    actions
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
