@@ -239,6 +239,14 @@ final class ReaderViewModel {
     private(set) var bodyRevision = 0
     /// Times the page copied the stored body on the main thread. A saved article does not.
     private(set) var memoryBodyCopies = 0
+
+    /// True when this article’s body may differ from the last save. Another dirty object in the store does not count.
+    private var articleBodyIsUnsaved: Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
     private var cachedDocument: (key: String, html: String)?
     private var cachedBodyHash: (text: String, hash: Int)?
     private var cachedSummaryHash: (text: String, hash: Int)?
@@ -268,7 +276,7 @@ final class ReaderViewModel {
     }
 
     /// Sanitizes and assembles the page away from the main thread. A cached page returns immediately.
-    /// A saved article is read on a separate store context. An unsaved edit is copied from memory.
+    /// A saved article is read on a separate store context. An unsaved edit to this article is copied from memory.
     func loadDocumentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) async -> String {
         let key = readerLoadID(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
         if let cachedDocument, cachedDocument.key == key {
@@ -278,7 +286,7 @@ final class ReaderViewModel {
         let kind = article.contentKind
         let container = article.modelContext?.container
         let memory: ReaderBodySnapshot?
-        if container == nil || article.modelContext?.hasChanges == true {
+        if container == nil || articleBodyIsUnsaved {
             memoryBodyCopies += 1
             memory = ReaderBodySnapshot(
                 contentKind: kind,

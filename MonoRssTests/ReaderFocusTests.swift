@@ -209,6 +209,31 @@ struct ReaderFocusTests {
         #expect(model.memoryBodyCopies == 1)
     }
 
+    @Test @MainActor func anotherUnsavedObjectLeavesTheSavedArticleOnDisk() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "saved-beside-draft", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        context.insert(Article(guid: "unrelated-draft", title: "Draft"))
+        #expect(context.hasChanges)
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Saved page"))
+        #expect(model.memoryBodyCopies == 0)
+    }
+
+    @Test @MainActor func anUnsavedEditToThisArticleUsesTheBodyInMemory() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "edited-page", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        article.contentHTML = "<p>Edited after save</p>"
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Edited after save"))
+        #expect(model.memoryBodyCopies == 1)
+    }
+
     @Test @MainActor func whitespaceOnlyBodyUsesTheMetadataFallback() async {
         let article = Article(guid: "blank", title: "Empty", contentHTML: "   \n")
         let model = ReaderViewModel(article: article)
