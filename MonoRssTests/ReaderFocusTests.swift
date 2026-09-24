@@ -187,6 +187,28 @@ struct ReaderFocusTests {
         #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == loadID)
     }
 
+    @Test @MainActor func savedReaderPageDoesNotCopyTheBodyOnTheMainThread() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "saved-page", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Saved page"))
+        #expect(model.memoryBodyCopies == 0)
+    }
+
+    @Test @MainActor func unsavedReaderPageUsesTheBodyAlreadyInMemory() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "draft-page", title: "Essay", contentHTML: "<p>Edited before save</p>")
+        context.insert(article)
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Edited before save"))
+        #expect(!html.contains("only provided metadata"))
+        #expect(model.memoryBodyCopies == 1)
+    }
+
     @Test @MainActor func whitespaceOnlyBodyUsesTheMetadataFallback() async {
         let article = Article(guid: "blank", title: "Empty", contentHTML: "   \n")
         let model = ReaderViewModel(article: article)

@@ -237,6 +237,8 @@ final class ReaderViewModel {
 
     /// Bumps when the stored article body changes, so the page reloads without reading that body in the view.
     private(set) var bodyRevision = 0
+    /// Times the page copied the stored body on the main thread. A saved article does not.
+    private(set) var memoryBodyCopies = 0
     private var cachedDocument: (key: String, html: String)?
     private var cachedBodyHash: (text: String, hash: Int)?
     private var cachedSummaryHash: (text: String, hash: Int)?
@@ -266,18 +268,31 @@ final class ReaderViewModel {
     }
 
     /// Sanitizes and assembles the page away from the main thread. A cached page returns immediately.
-    /// The stored body is copied here and trimmed off the main thread.
+    /// A saved article is read on a separate store context. An unsaved edit is copied from memory.
     func loadDocumentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) async -> String {
         let key = readerLoadID(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
-        let snapshot = ReaderBodySnapshot(
-            contentKind: article.contentKind,
-            contentHTML: article.contentHTML,
-            summary: article.summary,
-            aiSummary: article.aiSummary
-        )
+        let articleID = article.id
+        let kind = article.contentKind
+        let container = article.modelContext?.container
+        let memory: ReaderBodySnapshot?
+        if container == nil || article.modelContext?.hasChanges == true {
+            memoryBodyCopies += 1
+            memory = ReaderBodySnapshot(
+                contentKind: kind,
+                contentHTML: article.contentHTML,
+                summary: article.summary,
+                aiSummary: article.aiSummary
+            )
+        } else {
+            memory = nil
+        }
+        let memoryKind = memory?.contentKind
+        let memoryHTML = memory?.contentHTML
+        let memorySummary = memory?.summary
+        let memoryAI = memory?.aiSummary
         let shell = presentationDraft(
             rawBody: "",
             cacheKey: key,
@@ -287,7 +302,18 @@ final class ReaderViewModel {
         )
         let html = await Task.detached(priority: .userInitiated) {
             var draft = shell
-            draft.rawBody = Self.resolvedBody(snapshot)
+            let fields: (kind: String, contentHTML: String?, summary: String?, aiSummary: String?)
+            if let memoryKind {
+                fields = (memoryKind, memoryHTML, memorySummary, memoryAI)
+            } else {
+                fields = Self.storedBody(id: articleID, kind: kind, in: container)
+            }
+            draft.rawBody = Self.resolvedBody(
+                kind: fields.kind,
+                contentHTML: fields.contentHTML,
+                summary: fields.summary,
+                aiSummary: fields.aiSummary
+            )
             return Self.render(draft)
         }.value
         guard !Task.isCancelled else { return html }
@@ -319,7 +345,12 @@ final class ReaderViewModel {
             summary: article.summary,
             aiSummary: article.aiSummary
         )
-        let rawBody = Self.resolvedBody(snapshot)
+        let rawBody = Self.resolvedBody(
+            kind: snapshot.contentKind,
+            contentHTML: snapshot.contentHTML,
+            summary: snapshot.summary,
+            aiSummary: snapshot.aiSummary
+        )
         // Length and date stay out of this key. A late duration must not rebuild the page.
         // The body hash is remembered, so a redraw does not walk the article again.
         let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(snapshot.trimmedSummary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
@@ -387,9 +418,33 @@ final class ReaderViewModel {
         return value.contains { !$0.isWhitespace }
     }
 
+    /// The saved body, read on the caller’s context. A missing row falls through to the metadata page.
+    nonisolated private static func storedBody(
+        id articleID: UUID,
+        kind: String,
+        in container: ModelContainer?
+    ) -> (kind: String, contentHTML: String?, summary: String?, aiSummary: String?) {
+        guard let container else {
+            return (kind, nil, nil, nil)
+        }
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else {
+            return (kind, nil, nil, nil)
+        }
+        return (stored.contentKind, stored.contentHTML, stored.summary, stored.aiSummary)
+    }
+
     /// Picks the page body without touching the view. Whitespace-only HTML still falls through to the fallback.
-    nonisolated private static func resolvedBody(_ snapshot: ReaderBodySnapshot) -> String {
-        let fallback = switch snapshot.contentKind {
+    nonisolated private static func resolvedBody(
+        kind: String,
+        contentHTML: String?,
+        summary: String?,
+        aiSummary: String?
+    ) -> String {
+        let fallback = switch kind {
         case "epub":
             "<p>This book couldn’t be opened. Import the EPUB again.</p>"
         case "pdf":
@@ -399,10 +454,11 @@ final class ReaderViewModel {
         default:
             "<p>This source only provided metadata. Open the original article to continue reading.</p>"
         }
-        if snapshot.contentKind == "youtube", !snapshot.trimmedSummary.isEmpty {
-            return ReaderHTML.videoSummaryBody(from: snapshot.trimmedSummary)
+        let trimmedSummary = aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if kind == "youtube", !trimmedSummary.isEmpty {
+            return ReaderHTML.videoSummaryBody(from: trimmedSummary)
         }
-        if let value = snapshot.contentHTML ?? snapshot.summary, hasVisibleText(value) {
+        if let value = contentHTML ?? summary, hasVisibleText(value) {
             return value
         }
         return fallback
