@@ -457,10 +457,11 @@ private struct SourceDetailView: View {
                 }
                 Button("New Folder…") { isCreatingFolder = true }
             } header: {
-                Text("Folders")
+                GallerySectionHeader(text: "Folders")
             } footer: {
-                Text("This source can live in more than one folder. Uncheck a folder to take it out of that list.")
+                    Text("This source can live in more than one folder. Uncheck a folder to take it out of that list.")
             }
+            .listRowBackground(OneFeedTheme.paper)
             Section {
                 Toggle("Included in Feed", isOn: $viewModel.isEnabled)
                 Toggle("Included in Today", isOn: $viewModel.includeInToday)
@@ -473,18 +474,20 @@ private struct SourceDetailView: View {
                     ? "Today is a small daily stack. Videos shorter than 3 minutes are skipped unless you allow Shorts."
                     : "This source is one article or file. It opens in the reader on this device.")
             }
+            .listRowBackground(OneFeedTheme.paper)
             if viewModel.feed.refreshesOverRSS {
                 Section {
                     TextField("AI, Sponsored…", text: $viewModel.blockedWords, axis: .vertical)
                         .lineLimit(2...4)
                 } header: {
-                    Text("Blocked words")
+                    GallerySectionHeader(text: "Blocked words")
                 } footer: {
                     Text("Comma or new-line separated. Matching items never enter Today or Feed.")
                 }
+                .listRowBackground(OneFeedTheme.paper)
             }
             if !viewModel.recentArticles.isEmpty {
-                Section(viewModel.feed.refreshesOverRSS ? "Recent" : "Read") {
+                Section {
                     ForEach(viewModel.recentArticles) { article in
                         Button {
                             selectedArticle = article
@@ -493,15 +496,21 @@ private struct SourceDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    GallerySectionHeader(text: viewModel.feed.refreshesOverRSS ? "Recent" : "Read")
                 }
+                .listRowBackground(OneFeedTheme.paper)
             }
             Section {
                 Button("Remove Source", role: .destructive) { viewModel.isConfirmingRemoval = true }
             }
+            .listRowBackground(OneFeedTheme.paper)
         }
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
+        .oneFeedScrollEdge()
+        .refreshProgressBanner(viewModel.progress)
         .toolbar {
             if viewModel.feed.refreshesOverRSS {
                 ToolbarItem(placement: .oneFeedTrailing) {
@@ -589,7 +598,7 @@ struct AddSourceView: View {
                         .oneFeedSubmitGo()
                         .onSubmit { add() }
                 } header: {
-                    Text("Websites, articles, or files")
+                    GallerySectionHeader(text: "Websites, articles, or files")
                 } footer: {
                     Text("One per line. Feeds, articles, PDFs, and EPUBs can share a folder.")
                 }
@@ -608,7 +617,7 @@ struct AddSourceView: View {
                             .oneFeedAutocapitalizationWords()
                     }
                 } header: {
-                    Text("Folder")
+                    GallerySectionHeader(text: "Folder")
                 } footer: {
                     Text("Same folder for every URL in this batch.")
                 }
@@ -619,7 +628,7 @@ struct AddSourceView: View {
                         HStack(spacing: 12) {
                             OneFeedMarkPulse(isActive: true, size: 22)
                             Text(progress)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(OneFeedTheme.graphite)
                         }
                     }
                     .listRowBackground(OneFeedTheme.paper)

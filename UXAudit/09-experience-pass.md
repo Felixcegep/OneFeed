@@ -135,6 +135,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | History with nothing in it had no next step | History | Medium | The empty state described the list and stopped | It offers Open Today | Code review |
 | Asking about a video used Done to leave the sheet | Reader | Low | Done is the reading verb. This button only closes the sheet | The button says Close | Code review |
 | A search with a trailing space rebuilt the list | Queue, History, Feed | Low | The applied query kept the spaces, so the cache key changed while the filter did not | The applied query is the trimmed text | Code review |
+| A source refresh had no progress line, and its sections used system titles | Source, Add Source | Medium | The form used string section headers and only the toolbar mark while fetching | Section titles match the rest of the app, rows stay on paper, and the same progress line shows while that feed fetches | Code review |
+| A second file dropped on Add to Queue was rejected | Queue | Medium | The sheet returned unhandled while an add was already running | The files wait in the same import line and still copy one at a time | Code review |
 
 ## Still open
 

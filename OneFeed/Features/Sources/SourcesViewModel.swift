@@ -231,6 +231,7 @@ final class SourceDetailViewModel {
     var presentedError: String?
     var refreshError: String?
     private(set) var isRefreshing = false
+    let progress = RefreshProgress()
     var availableFolders: [String] = []
     private var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
@@ -247,13 +248,18 @@ final class SourceDetailViewModel {
     func refresh() async {
         guard feed.refreshesOverRSS, !isRefreshing else { return }
         isRefreshing = true
-        defer { isRefreshing = false }
+        progress.begin(phase: .sources, total: 1)
+        defer {
+            progress.finish()
+            isRefreshing = false
+        }
         await BackgroundRefreshCoordinator.runExclusive {
             do {
                 try await FeedService().refresh(self.feed, in: self.context)
             } catch {
                 self.refreshError = RefreshFailure.message(for: error, fallback: "Couldn’t refresh this source.")
             }
+            self.progress.finishItem()
         }
     }
 

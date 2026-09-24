@@ -12,6 +12,8 @@ struct AddToQueueView: View {
     ) private var unread: [Article]
     @State private var address = ""
     @State private var isAdding = false
+    @State private var pendingFileURLs: [URL] = []
+    @State private var pendingDropProviders: [NSItemProvider] = []
     @State private var presentedError: String?
     @State private var isPickingFile = false
     #if os(iOS)
@@ -155,32 +157,17 @@ struct AddToQueueView: View {
         Task {
             do {
                 _ = try await QueueLinkService().add(urlString: value, in: modelContext)
-                onAdded()
-                dismiss()
             } catch {
                 presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
-                isAdding = false
             }
+            await completeAdd()
         }
     }
 
     private func importFiles(_ urls: [URL]) {
-        guard !urls.isEmpty, !isAdding else { return }
-        isAdding = true
-        presentedError = nil
-        Task {
-            do {
-                let service = ImportedDocumentService()
-                for url in urls {
-                    _ = try await service.importFile(at: url, in: modelContext)
-                }
-                onAdded()
-                dismiss()
-            } catch {
-                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
-                isAdding = false
-            }
-        }
+        guard !urls.isEmpty else { return }
+        pendingFileURLs.append(contentsOf: urls)
+        beginAdd()
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
@@ -188,25 +175,53 @@ struct AddToQueueView: View {
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
         }
-        guard !matching.isEmpty, !isAdding else { return false }
+        guard !matching.isEmpty else { return false }
+        pendingDropProviders.append(contentsOf: matching)
+        beginAdd()
+        return true
+    }
+
+    private func beginAdd() {
+        guard !isAdding else { return }
         isAdding = true
         presentedError = nil
-        Task {
-            do {
-                let service = ImportedDocumentService()
-                for provider in matching {
+        Task { await completeAdd() }
+    }
+
+    private func completeAdd() async {
+        let service = ImportedDocumentService()
+        while !pendingFileURLs.isEmpty || !pendingDropProviders.isEmpty {
+            let urls = pendingFileURLs
+            pendingFileURLs.removeAll()
+            let drops = pendingDropProviders
+            pendingDropProviders.removeAll()
+            for url in urls {
+                do {
+                    _ = try await service.importFile(at: url, in: modelContext)
+                } catch {
+                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                }
+            }
+            for provider in drops {
+                do {
                     let url = try await Self.fileURLForDrop(from: provider)
                     _ = try await service.importFile(at: url, in: modelContext)
                     try? FileManager.default.removeItem(at: url)
+                } catch {
+                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 }
-                onAdded()
-                dismiss()
-            } catch {
-                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
-                isAdding = false
             }
         }
-        return true
+        if !pendingFileURLs.isEmpty || !pendingDropProviders.isEmpty {
+            await completeAdd()
+            return
+        }
+        if presentedError == nil {
+            onAdded()
+            dismiss()
+        } else {
+            isAdding = false
+        }
     }
 
     private func addExisting(_ article: Article) {
