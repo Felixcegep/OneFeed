@@ -75,6 +75,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Restoring sources alerted twice under the title OneFeed | Sources | Medium | The alert opened when the restore started, then again when it finished, and the title did not say what happened | The alert waits until the restore finishes, and the title is the result | Code review |
 | A fuller article reloaded the page and lost the place | Reader | High | Replacing the page cleared the saved position before the new page could restore it | The current place is saved first, then the new page opens there | Code review |
 | A second Sync, Disconnect, or Connect could start another request | Settings | High | The button disabled only after the first request had already begun | A second call returns while that request is still running | Code review |
+| The opening cover flashed on a page that was already ready | Reader | Medium | The cover appeared on the same frame the page started loading | The cover and the browser mark wait 160ms, and stay hidden if the page is ready first | Code review |
 
 ## Still open
 

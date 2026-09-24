@@ -790,6 +790,7 @@ private struct WebsiteReaderPane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page: WebPage
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
+    @State private var allowCover = false
 
     init(url: URL, title: String, isVideo: Bool = false) {
         self.url = url
@@ -801,7 +802,7 @@ private struct WebsiteReaderPane: View {
         _page = State(initialValue: WebPage(configuration: configuration))
     }
 
-    private var showCover: Bool { !hasCommitted }
+    private var showCover: Bool { !hasCommitted && allowCover }
 
     var body: some View {
         WebView(page)
@@ -825,10 +826,20 @@ private struct WebsiteReaderPane: View {
                 if !loading { hasCommitted = true }
             }
             .task(id: url) {
+                allowCover = false
+                async let cover: Void = revealCoverIfStillWaiting()
                 _ = page.load(URLRequest(url: url))
                 try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
                 hasCommitted = true
+                allowCover = false
+                _ = await cover
             }
+    }
+
+    private func revealCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, !hasCommitted else { return }
+        allowCover = true
     }
 }
 
@@ -846,12 +857,13 @@ private struct ReaderWebContent: View {
     @AppStorage(AppPreferenceKey.readerFocusZoneY) private var focusZoneY = ReaderFocus.defaultZoneY
     @State private var page = ReaderWebWarmup.makeReaderPage()
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
+    @State private var allowCover = false
     @State private var didRestoreTrail = false
     @State private var lastPersistedTrail: ReadingTrail?
     /// The page already applied a zone the reader dragged. Skip the echo that would reconfigure focus mid-scroll.
     @State private var ignoreNextZoneApply = false
 
-    private var showCover: Bool { !hasCommitted }
+    private var showCover: Bool { !hasCommitted && allowCover }
     private var resolvedMode: ReaderFocusMode {
         ReaderFocusMode(rawValue: focusMode) ?? .smart
     }
@@ -912,9 +924,13 @@ private struct ReaderWebContent: View {
                 didRestoreTrail = false
                 lastPersistedTrail = nil
                 ignoreNextZoneApply = false
+                allowCover = false
+                async let cover: Void = revealCoverIfStillWaiting()
                 page.load(html: html, baseURL: baseURL)
                 try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
                 hasCommitted = true
+                allowCover = false
+                _ = await cover
                 await applyFocus(restore: !didRestoreTrail)
             }
             .task(id: scenePhase) {
@@ -950,6 +966,12 @@ private struct ReaderWebContent: View {
         .accessibilityValue(resolvedMode.label)
         .accessibilityHint("Opens focus options")
         .padding(.bottom, 2)
+    }
+
+    private func revealCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, !hasCommitted else { return }
+        allowCover = true
     }
 
     @MainActor

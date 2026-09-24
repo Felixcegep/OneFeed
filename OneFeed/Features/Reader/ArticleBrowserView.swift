@@ -5,6 +5,7 @@ struct ArticleBrowserView: View {
     let url: URL
     @Environment(\.dismiss) private var dismiss
     @State private var page: WebPage
+    @State private var showLoadingMark = false
 
     init(url: URL) {
         self.url = url
@@ -29,7 +30,7 @@ struct ArticleBrowserView: View {
                     ToolbarItem(placement: .oneFeedLeading) {
                         Button("Close", systemImage: "xmark") { dismiss() }
                     }
-                    if page.isLoading {
+                    if showLoadingMark {
                         ToolbarItem(placement: .oneFeedTrailing) {
                             OneFeedMarkPulse(isActive: true, size: 18)
                                 .frame(minWidth: 44, minHeight: 44)
@@ -53,6 +54,15 @@ struct ArticleBrowserView: View {
                     }
                 }
                 .task(id: url) { _ = page.load(URLRequest(url: url)) }
+                .task(id: page.isLoading) {
+                    guard page.isLoading else {
+                        showLoadingMark = false
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(160))
+                    guard !Task.isCancelled, page.isLoading else { return }
+                    showLoadingMark = true
+                }
         }
     }
 }
