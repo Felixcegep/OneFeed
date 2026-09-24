@@ -603,6 +603,7 @@ struct ReaderView: View {
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
                     textSize: ReaderTextSize(rawValue: textSize) ?? .standard
                 ),
+                metaLine: viewModel.readerMetaLine,
                 title: article.title,
                 articleID: article.id,
                 baseURL: viewModel.documentBaseURL,
@@ -833,6 +834,7 @@ private struct WebsiteReaderPane: View {
 
 private struct ReaderWebContent: View {
     let html: String
+    let metaLine: String
     let title: String
     let articleID: UUID
     var baseURL: URL = ReaderWebWarmup.blankURL
@@ -892,6 +894,9 @@ private struct ReaderWebContent: View {
                 }
                 Task { await applyFocus(restore: false) }
             }
+            .onChange(of: metaLine) { _, line in
+                Task { await updateMeta(line) }
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
                     Task { await persistTrail() }
@@ -942,6 +947,14 @@ private struct ReaderWebContent: View {
         .accessibilityValue(resolvedMode.label)
         .accessibilityHint("Opens focus options")
         .padding(.bottom, 2)
+    }
+
+    @MainActor
+    private func updateMeta(_ line: String) async {
+        _ = try? await page.callJavaScript(
+            "var meta = document.querySelector('.meta'); if (meta) { meta.textContent = text; }",
+            arguments: ["text": line]
+        )
     }
 
     @MainActor

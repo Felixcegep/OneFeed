@@ -184,6 +184,16 @@ final class ReaderViewModel {
 
     private var cachedDocument: (key: String, html: String)?
 
+    /// Date and length under the title. Kept off the document cache key so a late duration does not reload the page.
+    var readerMetaLine: String {
+        [
+            article.publishedAt.formatted(date: .long, time: .omitted),
+            article.durationPhrase,
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    }
+
     var documentBaseURL: URL {
         if article.contentKind == "epub",
            let hash = ImportedDocumentStore.hash(fromGuid: article.guid) {
@@ -216,7 +226,8 @@ final class ReaderViewModel {
         #else
         let typeSize = "standard"
         #endif
-        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(summary.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)|focus\(ReaderFocus.engineVersion)"
+        // Length and date stay out of this key. A late duration must not rebuild the page.
+        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(summary.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
@@ -240,10 +251,7 @@ final class ReaderViewModel {
         let sourceSize: CGFloat = 11
         let horizontalPad = 48
         #endif
-        let metaBits = [
-            article.publishedAt.formatted(date: .long, time: .omitted),
-            article.durationPhrase,
-        ].filter { !$0.isEmpty }
+        let metaBits = readerMetaLine
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
@@ -332,7 +340,7 @@ final class ReaderViewModel {
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
         \(ReaderFocus.pageCSS)
-        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div><div id="onefeed-article">\(body)</div>\(ReaderFocus.pageScriptTag)</body></html>
+        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(escape(metaBits))</div><div id="onefeed-article">\(body)</div>\(ReaderFocus.pageScriptTag)</body></html>
         """
         cachedDocument = (key, html)
         return html

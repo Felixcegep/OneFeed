@@ -96,6 +96,25 @@ struct ReaderFocusTests {
         #expect(!html.contains("javascript:alert(2)"))
     }
 
+    @Test @MainActor func lateDurationLeavesTheReaderPageInPlace() {
+        let article = Article(
+            guid: "yt",
+            title: "Caches",
+            contentKind: "youtube",
+            contentHTML: "<p>Body</p>",
+            durationSeconds: 0
+        )
+        let model = ReaderViewModel(article: article)
+        let first = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        article.durationSeconds = 600
+        let second = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(first == second)
+        #expect(model.readerMetaLine.contains("10 min"))
+        let resized = model.documentHTML(fontChoice: .serif, textSize: .large)
+        #expect(resized != first)
+        #expect(resized.contains("10 min"))
+    }
+
     @Test func sanitizerStripsJavascriptURLs() {
         let cleaned = ReaderHTML.sanitizedBody(#"<p><a href="javascript:alert(1)">Open</a></p>"#)
         #expect(!cleaned.contains("javascript:"))

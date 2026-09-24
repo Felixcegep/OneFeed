@@ -65,6 +65,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Adding a link loaded every article body to see if it was already saved | Queue, Feed | High | The lookup fetched full articles, including HTML, then compared URLs | The lookup reads ids and URLs only. The matching story is opened after it is found | Code review |
 | Opening a set-aside story or importing a file scanned every article body | Not interested, import | High | Those lookups fetched the full library to compare a URL | They use the same id-and-URL lookup. A guid match stops after one row | Code review |
 | A refresh loaded every article body to fold duplicates | Feed refresh, FreshRSS sync | High | The merge fetched full articles before it knew which ones were copies | The scan reads ids, URLs, and reading state. HTML is opened only for a pair that is actually merged | Code review |
+| A video length arriving mid-read reloaded the page | Reader | High | The reader document key included the duration, so the web view loaded again and the place in the article jumped | The page stays loaded. The byline updates in place. A font or body change still rebuilds the page, and that rebuild includes the current length | `ReaderFocusTests.lateDurationLeavesTheReaderPageInPlace` |
 
 ## Still open
 
