@@ -208,6 +208,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Editing folders rebuilt the folder list on every keystroke | Feed | Medium | The empty check and the rows each walked every source, including while a folder search was typed | The groups are kept until a source or a remembered folder name changes. A keystroke only filters the open folder | Code review |
 | Opening a source loaded every stored article | Source | High | The recent list counted and sorted the whole feed relationship, which materializes every article body | The count is a fetch, and only the twenty newest stories are loaded. A refresh or a new story still rebuilds that short list | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 | The featured card stripped its summary while the screen was drawing | Today, Queue | High | The first paint ran the HTML excerpt on the main thread | The preview is built off the main thread and arrives with the card. Today draws the title first, then fills the preview in with the captions | `FeedAndFreshRSSDomainTests.displayExcerptPrefersAISummary` |
+| Opening a video copied its whole summary to choose the reader | Reader | Medium | The mode check trimmed the summary before the page could appear | The check stops at the first visible character. A blank summary still opens the website | `ReaderFocusTests.youtubeWithVisibleSummaryOpensInTheReader` |
 
 ## Still open
 

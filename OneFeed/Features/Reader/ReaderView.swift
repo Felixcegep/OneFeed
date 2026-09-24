@@ -738,11 +738,16 @@ struct ReaderView: View {
         }
         if article.isImportedDocument { return .reader }
         if article.contentKind == "youtube" {
-            let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return summary.isEmpty ? .website : .reader
+            return youtubeOpensInReader(summary: article.aiSummary) ? .reader : .website
         }
         if !hasReadableDocument(article), article.url != nil { return .website }
         return .reader
+    }
+
+    /// A video with any visible summary opens in the reader. Stops at the first character, so a long summary is not copied just to choose the mode.
+    static func youtubeOpensInReader(summary: String?) -> Bool {
+        guard let summary else { return false }
+        return summary.contains { !$0.isWhitespace }
     }
 
     /// True when the stored body has visible text. Stops at the first character, so opening the reader does not copy the article.
