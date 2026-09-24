@@ -38,11 +38,6 @@ final class SavedViewModel {
 
     func openArticle(id: UUID) {
         guard let context else { return }
-        reload()
-        if let match = articles.first(where: { $0.id == id && $0.isStored }) {
-            selectedArticle = match
-            return
-        }
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         selectedArticle = try? context.fetch(descriptor).first
@@ -51,7 +46,7 @@ final class SavedViewModel {
     func restore(_ article: Article) {
         guard let context, article.isStored else { return }
         if article.remoteID != nil { freshRSSService.enqueueMutation(for: article, transition: .queued, in: context) }
-        do { try queue.restoreSaved(article, in: context); reload() }
+        do { try queue.restoreSaved(article, in: context) }
         catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
@@ -60,7 +55,6 @@ final class SavedViewModel {
         guard let context else { return false }
         guard article.isStored else {
             selectedArticle = nil
-            reload()
             return true
         }
         if state == .read || state == .skipped {
@@ -79,7 +73,6 @@ final class SavedViewModel {
             }
         }
         selectedArticle = nil
-        reload()
         return true
     }
 }

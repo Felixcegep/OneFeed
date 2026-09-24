@@ -191,6 +191,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Today built story captions on the main thread before the deck could draw | Today | High | Opening Today fetched every open story and every memory before the list appeared | The deck draws first. Captions are copied off the main thread and fill in when they are ready | `SemanticDeckTests.todayCaptionsCanBeBuiltFromCopiedFields` |
 | Sources regrouped every folder whenever the screen refreshed | Sources | Medium | The folder groups were rebuilt from scratch on each redraw, including a status change | The groups stay until a source or a remembered folder name changes | Code review |
 | Sending a librarian message rebuilt the library on the main thread | Librarian | High | Each model turn, up to eight, fetched and sorted every source and the not-interested log before the request | That prompt is built off the main thread. Pending edits are saved first, and the next turn reads the library again | `GeminiLibrarianTests.librarianPromptMatchesABackgroundReadOfTheSameLibrary` |
+| Finishing or restoring a Queue story reloaded every saved story | Queue | High | The list is already a live query, but Done, restore, and an opened import still fetched and collapsed the whole queue inside the update | Those actions change the one story. The queue on screen updates from the query | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 
 ## Still open
 
