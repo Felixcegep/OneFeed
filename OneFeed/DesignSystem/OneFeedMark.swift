@@ -217,17 +217,16 @@ struct OneFeedDecisionCurtain: View {
         .ignoresSafeArea()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(caption)
-        .onAppear {
+        .task {
             if reduceMotion {
                 visible = true
                 showCaption = true
                 return
             }
             withAnimation(OneFeedMotion.decision) { visible = true }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(80))
-                withAnimation(OneFeedMotion.overlay) { showCaption = true }
-            }
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            withAnimation(OneFeedMotion.overlay) { showCaption = true }
         }
     }
 

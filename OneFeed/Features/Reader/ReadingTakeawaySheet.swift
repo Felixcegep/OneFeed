@@ -187,6 +187,7 @@ struct ReadingTakeawaySheet: View {
     }
 
     private func save() {
+        guard !didWrite, !explicitDismiss else { return }
         if reaction == nil, trimmedNote.isEmpty {
             explicitDismiss = true
             dismiss()
