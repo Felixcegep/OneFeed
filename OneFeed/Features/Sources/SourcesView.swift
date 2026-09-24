@@ -449,6 +449,7 @@ private struct SourceDetailView: View {
                         .foregroundStyle(OneFeedTheme.graphite)
                 }
                 ForEach(viewModel.availableFolders, id: \.self) { name in
+                    let included = viewModel.sourceIsInFolder(name)
                     Button {
                         viewModel.toggleFolder(name)
                     } label: {
@@ -456,7 +457,7 @@ private struct SourceDetailView: View {
                             Text(name)
                                 .foregroundStyle(OneFeedTheme.ink)
                             Spacer()
-                            if viewModel.feed.containsFolder(name) {
+                            if included {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(OneFeedTheme.ink)
                                     .accessibilityHidden(true)
@@ -464,8 +465,8 @@ private struct SourceDetailView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .accessibilityAddTraits(viewModel.feed.containsFolder(name) ? .isSelected : [])
-                    .accessibilityValue(viewModel.feed.containsFolder(name) ? "In this folder" : "Not in this folder")
+                    .accessibilityAddTraits(included ? .isSelected : [])
+                    .accessibilityValue(included ? "In this folder" : "Not in this folder")
                 }
                 Button("New Folder…") { isCreatingFolder = true }
             } header: {

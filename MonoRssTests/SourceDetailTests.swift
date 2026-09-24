@@ -97,6 +97,24 @@ struct SourceDetailTests {
         #expect(!feed.containsFolder("Development"))
     }
 
+    @Test func typingDoesNotRebuildFolderMembership() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!, folderName: "Philosophy")
+        context.insert(feed)
+        try context.save()
+        let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+        #expect(model.sourceIsInFolder("Philosophy"))
+        let builds = model.membershipBuilds
+        #expect(model.sourceIsInFolder("philosophy"))
+        #expect(model.membershipBuilds == builds)
+        model.blockedWords = "Sponsored"
+        #expect(model.sourceIsInFolder("Philosophy"))
+        #expect(model.membershipBuilds == builds)
+        model.toggleFolder("Development")
+        #expect(model.sourceIsInFolder("Development"))
+        #expect(model.membershipBuilds == builds + 1)
+    }
+
     @Test func aSecondRemoveIsIgnoredWhileTheFirstIsRunning() async throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)

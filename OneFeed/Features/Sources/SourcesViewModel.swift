@@ -270,6 +270,9 @@ final class SourceDetailViewModel {
     private(set) var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
     private var pendingBlockedWords: String?
+    private var membershipKeys: Set<String>?
+    /// Builds of the folder membership set. A redraw does not increment this.
+    private(set) var membershipBuilds = 0
     private var cachedRecentStories: [Article] = []
     /// Loads of the newest-twenty list. A redraw does not increment this.
     private(set) var recentStoryLoads = 0
@@ -327,6 +330,7 @@ final class SourceDetailViewModel {
 
     func addFolder(_ name: String) {
         persist({ feed.addFolder(name) }, revert: { feed.removeFolder(name) })
+        membershipKeys = nil
         reloadFolders()
     }
 
@@ -345,6 +349,21 @@ final class SourceDetailViewModel {
                 feed.removeFolder(name)
             }
         })
+        membershipKeys = nil
+    }
+
+    /// Whether this source is in the folder. The set is built once until a folder check changes it.
+    func sourceIsInFolder(_ name: String) -> Bool {
+        guard let name = FeedMembership.normalized(name) else { return false }
+        return currentMemberships().contains(name.lowercased())
+    }
+
+    private func currentMemberships() -> Set<String> {
+        if let membershipKeys { return membershipKeys }
+        membershipBuilds += 1
+        let keys = Set(feed.memberships.map { $0.lowercased() })
+        membershipKeys = keys
+        return keys
     }
 
     var isEnabled: Bool {
