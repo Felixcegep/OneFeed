@@ -11,6 +11,7 @@ struct NotInterestedView: View {
     @State private var listCache = NotInterestedListCache()
     @State private var isRemovingSource = false
     @State private var queueError: String?
+    @State private var storyError: String?
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -68,13 +69,27 @@ struct NotInterestedView: View {
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article, onFinish: { state in
-                selectedArticle = nil
-                guard article.isStored else { return }
-                if state == .saved {
-                    returnToQueue(article)
-                } else {
-                    ArticleActions.apply(state, to: article, in: modelContext)
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
                 }
+                if state == .saved {
+                    do {
+                        try ArticleQueueService().moveToQueue(article, in: modelContext)
+                    } catch {
+                        queueError = UserFacingFailure.message(for: error, fallback: "Couldn’t put that in Queue.")
+                        return false
+                    }
+                } else {
+                    do {
+                        try ArticleActions.apply(state, to: article, in: modelContext)
+                    } catch {
+                        storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                        return false
+                    }
+                }
+                selectedArticle = nil
+                return true
             }, onClose: {
                 selectedArticle = nil
             })
@@ -88,6 +103,14 @@ struct NotInterestedView: View {
             Button("OK", role: .cancel) { queueError = nil }
         } message: {
             Text(queueError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
         }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
@@ -212,15 +235,6 @@ struct NotInterestedView: View {
 
         \(titles)\(extra)
         """
-    }
-
-    private func returnToQueue(_ article: Article) {
-        guard article.isStored else { return }
-        do {
-            try ArticleQueueService().moveToQueue(article, in: modelContext)
-        } catch {
-            queueError = UserFacingFailure.message(for: error, fallback: "Couldn’t put that in Queue.")
-        }
     }
 
     private func removeSource(_ group: NotInterestedSourceGroup) async {

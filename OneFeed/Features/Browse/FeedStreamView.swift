@@ -36,6 +36,7 @@ struct FeedStreamView: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var refresh = BrowseRefresh()
     @State private var selectedArticle: Article?
+    @State private var storyError: String?
     @State private var appliedSearch = ""
     @State private var selectedFolder: FeedFolderID?
     @State private var showingAddSource = false
@@ -116,9 +117,18 @@ struct FeedStreamView: View {
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
                 selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
+                return true
             }
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
@@ -130,6 +140,14 @@ struct FeedStreamView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(refresh.presentedError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
         }
     }
 

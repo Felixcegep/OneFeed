@@ -13,6 +13,7 @@ struct HistoryView: View {
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
     @State private var queueError: String?
+    @State private var storyError: String?
     /// Day groups stay put while the open story changes.
     @State private var dayCache = HistoryDayCache()
 
@@ -62,9 +63,18 @@ struct HistoryView: View {
             ReaderView(
                 article: article,
                 onFinish: { state in
+                    guard article.isStored else {
+                        selectedArticle = nil
+                        return true
+                    }
+                    do {
+                        try ArticleActions.apply(state, to: article, in: modelContext)
+                    } catch {
+                        storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                        return false
+                    }
                     selectedArticle = nil
-                    guard article.isStored else { return }
-                    ArticleActions.apply(state, to: article, in: modelContext)
+                    return true
                 },
                 onClose: { selectedArticle = nil },
                 onPutInQueue: {
@@ -156,6 +166,14 @@ struct HistoryView: View {
             Button("OK", role: .cancel) { queueError = nil }
         } message: {
             Text(queueError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
         }
     }
 

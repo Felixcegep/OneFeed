@@ -26,13 +26,17 @@ struct CurrentView: View {
             todayColumn
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
+                guard article.isStored else {
+                    readerArticle = nil
+                    return true
+                }
+                guard viewModel.finish(article, as: state) else { return false }
                 readerArticle = nil
-                guard article.isStored else { return }
-                viewModel.finish(article, as: state)
                 #if os(macOS)
                 keepReadingPaneClear = false
                 readerArticle = stories.first
                 #endif
+                return true
             }, onClose: {
                 readerArticle = nil
                 keepReadingPaneClear = true
@@ -150,6 +154,12 @@ struct CurrentView: View {
         .alert("Couldn’t refresh", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
         } message: { Text(viewModel.presentedError ?? "") }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { viewModel.storyError != nil },
+            set: { if !$0 { viewModel.storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.storyError = nil }
+        } message: { Text(viewModel.storyError ?? "") }
     }
 
     private func open(_ article: Article) {

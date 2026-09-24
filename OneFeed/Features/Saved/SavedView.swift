@@ -402,7 +402,7 @@ private struct LaterQueueActions: ViewModifier {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: modelContext)
+                    guard (try? ArticleActions.apply(.read, to: article, in: modelContext)) != nil else { return }
                     onChanged()
                 }
                 .tint(OneFeedTheme.sage)
@@ -416,7 +416,7 @@ private struct LaterQueueActions: ViewModifier {
                     restore(article)
                 }
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: modelContext)
+                    guard (try? ArticleActions.apply(.read, to: article, in: modelContext)) != nil else { return }
                     onChanged()
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {

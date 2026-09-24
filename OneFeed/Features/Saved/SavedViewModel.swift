@@ -55,12 +55,13 @@ final class SavedViewModel {
         catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
-    func finishReading(_ article: Article, as state: ArticleState) {
-        guard let context else { return }
-        selectedArticle = nil
+    @discardableResult
+    func finishReading(_ article: Article, as state: ArticleState) -> Bool {
+        guard let context else { return false }
         guard article.isStored else {
+            selectedArticle = nil
             reload()
-            return
+            return true
         }
         if state == .read || state == .skipped {
             if state == .skipped {
@@ -74,9 +75,11 @@ final class SavedViewModel {
                 }
             } catch {
                 presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.")
+                return false
             }
         }
         selectedArticle = nil
         reload()
+        return true
     }
 }

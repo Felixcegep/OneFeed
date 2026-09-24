@@ -26,6 +26,7 @@ final class CurrentViewModel {
     private(set) var storyCaptions: [UUID: String] = [:]
     let progress = RefreshProgress()
     var presentedError: String?
+    var storyError: String?
 
     var progressLabel: String? {
         guard displayedArticleID != nil, totalCount > 0, position > 0 else { return nil }
@@ -97,10 +98,10 @@ final class CurrentViewModel {
         }
     }
 
-    func transition(to state: ArticleState) {
-        guard let context else { return }
+    func transition(to state: ArticleState) -> Bool {
+        guard let context else { return false }
         do {
-            guard let item = try deckService.currentItem(in: context) else { return }
+            guard let item = try deckService.currentItem(in: context) else { return true }
             if let article = item.article, article.isStored {
                 if state == .skipped {
                     ReadingUndo.begin(article, in: context)
@@ -113,24 +114,32 @@ final class CurrentViewModel {
             }
             apply(item: next, totalCount: item.deck?.items.count ?? totalCount)
             Task { await BackgroundRefreshCoordinator.enrichAfterRefresh(in: context, from: next, extraQueued: 2) }
+            return true
         } catch {
-            presentedError = RefreshFailure.message(for: error)
+            storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+            return false
         }
     }
 
-    func finish(_ article: Article, as state: ArticleState) {
-        guard let context else { return }
+    @discardableResult
+    func finish(_ article: Article, as state: ArticleState) -> Bool {
+        guard let context else { return false }
         if let item = try? deckService.currentItem(in: context), item.article?.id == article.id {
-            transition(to: state)
-            return
+            return transition(to: state)
         }
-        ArticleActions.apply(state, to: article, in: context)
-        if let deck = try? deckService.todayDeck(in: context),
-           let item = deck.items.first(where: { $0.article?.id == article.id }) {
-            item.status = state
-            try? context.save()
+        do {
+            try ArticleActions.apply(state, to: article, in: context)
+            if let deck = try deckService.todayDeck(in: context),
+               let item = deck.items.first(where: { $0.article?.id == article.id }) {
+                item.status = state
+                try context.save()
+            }
+        } catch {
+            storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+            return false
         }
         loadCurrent()
+        return true
     }
 
     func refresh() async {

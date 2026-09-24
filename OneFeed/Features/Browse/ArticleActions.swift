@@ -7,7 +7,7 @@ enum ArticleActions {
         _ state: ArticleState,
         to article: Article,
         in context: ModelContext
-    ) {
+    ) throws {
         guard article.isStored, article.state != state else { return }
         if state == .skipped {
             ReadingUndo.begin(article, in: context)
@@ -16,26 +16,28 @@ enum ArticleActions {
         let sync: any FreshRSSSyncing = FreshRSSSyncService()
         sync.enqueueMutation(for: article, transition: state, in: context)
         let motion: Animation? = OneFeedMotion.allowsMotion ? OneFeedMotion.list : nil
-        do {
-            try withAnimation(motion) {
-                try queue.complete(article, as: state, in: context)
-            }
-        } catch {
-            return
+        try withAnimation(motion) {
+            try queue.complete(article, as: state, in: context)
         }
-        syncTodayDeck(article, to: state, in: context)
+        try syncTodayDeck(article, to: state, in: context)
         if state == .skipped {
             ReadingUndo.commit(article, in: context)
         }
     }
 
-    static func markNotInterested(_ article: Article, in context: ModelContext) {
+    @discardableResult
+    static func markNotInterested(_ article: Article, in context: ModelContext) -> Bool {
         ReadingUndo.begin(article, in: context)
         NotInterestedLog.record(article, in: context)
-        apply(.skipped, to: article, in: context)
+        do {
+            try apply(.skipped, to: article, in: context)
+            return true
+        } catch {
+            return false
+        }
     }
 
-    private static func syncTodayDeck(_ article: Article, to state: ArticleState, in context: ModelContext) {
+    private static func syncTodayDeck(_ article: Article, to state: ArticleState, in context: ModelContext) throws {
         guard let deck = try? DailyDeckService().todayDeck(in: context),
               let item = deck.items.first(where: { $0.article?.id == article.id })
         else { return }
@@ -54,7 +56,7 @@ enum ArticleActions {
             }
             WidgetSnapshotStore.write(article: next.article)
         }
-        try? context.save()
+        try context.save()
     }
 }
 
@@ -67,43 +69,43 @@ struct ArticleSwipeActions: ViewModifier {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: context)
+                    guard (try? ArticleActions.apply(.read, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 .tint(OneFeedTheme.sage)
                 Button("Skip", systemImage: "forward") {
-                    ArticleActions.apply(.skipped, to: article, in: context)
+                    guard (try? ArticleActions.apply(.skipped, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 .tint(OneFeedTheme.stone)
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    ArticleActions.markNotInterested(article, in: context)
+                    guard ArticleActions.markNotInterested(article, in: context) else { return }
                     onChanged?()
                 }
                 .tint(OneFeedTheme.graphite)
             }
             .swipeActions(edge: .leading, allowsFullSwipe: true) {
                 Button("Queue", systemImage: "square.stack") {
-                    ArticleActions.apply(.saved, to: article, in: context)
+                    guard (try? ArticleActions.apply(.saved, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 .tint(OneFeedTheme.accent)
             }
             .contextMenu {
                 Button("Add to Queue", systemImage: "square.stack") {
-                    ArticleActions.apply(.saved, to: article, in: context)
+                    guard (try? ArticleActions.apply(.saved, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: context)
+                    guard (try? ArticleActions.apply(.read, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 Button("Skip", systemImage: "forward") {
-                    ArticleActions.apply(.skipped, to: article, in: context)
+                    guard (try? ArticleActions.apply(.skipped, to: article, in: context)) != nil else { return }
                     onChanged?()
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    ArticleActions.markNotInterested(article, in: context)
+                    guard ArticleActions.markNotInterested(article, in: context) else { return }
                     onChanged?()
                 }
                 Menu("Rate") {

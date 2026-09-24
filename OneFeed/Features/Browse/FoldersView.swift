@@ -641,6 +641,7 @@ struct ArticleCollectionView: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
+    @State private var storyError: String?
     @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
     @State private var storyPlacements: [String: StoryPlacement] = [:]
@@ -721,9 +722,18 @@ struct ArticleCollectionView: View {
             }
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
                 selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
+                return true
             }, onClose: {
                 selectedArticle = nil
             })
@@ -731,6 +741,14 @@ struct ArticleCollectionView: View {
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
         .readingUndoBanner()
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
     }
 
     private var collectionColumn: some View {

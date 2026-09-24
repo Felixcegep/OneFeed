@@ -422,6 +422,7 @@ private struct SourceDetailView: View {
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @State private var selectedArticle: Article?
+    @State private var storyError: String?
 
     init(feed: Feed, context: ModelContext) {
         _viewModel = State(initialValue: SourceDetailViewModel(feed: feed, context: context))
@@ -534,12 +535,29 @@ private struct SourceDetailView: View {
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
                 selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
+                return true
             }
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)

@@ -51,13 +51,14 @@ struct ReaderView: View {
     @State private var geminiKey = ""
     @State private var geminiKeyFollowUp: GeminiKeyFollowUp?
     @State private var openVideoChatAfterKey = false
-    let onFinish: (ArticleState) -> Void
+    /// Persists the decision and dismisses when it returns true. False leaves the reader open.
+    let onFinish: (ArticleState) -> Bool
     var onClose: (() -> Void)?
     var onPutInQueue: (() -> Void)?
 
     init(
         article: Article,
-        onFinish: @escaping (ArticleState) -> Void,
+        onFinish: @escaping (ArticleState) -> Bool,
         onClose: (() -> Void)? = nil,
         onPutInQueue: (() -> Void)? = nil
     ) {
@@ -377,15 +378,18 @@ struct ReaderView: View {
         guard decision == nil else { return }
         if state == .saved, article.state == .saved { return }
         decision = state
-        switch state {
-        case .saved: savePulse += 1
-        case .read: donePulse += 1
-        case .skipped: skipPulse += 1
-        default: break
-        }
         Task { @MainActor in
             await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
-            onFinish(state)
+            switch state {
+            case .saved: savePulse += 1
+            case .read: donePulse += 1
+            case .skipped: skipPulse += 1
+            default: break
+            }
+            guard onFinish(state) else {
+                decision = nil
+                return
+            }
         }
     }
 
