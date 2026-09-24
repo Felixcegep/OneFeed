@@ -911,7 +911,7 @@ private struct ReaderWebContent: View {
                 }
             }
             .frame(width: 7, height: 7)
-            .frame(width: 44, height: 28)
+            .frame(minWidth: 44, minHeight: 44)
             .padding(.top, 16)
             .contentShape(Rectangle())
         }

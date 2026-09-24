@@ -281,7 +281,7 @@ struct ReadingUndoBanner: ViewModifier {
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(OneFeedTheme.plaster)
             .padding(.horizontal, 14)
-            .frame(minHeight: 36)
+            .frame(minHeight: 44)
             .background(OneFeedTheme.ink, in: Capsule())
             .accessibilityHint("Puts the story back")
         }

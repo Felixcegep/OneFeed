@@ -44,5 +44,22 @@ struct RefreshProgressTests {
         #expect(progress.phase == .finishing)
         #expect(progress.fraction == 1)
         #expect(progress.completed == 1)
+        #expect(progress.displayedFraction == 1)
+    }
+
+    @Test func aLaterPhaseDoesNotSnapTheLineBackward() {
+        let progress = RefreshProgress()
+        progress.begin(phase: .sources, total: 2)
+        progress.finishItem()
+        progress.finishItem()
+        #expect(progress.displayedFraction == 1)
+        progress.begin(phase: .sync, total: 2)
+        #expect(progress.displayedFraction == 1)
+        #expect(progress.fraction == 0.5)
+        progress.finishItem()
+        #expect(progress.displayedFraction == 0.75)
+        progress.finish()
+        #expect(progress.isActive == false)
+        #expect(progress.displayedFraction == 0.75)
     }
 }

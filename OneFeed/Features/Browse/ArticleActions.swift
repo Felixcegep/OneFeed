@@ -40,6 +40,20 @@ enum ArticleActions {
               let item = deck.items.first(where: { $0.article?.id == article.id })
         else { return }
         item.status = state
+        let stillHasCurrent = deck.items.contains { $0.status == .current && $0.article?.isStored == true }
+        if !stillHasCurrent,
+           let next = deck.items
+            .filter({ $0.status == .queued && $0.article?.isStored == true })
+            .sorted(by: { $0.position < $1.position })
+            .first {
+            next.status = .current
+            if let article = next.article {
+                article.state = .current
+                article.firstDisplayedAt = article.firstDisplayedAt ?? .now
+                LibraryChange.note(article)
+            }
+            WidgetSnapshotStore.write(article: next.article)
+        }
         try? context.save()
     }
 }

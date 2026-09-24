@@ -93,15 +93,18 @@ struct CurrentView: View {
         }
         .background(OneFeedTheme.plaster)
         .overlay {
-            if showsSourceRefreshCover {
-                OneFeedLoadingCover(
-                    title: viewModel.progress.primaryText,
-                    status: viewModel.progress.coverStatus,
-                    canvas: OneFeedTheme.plaster
-                )
+            ZStack {
+                if showsSourceRefreshCover {
+                    OneFeedLoadingCover(
+                        title: viewModel.progress.primaryText,
+                        status: viewModel.progress.coverStatus,
+                        canvas: OneFeedTheme.plaster
+                    )
+                    .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         }
-        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
@@ -202,7 +205,7 @@ struct CurrentView: View {
         ContentUnavailableView {
             VStack(spacing: 20) {
                 if viewModel.isRefreshing {
-                    OneFeedMarkPulse(isActive: true, size: 52)
+                    OneFeedMark(size: 52)
                     Text(viewModel.progress.remainingText.isEmpty ? "Updating your stories…" : viewModel.progress.remainingText)
                         .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)

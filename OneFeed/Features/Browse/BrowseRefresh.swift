@@ -7,6 +7,7 @@ import SwiftData
 final class BrowseRefresh {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
+    private var inFlight: Task<Void, Never>?
     private(set) var isRefreshing = false
     private(set) var lastRefreshedAt: Date?
     let progress = RefreshProgress()
@@ -32,11 +33,21 @@ final class BrowseRefresh {
     }
 
     func refresh(in context: ModelContext) async {
-        guard !isRefreshing else { return }
+        if let inFlight {
+            await inFlight.value
+            return
+        }
+        let task = Task { await self.runRefresh(in: context) }
+        inFlight = task
+        await task.value
+    }
+
+    private func runRefresh(in context: ModelContext) async {
         isRefreshing = true
         defer {
             progress.finish()
             isRefreshing = false
+            inFlight = nil
         }
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)

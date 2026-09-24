@@ -262,7 +262,6 @@ struct SettingsView: View {
             .oneFeedInlineTitle()
             .oneFeedSettingsCanvas()
             .tint(OneFeedTheme.ink)
-            .refreshProgressBanner(viewModel.progress)
             .onAppear { viewModel.reload() }
         } label: {
             VStack(alignment: .leading, spacing: 4) {

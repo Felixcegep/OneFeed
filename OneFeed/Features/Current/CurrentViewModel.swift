@@ -10,6 +10,7 @@ final class CurrentViewModel {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
     private var inFlightRefresh: Task<Void, Never>?
+    private var inFlightIsFullRefresh = false
     private var didRunUtilityBackfill = false
     private var hasAppeared = false
 
@@ -67,6 +68,7 @@ final class CurrentViewModel {
     func startRefreshIfNeeded() {
         if needsRefresh {
             guard inFlightRefresh == nil else { return }
+            inFlightIsFullRefresh = true
             inFlightRefresh = Task { await self.performRefresh() }
             return
         }
@@ -129,9 +131,16 @@ final class CurrentViewModel {
     }
 
     func refresh() async {
-        if let inFlightRefresh {
-            await inFlightRefresh.value
+        if let existing = inFlightRefresh {
+            let joiningFullRefresh = inFlightIsFullRefresh
+            await existing.value
+            if joiningFullRefresh { return }
         }
+        guard inFlightRefresh == nil else {
+            await refresh()
+            return
+        }
+        inFlightIsFullRefresh = true
         let task = Task { await self.performRefresh() }
         inFlightRefresh = task
         await task.value
@@ -165,6 +174,7 @@ final class CurrentViewModel {
             progress.finish()
             isRefreshing = false
             inFlightRefresh = nil
+            inFlightIsFullRefresh = false
         }
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)

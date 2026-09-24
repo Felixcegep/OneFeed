@@ -86,18 +86,22 @@ struct FoldersView: View {
         }
         .oneFeedGroupedListStyle()
         .overlay {
-            if showsSourceRefreshCover {
-                OneFeedLoadingCover(
-                    title: refresh.progress.primaryText,
-                    status: refresh.progress.coverStatus,
-                    canvas: OneFeedTheme.plaster
-                )
+            ZStack {
+                if showsSourceRefreshCover {
+                    OneFeedLoadingCover(
+                        title: refresh.progress.primaryText,
+                        status: refresh.progress.coverStatus,
+                        canvas: OneFeedTheme.plaster
+                    )
+                    .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         }
-        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .navigationSubtitle(refresh.statusText)
         .refreshProgressBanner(refresh.progress)
         .toolbar {

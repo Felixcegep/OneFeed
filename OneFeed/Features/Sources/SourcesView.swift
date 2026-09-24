@@ -30,7 +30,7 @@ struct SourcesView: View {
                             Text("Add a source or create a folder to organize your reading.")
                         } actions: {
                             Button("Add Source") { presentAdd() }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(PrimaryActionStyle(expands: false))
                         }
                     } else {
                         ContentUnavailableView.search(text: searchText)
@@ -39,17 +39,21 @@ struct SourcesView: View {
                 .listRowBackground(OneFeedTheme.paper)
             } else {
                 if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
-                    Section("With sources") {
+                    Section {
                         ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
                             folderLink(folder)
                         }
+                    } header: {
+                        GallerySectionHeader(text: "With sources")
                     }
                 }
                 if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
-                    Section("Empty folders") {
+                    Section {
                         ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
                             folderLink(folder)
                         }
+                    } header: {
+                        GallerySectionHeader(text: "Empty folders")
                     }
                 }
             }
@@ -250,7 +254,7 @@ private struct FolderFeedsView: View {
                             Text("Add a source to start filling this folder.")
                         } actions: {
                             Button("Add Source") { onAddInFolder() }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(PrimaryActionStyle(expands: false))
                         }
                     } else {
                         ContentUnavailableView.search(text: searchText)
