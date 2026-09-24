@@ -125,12 +125,19 @@ enum NotInterestedLog {
         return lines.joined(separator: "\n")
     }
 
-    static func reviewPrompt(in context: ModelContext) -> String {
+    nonisolated static func reviewPrompt(in context: ModelContext) -> String {
         """
         Review my not-interested log. Group by source and notice repeats. Suggest moving a noisy source to Archive (keep the subscription, take it out of Today), adding blocked words, or removing it. Wait for me before removing anything.
 
         \(snapshot(in: context, sources: 16, articlesPerSource: 4))
         """
+    }
+
+    /// Builds the review prompt away from the main thread so opening the librarian can start immediately.
+    static func reviewPrompt(from container: ModelContainer) async -> String {
+        await Task.detached(priority: .userInitiated) {
+            reviewPrompt(in: ModelContext(container))
+        }.value
     }
 
     static func archive(_ feed: Feed, in context: ModelContext) throws {

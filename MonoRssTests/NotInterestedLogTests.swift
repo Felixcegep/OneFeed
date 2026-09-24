@@ -96,6 +96,26 @@ struct NotInterestedLogTests {
         #expect(text.contains("Must read"))
     }
 
+    @Test @MainActor func reviewPromptMatchesABackgroundRead() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(
+            title: "The Verge",
+            feedURL: URL(string: "https://www.theverge.com/rss")!,
+            folderName: "Must read"
+        )
+        context.insert(feed)
+        let article = Article(guid: "v-bg", title: "AI glasses are here", feed: feed)
+        context.insert(article)
+        try NotInterestedLog.record(article, in: context)
+        defer { FolderStore.remove("Must read") }
+
+        let onMain = NotInterestedLog.reviewPrompt(in: context)
+        let offMain = await NotInterestedLog.reviewPrompt(from: container)
+        #expect(offMain == onMain)
+        #expect(offMain.contains("AI glasses are here"))
+    }
+
     @Test func archiveParksTheSourceOutOfToday() throws {
         let context = try context()
         let feed = Feed(

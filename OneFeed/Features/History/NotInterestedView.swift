@@ -62,13 +62,16 @@ struct NotInterestedView: View {
             if !groups.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Ask Gemini") {
-                        librarianPrompt = LibrarianPrompt(text: NotInterestedLog.reviewPrompt(in: modelContext))
+                        librarianPrompt = LibrarianPrompt(preparesReview: true)
                     }
                 }
             }
         }
         .navigationDestination(item: $librarianPrompt) { prompt in
-            ExperimentalLibrarianView(initialPrompt: prompt.text)
+            ExperimentalLibrarianView(
+                initialPrompt: prompt.preparesReview ? nil : prompt.text,
+                preparesReviewPrompt: prompt.preparesReview
+            )
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article, onFinish: { state in
@@ -322,6 +325,7 @@ private final class NotInterestedListCache {
 }
 
 private struct LibrarianPrompt: Identifiable, Hashable {
-    let text: String
-    var id: String { text }
+    let id = UUID()
+    var text = ""
+    var preparesReview = false
 }

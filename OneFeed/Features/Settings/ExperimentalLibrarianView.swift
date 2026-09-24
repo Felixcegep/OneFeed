@@ -222,6 +222,7 @@ final class ExperimentalLibrarianViewModel {
 
 struct ExperimentalLibrarianView: View {
     var initialPrompt: String? = nil
+    var preparesReviewPrompt = false
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ExperimentalLibrarianViewModel()
     @State private var geminiKey = ""
@@ -281,9 +282,16 @@ struct ExperimentalLibrarianView: View {
         .task {
             viewModel.configure(with: modelContext)
             geminiKey = GeminiAPIKeyStore.load() ?? ""
-            if let initialPrompt, !didSendInitial, viewModel.hasAPIKey {
-                didSendInitial = true
-                await viewModel.sendSuggestion(initialPrompt)
+            if !didSendInitial, viewModel.hasAPIKey {
+                if preparesReviewPrompt {
+                    didSendInitial = true
+                    let prompt = await NotInterestedLog.reviewPrompt(from: modelContext.container)
+                    guard !Task.isCancelled else { return }
+                    await viewModel.sendSuggestion(prompt)
+                } else if let initialPrompt {
+                    didSendInitial = true
+                    await viewModel.sendSuggestion(initialPrompt)
+                }
             }
         }
         .sheet(isPresented: $showingKeySheet) {
