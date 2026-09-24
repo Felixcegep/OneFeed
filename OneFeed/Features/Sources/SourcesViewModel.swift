@@ -389,16 +389,13 @@ final class SourceDetailViewModel {
         }
     }
 
-    func reloadFolders() {
-        folderListLoads += 1
-        let feeds = (try? context.fetch(FetchDescriptor<Feed>())) ?? []
-        availableFolders = FolderStore.allNames(from: feeds)
-    }
-
     func addFolder(_ name: String) {
         persist({ feed.addFolder(name) }, revert: { feed.removeFolder(name) })
         membershipKeys = nil
-        reloadFolders()
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if availableFolders.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) { return }
+        availableFolders.append(trimmed)
     }
 
     func toggleFolder(_ name: String) {

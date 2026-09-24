@@ -101,6 +101,11 @@ struct SourceDetailTests {
         model.toggleFolder("Development")
         #expect(model.folderListLoads == loads)
         #expect(!feed.containsFolder("Development"))
+
+        model.addFolder("Builders")
+        #expect(model.folderListLoads == loads)
+        #expect(model.availableFolders.contains("Builders"))
+        #expect(feed.containsFolder("Builders"))
     }
 
     @Test func theFolderChecklistReadsNamesAwayFromTheOpenScreen() throws {
