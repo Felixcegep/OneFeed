@@ -31,6 +31,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The in-app browser spinner sat on top of the page | Reader browser | Medium | A `ProgressView` overlay was pinned to the top of the web view | Loading uses the mark in the toolbar, so the page can scroll freely | Code review |
 
 | The video summary prompt could return on the same visit | Reader | Medium | `.task` ran again and offered the dialog whenever the reader reappeared | The prompt is offered once per article. Starting a summary replaces one that is already running | Code review |
+| Focus options used a fixed sheet height | Reader | Medium | The detent was locked at 340pt, and the mode chips were 36pt tall | The sheet uses medium and large detents, and each mode is at least 44pt | Code review |
 
 ## Still open
 
