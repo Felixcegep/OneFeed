@@ -304,13 +304,14 @@ struct ArticleRow: View {
 /// Photograph on paper, then authored serif. The crop is the work.
 struct FeaturedStory: View {
     let article: Article
+    var status: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, fadesIn: true) {
+                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, maxPixel: 1200, fadesIn: true) {
                     imageFailed = true
                 }
                 .frame(maxWidth: .infinity)
@@ -336,6 +337,12 @@ struct FeaturedStory: View {
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
                     .fixedSize(horizontal: false, vertical: true)
+                if let status {
+                    Text(status)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 10) {
                     Label(openTitle, systemImage: openSymbol)
@@ -401,14 +408,23 @@ struct FeaturedStory: View {
 struct ArticleThumbnail: View {
     let url: URL
     var cornerRadius: CGFloat = 10
+    var maxPixel: Int = 192
     var fadesIn = false
     var onUnavailable: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var image: CGImage?
     @State private var revealed = false
 
-    init(url: URL, cornerRadius: CGFloat = 10, fadesIn: Bool = false, onUnavailable: (() -> Void)? = nil) {
+    init(
+        url: URL,
+        cornerRadius: CGFloat = 10,
+        maxPixel: Int = 192,
+        fadesIn: Bool = false,
+        onUnavailable: (() -> Void)? = nil
+    ) {
         self.url = url
         self.cornerRadius = cornerRadius
+        self.maxPixel = maxPixel
         self.fadesIn = fadesIn
         self.onUnavailable = onUnavailable
     }
@@ -416,26 +432,28 @@ struct ArticleThumbnail: View {
     var body: some View {
         Color.clear
             .overlay {
-                AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                            .opacity((fadesIn && !revealed && !reduceMotion) ? 0 : 1)
-                            .onAppear { reveal() }
-                    case .failure:
-                        Color.clear
-                            .task { onUnavailable?() }
-                    default:
-                        Color.clear
-                    }
+                if let image {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                        .opacity((fadesIn && !revealed && !reduceMotion) ? 0 : 1)
                 }
             }
             .clipped()
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .onChange(of: url) { _, _ in
-                revealed = false
-            }
             .accessibilityHidden(true)
+            .task(id: url) {
+                revealed = false
+                let loaded = await ThumbnailCache.shared.image(for: url, maxPixel: maxPixel)
+                guard !Task.isCancelled else { return }
+                if let loaded {
+                    image = loaded
+                    reveal()
+                } else {
+                    image = nil
+                    onUnavailable?()
+                }
+            }
     }
 
     private func reveal() {

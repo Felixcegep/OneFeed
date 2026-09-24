@@ -9,7 +9,8 @@ struct DailyDeckService {
 
     nonisolated static func generateIfNeeded(in context: ModelContext, maxItems: Int = 10, persist: Bool = true) throws -> DailyDeck {
         if let existing = try todayDeck(in: context) {
-            return existing
+            try topUpCaughtUpDeck(existing, in: context, maxItems: maxItems, persist: persist)
+            return try todayDeck(in: context) ?? existing
         }
 
         let deck = DailyDeck(dayStart: dayStart(for: .now), createdAt: .now)
@@ -205,6 +206,50 @@ struct DailyDeckService {
         try context.save()
         let current = ordered.first { $0.status == .current }?.article
         WidgetSnapshotStore.write(article: current)
+    }
+
+    /// When today's stack is finished, refresh can fill another batch. An open story stays put.
+    nonisolated private static func topUpCaughtUpDeck(
+        _ deck: DailyDeck,
+        in context: ModelContext,
+        maxItems: Int,
+        persist: Bool
+    ) throws {
+        let hasOpenStory = deck.items.contains {
+            ($0.status == .current || $0.status == .queued) && $0.article?.isStored == true
+        }
+        guard !hasOpenStory else { return }
+
+        let taken = Set(deck.items.compactMap { $0.article?.id })
+        let placements = try storyPlacements(in: context)
+        let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
+        let selected = selectCandidates(
+            from: pool,
+            maxItems: maxItems,
+            alreadySelected: deck.items.compactMap(\.article),
+            placements: placements
+        )
+        guard !selected.isEmpty else { return }
+
+        var position = deck.items.map(\.position).max() ?? 0
+        var placedCurrent = false
+        for article in selected {
+            position += 1
+            let status: ArticleState = placedCurrent ? .queued : .current
+            placedCurrent = true
+            let item = DailyDeckItem(position: position, status: status, article: article, deck: deck)
+            context.insert(item)
+            if article.state != status {
+                article.state = status
+                article.touchLibrary()
+            }
+            if status == .current {
+                article.firstDisplayedAt = article.firstDisplayedAt ?? .now
+            }
+        }
+
+        if persist { try context.save() }
+        WidgetSnapshotStore.write(article: selected.first)
     }
 
     nonisolated private static func dayStart(for date: Date) -> Date {

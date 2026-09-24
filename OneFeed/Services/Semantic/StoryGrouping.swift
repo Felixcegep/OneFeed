@@ -11,6 +11,13 @@ struct FeedStoryRow: Identifiable {
 }
 
 enum StoryGrouping {
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .numeric
+        formatter.unitsStyle = .full
+        return formatter
+    }()
+
     static func moreSourcesTitle(count: Int) -> String {
         if count == 1 {
             return "1 more source about this story"
@@ -20,11 +27,25 @@ enum StoryGrouping {
 
     static func similarCaption(matchedConsumedAt: Date?, now: Date = .now) -> String? {
         guard let matchedConsumedAt else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .numeric
-        formatter.unitsStyle = .full
-        let relative = formatter.localizedString(for: matchedConsumedAt, relativeTo: now)
+        let relative = relativeFormatter.localizedString(for: matchedConsumedAt, relativeTo: now)
         return "Similar to something you read \(relative)"
+    }
+
+    static func captions(for articles: [Article], memories: [ContentMemory], now: Date = .now) -> [UUID: String] {
+        var byKey: [String: ContentMemory] = [:]
+        byKey.reserveCapacity(memories.count)
+        for memory in memories {
+            byKey[memory.identityKey] = memory
+        }
+        var captions: [UUID: String] = [:]
+        for article in articles {
+            guard let caption = similarCaption(
+                matchedConsumedAt: byKey[ArticleIdentity.identityKey(for: article)]?.matchedConsumedAt,
+                now: now
+            ) else { continue }
+            captions[article.id] = caption
+        }
+        return captions
     }
 
     /// Search is already applied. Exact and near copies drop out; same-story clusters collapse to the newest source.

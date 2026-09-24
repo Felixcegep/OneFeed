@@ -68,6 +68,29 @@ struct DailyDeckTests {
         #expect(second.items.count == 1)
     }
 
+    @Test func finishedDeckRefillsWhenNewStoriesArrive() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let firstArticle = Article(guid: "one", title: "One", publishedAt: .now.addingTimeInterval(-120), feed: feed)
+        context.insert(firstArticle)
+
+        let service = DailyDeckService()
+        let deck = try service.generateIfNeeded(in: context)
+        let item = try #require(deck.items.first)
+        _ = try service.advance(item: item, to: .read, in: context)
+        #expect(try service.remainingArticles(in: context).isEmpty)
+
+        let secondArticle = Article(guid: "two", title: "Two", publishedAt: .now, feed: feed)
+        context.insert(secondArticle)
+        let refilled = try service.generateIfNeeded(in: context)
+        let open = try service.remainingArticles(in: context)
+
+        #expect(refilled.id == deck.id)
+        #expect(open.map(\.guid) == ["two"])
+        #expect(open.first?.state == .current)
+    }
+
     @Test func advanceMovesToNextItemAndMarksFirstDone() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)

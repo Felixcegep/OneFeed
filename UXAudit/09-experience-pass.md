@@ -17,13 +17,14 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Sources empty actions and section titles used system chrome | Sources | Medium | `.borderedProminent` and string section titles | Ink capsule and `GallerySectionHeader` | Code review |
 | Focus dot and Undo were short of 44pt | Reader, undo banner | Medium | Frames were 28pt and 36pt | Minimum 44pt height. The focus dot stays visually small | Code review |
 | Primary buttons tapped a haptic on press and again on release | Shared buttons | Low | `sensoryFeedback` followed `isPressed` both ways | Haptic only when the press begins | Code review |
+| Finished Today stayed empty after refresh found new stories | Today | High | `generateIfNeeded` returned the existing deck and did not fill open slots | When no story is still open, the same deck appends a new batch. An open story is left alone | `DailyDeckTests.finishedDeckRefillsWhenNewStoriesArrive` |
+| Today hid the “already read” line Feed shows | Today | Medium | Rows did not read `ContentMemory.matchedConsumedAt` | Featured story and list rows show that caption | Code review |
+| Thumbnails decoded the full image for a 64pt slot | Today, Queue, Feed | High | `AsyncImage` decoded the network bitmap at full size | `ThumbnailCache` downsamples with ImageIO and keeps 64 images | Code review |
 
 ## Still open
 
-- Today does not top up an exhausted daily deck when refresh finds new stories. `generateIfNeeded` keeps the existing deck for the calendar day.
-- Today rows do not show Feed’s “more sources” or “already read” captions. The deck already keeps one story per cluster.
+- Today still does not list “N more sources” under a story. The deck keeps one slot per cluster. The already-read line is on the row.
 - Swiping the takeaway sheet closed still marks the article read. That matches Done → optional note. A draft is not saved on swipe.
 - `SemanticMemoryPass` still fetches the whole library on the ingest actor during “Building today.”
-- Article thumbnails still decode full images for 64pt slots.
 - Search filters on every keystroke. The work is in memory, not a network call.
 - No Xcode on this machine, so the new progress test has not been executed here.

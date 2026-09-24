@@ -52,7 +52,7 @@ struct CurrentView: View {
                     if let featured = stories.first {
                         Section {
                             Button { open(featured) } label: {
-                                FeaturedStory(article: featured)
+                                FeaturedStory(article: featured, status: viewModel.storyCaptions[featured.id])
                             }
                             .buttonStyle(ArticleCardButtonStyle())
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -72,7 +72,7 @@ struct CurrentView: View {
                         Section {
                             ForEach(Array(stories.dropFirst())) { article in
                                 Button { open(article) } label: {
-                                    ArticleRow(article: article)
+                                    ArticleRow(article: article, status: viewModel.storyCaptions[article.id])
                                 }
                                 .buttonStyle(DirectoryRowButtonStyle())
                                 .articleListRow(isCurrent: article.isCurrentReading, isSelected: readerArticle?.id == article.id)

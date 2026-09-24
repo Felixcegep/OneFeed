@@ -20,6 +20,7 @@ final class CurrentViewModel {
     private(set) var position = 0
     private(set) var totalCount = 0
     private(set) var isRefreshing = false
+    private(set) var storyCaptions: [UUID: String] = [:]
     let progress = RefreshProgress()
     var presentedError: String?
 
@@ -230,8 +231,11 @@ final class CurrentViewModel {
         self.totalCount = totalCount
         if let context {
             remainingArticles = (try? deckService.remainingArticles(in: context)) ?? []
+            let memories = (try? context.fetch(FetchDescriptor<ContentMemory>())) ?? []
+            storyCaptions = StoryGrouping.captions(for: remainingArticles, memories: memories)
         } else {
             remainingArticles = []
+            storyCaptions = [:]
         }
     }
 }
