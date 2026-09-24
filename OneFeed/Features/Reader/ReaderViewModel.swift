@@ -70,7 +70,7 @@ final class ReaderViewModel {
         let shouldFetch: Bool
         if let container = article.modelContext?.container {
             shouldFetch = await Task.detached(priority: .utility) {
-                Self.shouldFetchFullArticle(id: articleID, in: container)
+                ArticleExtractionService.shouldFetchStoredArticle(id: articleID, in: container)
             }.value
         } else {
             shouldFetch = ArticleExtractionPolicy().shouldFetchPage(
@@ -95,19 +95,6 @@ final class ReaderViewModel {
         if let failure = saveArticleChanges() {
             bodyError = failure
         }
-    }
-
-    /// Reads the stored body on another context so opening the reader does not copy it on the main thread.
-    nonisolated private static func shouldFetchFullArticle(id articleID: UUID, in container: ModelContainer) -> Bool {
-        let context = ModelContext(container)
-        let matchID = articleID
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
-        descriptor.fetchLimit = 1
-        guard let stored = try? context.fetch(descriptor).first else { return false }
-        return ArticleExtractionPolicy().shouldFetchPage(
-            rssHTML: stored.contentHTML ?? stored.summary,
-            kind: stored.contentKind
-        )
     }
 
     func declineYouTubeSummary() {

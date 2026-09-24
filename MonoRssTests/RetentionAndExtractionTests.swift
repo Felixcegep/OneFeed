@@ -317,6 +317,33 @@ struct RetentionAndExtractionTests {
         #expect(articles[3].contentHTML == "<p>Short</p>")
         #expect(articles[3].timedDurationPhrase == nil)
     }
+
+    @Test func aFullTodayStoryIsNotFetchedAgain() async throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let long = Array(repeating: "word", count: 420).joined(separator: " ")
+        let article = Article(
+            guid: "full",
+            title: "Full",
+            url: URL(string: "https://source.test/full")!,
+            summary: "Short",
+            contentHTML: "<p>\(long)</p>",
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        context.insert(DailyDeckItem(position: 1, status: .current, article: article, deck: deck))
+        try context.save()
+
+        let extractor = RecordingExtractor()
+        let service = ArticleExtractionService(session: .shared, extractor: extractor)
+        await service.enrichUpcoming(in: context, from: deck.items.first, extraQueued: 2)
+
+        #expect(extractor.urls.isEmpty)
+        #expect(article.contentHTML == "<p>\(long)</p>")
+    }
 }
 
 private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {

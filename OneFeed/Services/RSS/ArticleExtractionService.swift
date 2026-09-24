@@ -50,15 +50,26 @@ final class ArticleExtractionService {
     }
 
     func extractedHTML(for article: Article, policy: ArticleExtractionPolicy = ArticleExtractionPolicy(), alreadyEligible: Bool = false) async -> String? {
-        let existing = article.contentHTML ?? article.summary
-        if ProcessInfo.processInfo.arguments.contains("-uiTesting") { return existing }
-        if !alreadyEligible {
-            let kind = article.contentKind
-            let shouldFetch = await Task.detached(priority: .utility) {
-                policy.shouldFetchPage(rssHTML: existing, kind: kind)
-            }.value
-            guard shouldFetch else { return existing }
+        if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+            return article.contentHTML ?? article.summary
         }
+        if !alreadyEligible {
+            let articleID = article.id
+            if let container = article.modelContext?.container {
+                let shouldFetch = await Task.detached(priority: .utility) {
+                    Self.shouldFetchStoredArticle(id: articleID, policy: policy, in: container)
+                }.value
+                guard shouldFetch else { return nil }
+            } else {
+                let existing = article.contentHTML ?? article.summary
+                let kind = article.contentKind
+                let shouldFetch = await Task.detached(priority: .utility) {
+                    policy.shouldFetchPage(rssHTML: existing, kind: kind)
+                }.value
+                guard shouldFetch else { return existing }
+            }
+        }
+        let existing = article.contentHTML ?? article.summary
         guard let url = article.url else { return existing }
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
@@ -78,6 +89,16 @@ final class ArticleExtractionService {
         }
     }
 
+    /// Reads the stored body on another context so a full article is not copied before the fetch decision.
+    nonisolated static func shouldFetchStoredArticle(id articleID: UUID, policy: ArticleExtractionPolicy = ArticleExtractionPolicy(), in container: ModelContainer) -> Bool {
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return false }
+        return policy.shouldFetchPage(rssHTML: stored.contentHTML ?? stored.summary, kind: stored.contentKind)
+    }
+
     /// Full-text only the current Today card and the next couple — not the whole library.
     func enrichUpcoming(in context: ModelContext, from item: DailyDeckItem?, extraQueued: Int = 2) async {
         guard let deck = item?.deck ?? (try? DailyDeckService().todayDeck(in: context)) else { return }
@@ -89,19 +110,17 @@ final class ArticleExtractionService {
             .compactMap(\.article)
         var bodies: [ExtractedBody] = []
         for article in targets {
-            let existing = article.contentHTML
-            if let html = await extractedHTML(for: article) {
-                if html != existing {
-                    article.contentHTML = html
-                    article.refreshEstimatedReadingMinutes()
-                    bodies.append(
-                        ExtractedBody(
-                            articleID: article.id,
-                            html: article.contentHTML ?? html,
-                            estimatedMinutes: article.estimatedReadingMinutes
-                        )
+            guard let html = await extractedHTML(for: article) else { continue }
+            if html != article.contentHTML {
+                article.contentHTML = html
+                article.refreshEstimatedReadingMinutes()
+                bodies.append(
+                    ExtractedBody(
+                        articleID: article.id,
+                        html: html,
+                        estimatedMinutes: article.estimatedReadingMinutes
                     )
-                }
+                )
             }
         }
         try? await LibraryIngestActor(modelContainer: context.container).persistExtractedBodies(bodies)
