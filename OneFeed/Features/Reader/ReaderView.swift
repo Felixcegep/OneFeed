@@ -734,15 +734,21 @@ struct ReaderView: View {
 
     private static func initialMode(for article: Article) -> ReaderDisplayMode {
         if article.contentKind == "pdf" {
-            return article.readableHTML == nil ? .website : .reader
+            return hasReadableDocument(article) ? .reader : .website
         }
         if article.isImportedDocument { return .reader }
         if article.contentKind == "youtube" {
             let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return summary.isEmpty ? .website : .reader
         }
-        if article.readableHTML == nil, article.url != nil { return .website }
+        if !hasReadableDocument(article), article.url != nil { return .website }
         return .reader
+    }
+
+    /// True when the stored body has visible text. Stops at the first character, so opening the reader does not copy the article.
+    private static func hasReadableDocument(_ article: Article) -> Bool {
+        guard let value = article.contentHTML ?? article.summary else { return false }
+        return value.contains { !$0.isWhitespace }
     }
 
     private var playbackURL: URL? {

@@ -187,6 +187,15 @@ struct ReaderFocusTests {
         #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == loadID)
     }
 
+    @Test @MainActor func whitespaceOnlyBodyUsesTheMetadataFallback() async {
+        let article = Article(guid: "blank", title: "Empty", contentHTML: "   \n")
+        let model = ReaderViewModel(article: article)
+        let html = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        let built = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("only provided metadata"))
+        #expect(built == html)
+    }
+
     @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {
         let article = Article(
             guid: "essay",

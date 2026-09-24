@@ -214,7 +214,6 @@ final class ReaderViewModel {
     private var cachedDocument: (key: String, html: String)?
     private var cachedBodyHash: (text: String, hash: Int)?
     private var cachedSummaryHash: (text: String, hash: Int)?
-    private var cachedVideoBody: (summary: String, html: String)?
 
     /// Date and length under the title. Kept off the document cache key so a late duration does not reload the page.
     var readerMetaLine: String {
@@ -241,14 +240,29 @@ final class ReaderViewModel {
     }
 
     /// Sanitizes and assembles the page away from the main thread. A cached page returns immediately.
+    /// The stored body is copied here and trimmed off the main thread.
     func loadDocumentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) async -> String {
-        let draft = makeDraft(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
-        if let cachedDocument, cachedDocument.key == draft.cacheKey {
+        let key = readerLoadID(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
+        if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
-        let key = draft.cacheKey
+        let snapshot = ReaderBodySnapshot(
+            contentKind: article.contentKind,
+            contentHTML: article.contentHTML,
+            summary: article.summary,
+            aiSummary: article.aiSummary
+        )
+        let shell = presentationDraft(
+            rawBody: "",
+            cacheKey: key,
+            fontChoice: fontChoice,
+            textSize: textSize,
+            boldText: boldText
+        )
         let html = await Task.detached(priority: .userInitiated) {
-            Self.render(draft)
+            var draft = shell
+            draft.rawBody = Self.resolvedBody(snapshot)
+            return Self.render(draft)
         }.value
         guard !Task.isCancelled else { return html }
         if cachedDocument?.key == key || cachedDocument == nil {
@@ -273,31 +287,32 @@ final class ReaderViewModel {
     }
 
     private func makeDraft(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool) -> ReaderDocumentDraft {
-        let fallback = switch article.contentKind {
-        case "epub":
-            "<p>This book couldn’t be opened. Import the EPUB again.</p>"
-        case "pdf":
-            "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
-        case "youtube":
-            "<p>Summarize this video to read it here. The video stays available from the switcher above.</p>"
-        default:
-            "<p>This source only provided metadata. Open the original article to continue reading.</p>"
-        }
-        let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let rawBody: String
-        if article.contentKind == "youtube", !summary.isEmpty {
-            if let cachedVideoBody, cachedVideoBody.summary == summary {
-                rawBody = cachedVideoBody.html
-            } else {
-                rawBody = ReaderHTML.videoSummaryBody(from: summary)
-                cachedVideoBody = (summary, rawBody)
-            }
-        } else {
-            rawBody = article.readableHTML ?? fallback
-        }
+        let snapshot = ReaderBodySnapshot(
+            contentKind: article.contentKind,
+            contentHTML: article.contentHTML,
+            summary: article.summary,
+            aiSummary: article.aiSummary
+        )
+        let rawBody = Self.resolvedBody(snapshot)
         // Length and date stay out of this key. A late duration must not rebuild the page.
         // The body hash is remembered, so a redraw does not walk the article again.
-        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(snapshot.trimmedSummary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+        return presentationDraft(
+            rawBody: rawBody,
+            cacheKey: key,
+            fontChoice: fontChoice,
+            textSize: textSize,
+            boldText: boldText
+        )
+    }
+
+    private func presentationDraft(
+        rawBody: String,
+        cacheKey: String,
+        fontChoice: ReaderFontChoice,
+        textSize: ReaderTextSize,
+        boldText: Bool
+    ) -> ReaderDocumentDraft {
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
         case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
@@ -318,7 +333,7 @@ final class ReaderViewModel {
         let horizontalPad = 48
         #endif
         return ReaderDocumentDraft(
-            cacheKey: key,
+            cacheKey: cacheKey,
             rawBody: rawBody,
             metaLine: readerMetaLine,
             title: article.title,
@@ -339,6 +354,27 @@ final class ReaderViewModel {
             focusCSS: ReaderFocus.pageCSS,
             focusScript: ReaderFocus.pageScriptTag
         )
+    }
+
+    /// Picks the page body without touching the view. Whitespace-only HTML still falls through to the fallback.
+    nonisolated private static func resolvedBody(_ snapshot: ReaderBodySnapshot) -> String {
+        let fallback = switch snapshot.contentKind {
+        case "epub":
+            "<p>This book couldn’t be opened. Import the EPUB again.</p>"
+        case "pdf":
+            "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
+        case "youtube":
+            "<p>Summarize this video to read it here. The video stays available from the switcher above.</p>"
+        default:
+            "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        }
+        if snapshot.contentKind == "youtube", !snapshot.trimmedSummary.isEmpty {
+            return ReaderHTML.videoSummaryBody(from: snapshot.trimmedSummary)
+        }
+        if let value = snapshot.contentHTML ?? snapshot.summary, value.contains(where: { !$0.isWhitespace }) {
+            return value
+        }
+        return fallback
     }
 
     nonisolated private static func render(_ draft: ReaderDocumentDraft) -> String {
@@ -443,6 +479,17 @@ final class ReaderViewModel {
         #else
         "standard"
         #endif
+    }
+
+    private struct ReaderBodySnapshot: Sendable {
+        var contentKind: String
+        var contentHTML: String?
+        var summary: String?
+        var aiSummary: String?
+
+        var trimmedSummary: String {
+            aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
     }
 
     private struct ReaderDocumentDraft: Sendable {
