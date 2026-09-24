@@ -102,6 +102,11 @@ final class FreshRSSSyncService {
         default: kind = nil
         }
         guard let kind else { return }
+        let kindRaw = kind.rawValue
+        let descriptor = FetchDescriptor<PendingSyncMutation>(predicate: #Predicate {
+            $0.remoteArticleID == remoteID && $0.kindRawValue == kindRaw
+        })
+        if let pending = try? context.fetch(descriptor), !pending.isEmpty { return }
         context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: kind))
         try? context.save()
     }

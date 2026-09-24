@@ -8,7 +8,7 @@ enum ArticleActions {
         to article: Article,
         in context: ModelContext
     ) {
-        guard article.isStored else { return }
+        guard article.isStored, article.state != state else { return }
         if state == .skipped {
             ReadingUndo.begin(article, in: context)
         }

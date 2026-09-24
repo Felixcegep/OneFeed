@@ -78,6 +78,7 @@ struct ArticleQueueService {
 
     /// Moves a finished article into Queue (`.saved`). Rating and the reading takeaway stay.
     func moveToQueue(_ article: Article, in context: ModelContext) throws {
+        guard article.state != .saved else { return }
         article.state = .saved
         article.isRemoteStarred = true
         if article.completedAt == nil {
