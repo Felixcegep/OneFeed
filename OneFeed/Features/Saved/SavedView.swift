@@ -22,6 +22,7 @@ struct SavedView: View {
     /// Collapsed sections stay put while the open story changes. Rebuilt off the main thread when the queue or search changes.
     @State private var queueLayout = QueueLayout()
     @State private var queueReady = false
+    @State private var queueHoldRevealed = false
 
     /// Every waiting id and kind. Opening a story does not collapse the queue again.
     private var queueEdge: Int {
@@ -37,6 +38,10 @@ struct SavedView: View {
 
     private var searchQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var queueHoldWaiting: Bool {
+        !queueReady && !queueLayout.hasQueue && savedQuery.contains(where: \.isStored)
     }
 
     private var queuePlanEdge: Int {
@@ -130,9 +135,26 @@ struct SavedView: View {
                     noMatches
                 }
             } else if !queueReady && !layout.hasQueue {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
+                if LibraryHold.showsStoredRows(
+                    waiting: savedQuery.contains(where: \.isStored),
+                    revealed: queueHoldRevealed
+                ) {
+                    List {
+                        ForEach(savedQuery.filter(\.isStored)) { article in
+                            Button { viewModel.selectedArticle = article } label: {
+                                QueueArticleRow(article: article)
+                            }
+                            .buttonStyle(DirectoryRowButtonStyle())
+                            .articleListRow(isCurrent: article.isCurrentReading, isSelected: viewModel.selectedArticle?.id == article.id)
+                            .accessibilityHint("Opens this piece from Queue")
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
                     if let upNext = layout.upNext {
@@ -175,6 +197,13 @@ struct SavedView: View {
         )
         .task(id: queuePlanEdge) {
             await reloadQueue()
+        }
+        .task(id: queueHoldWaiting) {
+            queueHoldRevealed = false
+            guard queueHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, queueHoldWaiting else { return }
+            queueHoldRevealed = true
         }
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()

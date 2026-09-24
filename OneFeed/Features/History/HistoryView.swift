@@ -24,9 +24,14 @@ struct HistoryView: View {
     /// Day groups stay put while the open story changes. Rebuilt off the main thread when search or the list changes.
     @State private var historyDays: [HistoryDay] = []
     @State private var historyReady = false
+    @State private var historyHoldRevealed = false
 
     private var trimmedQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var historyHoldWaiting: Bool {
+        !historyReady && historyDays.isEmpty && notInterested.isEmpty && history.contains(where: \.isStored)
     }
 
     private func reloadHistoryDays() async {
@@ -130,10 +135,26 @@ struct HistoryView: View {
                         description: "Try a title, note, or source name."
                     )
                 }
-            } else if !historyReady && historyDays.isEmpty {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
+            } else if !historyReady && historyDays.isEmpty && notInterested.isEmpty {
+                if LibraryHold.showsStoredRows(
+                    waiting: history.contains(where: \.isStored),
+                    revealed: historyHoldRevealed
+                ) {
+                    List {
+                        ForEach(history.filter(\.isStored)) { article in
+                            Button { selectedArticle = article } label: {
+                                ArticleRow(article: article, status: article.historyStatus)
+                            }
+                            .buttonStyle(DirectoryRowButtonStyle())
+                            .articleListRow(isSelected: selectedArticle?.id == article.id)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
                     if trimmedQuery.isEmpty {
@@ -192,6 +213,13 @@ struct HistoryView: View {
         .background(OneFeedTheme.plaster)
         .task(id: historyEdge) {
             await reloadHistoryDays()
+        }
+        .task(id: historyHoldWaiting) {
+            historyHoldRevealed = false
+            guard historyHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, historyHoldWaiting else { return }
+            historyHoldRevealed = true
         }
         .alert("Couldn’t put that in Queue", isPresented: Binding(
             get: { queueError != nil },

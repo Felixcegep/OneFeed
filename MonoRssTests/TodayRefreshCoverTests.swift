@@ -45,6 +45,9 @@ struct TodayRefreshCoverTests {
         #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: false, hasPlannedRows: false) == false)
         #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: true, hasPlannedRows: false))
         #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: true, hasPlannedRows: true) == false)
+        #expect(LibraryHold.showsStoredRows(waiting: true, revealed: false) == false)
+        #expect(LibraryHold.showsStoredRows(waiting: true, revealed: true))
+        #expect(LibraryHold.showsStoredRows(waiting: false, revealed: true) == false)
     }
 
     @Test func theFirstLoadStillUsesTheCover() {

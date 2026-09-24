@@ -742,6 +742,11 @@ enum LibraryHold {
         if !hasStoredRows { return true }
         return ready && !hasPlannedRows
     }
+
+    /// Rows already in memory stay hidden for a moment, then appear if the plan is still running.
+    static func showsStoredRows(waiting: Bool, revealed: Bool) -> Bool {
+        waiting && revealed
+    }
 }
 
 struct EmptyLibraryState: View {

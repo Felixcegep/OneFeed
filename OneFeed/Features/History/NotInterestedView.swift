@@ -12,6 +12,7 @@ struct NotInterestedView: View {
     /// Source groups stay put while a row redraws. Rebuilt off the main thread when a mark is added, removed, or recorded again.
     @State private var grouped: [NotInterestedSourceGroup] = []
     @State private var logReady = false
+    @State private var logHoldRevealed = false
     @State private var isRemovingSource = false
     @State private var queueError: String?
     @State private var storyError: String?
@@ -27,6 +28,10 @@ struct NotInterestedView: View {
             stamp ^= entry.recordedAt.hashValue
         }
         return stamp
+    }
+
+    private var logHoldWaiting: Bool {
+        !logReady && grouped.isEmpty && !entries.isEmpty
     }
 
     private func reloadLog() async {
@@ -65,9 +70,18 @@ struct NotInterestedView: View {
                     description: "Skip a story, then choose Not interested. Those articles stay here, grouped by source."
                 )
             } else if !logReady && grouped.isEmpty {
-                Color.clear
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
+                if LibraryHold.showsStoredRows(waiting: !entries.isEmpty, revealed: logHoldRevealed) {
+                    List {
+                        ForEach(entries) { entry in
+                            entryRow(entry)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
                     ForEach(grouped) { group in
@@ -90,6 +104,13 @@ struct NotInterestedView: View {
         .background(OneFeedTheme.plaster)
         .task(id: logStamp) {
             await reloadLog()
+        }
+        .task(id: logHoldWaiting) {
+            logHoldRevealed = false
+            guard logHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, logHoldWaiting else { return }
+            logHoldRevealed = true
         }
         .toolbar {
             if !grouped.isEmpty {
