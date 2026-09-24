@@ -362,10 +362,24 @@ struct FeedAndFreshRSSDomainTests {
             query: "glacier"
         )
         #expect(hits.count == 1)
+        let byTitle = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [storyListSnap(article)],
+            placements: [:],
+            expanded: [],
+            query: "quiet"
+        )
+        #expect(byTitle.count == 1)
+        var untitled = storyListSnap(article)
+        untitled.title = ""
+        untitled.feedTitle = nil
+        untitled.summary = nil
+        untitled.aiSummary = nil
         let open = StoryListPlan.rows(
             destination: .unread,
             feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
-            stories: [sampled],
+            stories: [untitled],
             placements: [:],
             expanded: [],
             query: ""

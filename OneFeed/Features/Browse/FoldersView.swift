@@ -786,13 +786,14 @@ struct ArticleCollectionView: View {
         let destination = destination
         let feedsByID = Dictionary(feeds.map { ($0.id, FolderFeedSnap(id: $0.id, memberships: $0.memberships)) }, uniquingKeysWith: { first, _ in first })
         let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searching = !query.isEmpty
         let snaps = articles.map { article in
             StoryListSnap(
                 id: article.id,
                 feedID: article.feed?.id,
-                feedTitle: article.feed?.title,
+                feedTitle: searching ? article.feed?.title : nil,
                 publishedAt: article.publishedAt,
-                title: article.title,
+                title: searching ? article.title : "",
                 aiSummary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.aiSummary),
                 summary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.summary),
                 videoID: article.videoID,
