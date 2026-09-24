@@ -37,6 +37,21 @@ enum ArticleActions {
         }
     }
 
+    static func rate(_ article: Article, stars: Int, in context: ModelContext) throws {
+        guard article.isStored else { return }
+        let next = min(5, max(0, stars))
+        guard article.rating != next else { return }
+        let previous = article.rating
+        article.setRating(next)
+        LibraryChange.note(article)
+        do {
+            try context.save()
+        } catch {
+            article.setRating(previous)
+            throw error
+        }
+    }
+
     private static func syncTodayDeck(_ article: Article, to state: ArticleState, in context: ModelContext) throws {
         guard let deck = try? DailyDeckService().todayDeck(in: context),
               let item = deck.items.first(where: { $0.article?.id == article.id })
@@ -64,6 +79,7 @@ struct ArticleSwipeActions: ViewModifier {
     let article: Article
     let context: ModelContext
     var onChanged: (() -> Void)? = nil
+    @State private var ratingError: String?
 
     func body(content: Content) -> some View {
         content
@@ -111,8 +127,7 @@ struct ArticleSwipeActions: ViewModifier {
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
                         Button {
-                            article.setRating(stars)
-                            try? context.save()
+                            saveRating(stars)
                         } label: {
                             Label(
                                 "\(stars) star\(stars == 1 ? "" : "s")",
@@ -122,12 +137,28 @@ struct ArticleSwipeActions: ViewModifier {
                     }
                     if article.rating > 0 {
                         Button("Clear rating", systemImage: "star.slash") {
-                            article.setRating(0)
-                            try? context.save()
+                            saveRating(0)
                         }
                     }
                 }
             }
+            .alert("Couldn’t save that rating", isPresented: Binding(
+                get: { ratingError != nil },
+                set: { if !$0 { ratingError = nil } }
+            )) {
+                Button("OK", role: .cancel) { ratingError = nil }
+            } message: {
+                Text(ratingError ?? "")
+            }
+    }
+
+    private func saveRating(_ stars: Int) {
+        do {
+            try ArticleActions.rate(article, stars: stars, in: context)
+            onChanged?()
+        } catch {
+            ratingError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that rating.")
+        }
     }
 }
 

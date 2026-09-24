@@ -397,6 +397,7 @@ private struct LaterQueueActions: ViewModifier {
     let restore: (Article) -> Void
     let onChanged: () -> Void
     @Environment(\.modelContext) private var modelContext
+    @State private var ratingError: String?
 
     func body(content: Content) -> some View {
         content
@@ -420,15 +421,13 @@ private struct LaterQueueActions: ViewModifier {
                     onChanged()
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    ArticleActions.markNotInterested(article, in: modelContext)
+                    guard ArticleActions.markNotInterested(article, in: modelContext) else { return }
                     onChanged()
                 }
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
                         Button {
-                            guard article.isStored else { return }
-                            article.setRating(stars)
-                            try? modelContext.save()
+                            saveRating(stars)
                         } label: {
                             Label(
                                 "\(stars) star\(stars == 1 ? "" : "s")",
@@ -438,12 +437,28 @@ private struct LaterQueueActions: ViewModifier {
                     }
                     if article.rating > 0 {
                         Button("Clear rating", systemImage: "star.slash") {
-                            article.setRating(0)
-                            try? modelContext.save()
+                            saveRating(0)
                         }
                     }
                 }
             }
+            .alert("Couldn’t save that rating", isPresented: Binding(
+                get: { ratingError != nil },
+                set: { if !$0 { ratingError = nil } }
+            )) {
+                Button("OK", role: .cancel) { ratingError = nil }
+            } message: {
+                Text(ratingError ?? "")
+            }
+    }
+
+    private func saveRating(_ stars: Int) {
+        do {
+            try ArticleActions.rate(article, stars: stars, in: modelContext)
+            onChanged()
+        } catch {
+            ratingError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that rating.")
+        }
     }
 }
 

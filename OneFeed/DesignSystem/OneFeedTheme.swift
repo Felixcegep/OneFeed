@@ -669,16 +669,17 @@ struct ArticleRatingGlyphs: View {
 struct ArticleRatingControl: View {
     let article: Article
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var modelContext
+    @State private var saveError: String?
 
     var body: some View {
         if article.isStored {
             HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { star in
                     Button {
-                        guard article.isStored else { return }
+                        let next = article.rating == star ? 0 : star
                         withAnimation(reduceMotion ? nil : OneFeedMotion.press) {
-                            article.setRating(article.rating == star ? 0 : star)
-                            try? article.modelContext?.save()
+                            saveRating(next)
                         }
                     } label: {
                         Image(systemName: star <= article.rating ? "star.fill" : "star")
@@ -695,6 +696,22 @@ struct ArticleRatingControl: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(article.rating == 0 ? "Rating" : "Rated \(article.rating) of 5")
+            .alert("Couldn’t save that rating", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
+        }
+    }
+
+    private func saveRating(_ stars: Int) {
+        do {
+            try ArticleActions.rate(article, stars: stars, in: modelContext)
+        } catch {
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that rating.")
         }
     }
 }

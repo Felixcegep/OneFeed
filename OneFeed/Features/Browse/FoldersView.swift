@@ -30,6 +30,7 @@ struct FoldersView: View {
     @State private var openFolderID: FeedFolderID?
     @State private var folderQuery = ""
     @State private var folderAddError: String?
+    @State private var sourceSaveError: String?
     @State private var isAddingAddress = false
     @State private var showingNewFolder = false
     @State private var newFolderName = ""
@@ -155,6 +156,14 @@ struct FoldersView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(refresh.presentedError ?? "")
+        }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { sourceSaveError != nil },
+            set: { if !$0 { sourceSaveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { sourceSaveError = nil }
+        } message: {
+            Text(sourceSaveError ?? "")
         }
     }
 
@@ -528,15 +537,26 @@ struct FoldersView: View {
     }
 
     private func removeFromFolder(_ feed: Feed, folderName: String) {
-        feed.removeFolder(folderName)
+        guard feed.removeFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            feed.addFolder(folderName)
+            sourceSaveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     private func fileExisting(_ feed: Feed, in folderName: String) {
-        feed.addFolder(folderName)
+        guard feed.addFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            feed.removeFolder(folderName)
+            sourceSaveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+            return
+        }
         folderQuery = ""
         folderAddError = nil
     }

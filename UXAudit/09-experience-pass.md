@@ -146,6 +146,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A Google Drive pull during reading never arrived after the story closed | Library | High | The sync returned skipped and forgot the pull | Automatic and manual pulls wait, then one pull runs after the story closes. Choosing the cloud file still pulls immediately | `LibrarySyncServiceDriveTests.skippedDrivePullRunsOnceAfterReadingEnds` |
 | Done or Skip closed the reader when the save failed | Today, Queue, Feed, History | High | The reader dismissed first, and `ArticleActions.apply` discarded the error | The story stays open, the decision curtain leaves, and an alert explains the failure | Code review |
 | A source switch stayed on when the save failed | Source | High | Folder, Today, video, and blocked-word writes used `try?` and left the control on the unsaved value | The control returns to the stored value and an alert explains the failure. A Today membership change that fails rolls the unsaved deck edit back | Code review |
+| A rating or folder move stayed on screen when the save failed | Reader, Queue, Feed | High | Star controls and folder editing saved with `try?` | The stars or the folder membership return to the stored value, and an alert explains the failure | Code review |
 
 ## Still open
 
