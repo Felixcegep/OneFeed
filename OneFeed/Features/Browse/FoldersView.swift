@@ -269,8 +269,9 @@ struct FoldersView: View {
         ListIdentity.token(ids: openQuery.lazy.map(\.id))
     }
 
+    /// The folders already on screen. Moving one does not count every open story again.
     private func displayedFolderNames() -> [String] {
-        FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery).compactMap { summary in
+        folderSummaries.compactMap { summary in
             if case .named(let name) = summary.folderID { return name }
             return nil
         }
