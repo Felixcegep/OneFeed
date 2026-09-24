@@ -923,6 +923,8 @@ private struct ReaderWebContent: View {
     /// One reading-position snapshot at a time. A second request runs after the first.
     @State private var trailTask: Task<Void, Never>?
     @State private var trailAgain = false
+    /// True while the current page is being saved before a new page replaces it.
+    @State private var replacingPage = false
 
     private var showCover: Bool { !hasCommitted && allowCover }
     private var resolvedMode: ReaderFocusMode {
@@ -975,7 +977,7 @@ private struct ReaderWebContent: View {
             }
             .task(id: html) {
                 if hasCommitted, didRestoreTrail {
-                    await persistTrail()
+                    await persistTrailBeforeReplace()
                 }
                 didRestoreTrail = false
                 lastPersistedTrail = nil
@@ -1020,7 +1022,32 @@ private struct ReaderWebContent: View {
         }
     }
 
+    /// Saves the place, then lets the caller load the next page.
+    /// A snapshot already running finishes first. One later snapshot runs after it.
+    private func persistTrailBeforeReplace() async {
+        replacingPage = true
+        defer {
+            replacingPage = false
+            trailAgain = false
+        }
+        if trailTask == nil {
+            await persistTrail()
+            return
+        }
+        trailAgain = true
+        while let running = trailTask {
+            await running.value
+        }
+        guard trailAgain else { return }
+        trailAgain = false
+        await persistTrail()
+    }
+
     private func scheduleTrailPersist() {
+        if replacingPage {
+            trailAgain = true
+            return
+        }
         if trailTask != nil {
             trailAgain = true
             return
