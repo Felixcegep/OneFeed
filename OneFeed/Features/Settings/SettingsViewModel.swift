@@ -11,6 +11,7 @@ final class SettingsViewModel {
     private(set) var accounts: [SyncAccount] = []
     private(set) var feeds: [Feed] = []
     private(set) var isSyncing = false
+    private var isDisconnecting = false
     let progress = RefreshProgress()
     var isConnectingFreshRSS = false
     var isConfirmingDisconnect = false
@@ -57,6 +58,7 @@ final class SettingsViewModel {
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
     }
     func sync() async {
+        guard !isSyncing, !isDisconnecting else { return }
         guard let context, let account = freshRSS else { return }
         isSyncing = true
         defer {
@@ -73,7 +75,10 @@ final class SettingsViewModel {
         }
     }
     func disconnect() async {
+        guard !isDisconnecting else { return }
         guard let context, let account = freshRSS else { return }
+        isDisconnecting = true
+        defer { isDisconnecting = false }
         do {
             try await freshRSSService.disconnect(account: account, in: context)
             presentStatus("FreshRSS disconnected")
@@ -319,13 +324,20 @@ final class FreshRSSConnectViewModel {
     }
 
     func connect(in context: ModelContext) async -> Bool {
+        guard !isConnecting else { return false }
         guard let url = FreshRSSConfiguration.normalizedServerURL(from: server) else {
             presentedError = "Enter a valid server address."
             return false
         }
         isConnecting = true
-        do { _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context); return true }
-        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t connect to FreshRSS."); isConnecting = false; return false }
+        defer { isConnecting = false }
+        do {
+            _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context)
+            return true
+        } catch {
+            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t connect to FreshRSS.")
+            return false
+        }
     }
 }
 

@@ -74,6 +74,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A missing image collapsed the row while scrolling | Today, Queue, Feed | High | The thumbnail was removed when the download failed, so the row height changed under the finger | The same slot stays, filled with paper, so the list does not jump | Code review |
 | Restoring sources alerted twice under the title OneFeed | Sources | Medium | The alert opened when the restore started, then again when it finished, and the title did not say what happened | The alert waits until the restore finishes, and the title is the result | Code review |
 | A fuller article reloaded the page and lost the place | Reader | High | Replacing the page cleared the saved position before the new page could restore it | The current place is saved first, then the new page opens there | Code review |
+| A second Sync, Disconnect, or Connect could start another request | Settings | High | The button disabled only after the first request had already begun | A second call returns while that request is still running | Code review |
 
 ## Still open
 
