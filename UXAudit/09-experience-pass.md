@@ -101,6 +101,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a Queue story rebuilt every section | Queue | High | Each open walked the saved list again to split videos, files, articles, and audio | Those sections stay cached until the queue or the search changes | Code review |
 | Sources empty states used the system unavailable view | Sources | Medium | The folder list and a folder with no sources used `ContentUnavailableView` inside a row | They use the same plaster empty state as Queue, with a next action | Code review |
 | The Today source picker used the system empty view | Today | Medium | No sources and no search matches sat in a system unavailable row | They use the same plaster empty state, and say what to do next | Code review |
+| Dragging focus intensity reconfigured the page on every step | Reader | Medium | Each slider change started another focus task, and an older one could finish last | The latest change waits a moment and replaces the one already waiting | Code review |
 
 ## Still open
 

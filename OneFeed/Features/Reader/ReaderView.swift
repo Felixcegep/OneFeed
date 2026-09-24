@@ -911,6 +911,8 @@ private struct ReaderWebContent: View {
     @State private var lastPersistedTrail: ReadingTrail?
     /// The page already applied a zone the reader dragged. Skip the echo that would reconfigure focus mid-scroll.
     @State private var ignoreNextZoneApply = false
+    /// Latest focus change wins. A drag does not stack a configure for every step.
+    @State private var focusApply: Task<Void, Never>?
 
     private var showCover: Bool { !hasCommitted && allowCover }
     private var resolvedMode: ReaderFocusMode {
@@ -935,17 +937,17 @@ private struct ReaderWebContent: View {
                 if !loading { hasCommitted = true }
             }
             .onChange(of: focusMode) { _, _ in
-                Task { await applyFocus(restore: false) }
+                scheduleFocusApply()
             }
             .onChange(of: focusIntensity) { _, _ in
-                Task { await applyFocus(restore: false) }
+                scheduleFocusApply()
             }
             .onChange(of: focusZoneY) { _, _ in
                 if ignoreNextZoneApply {
                     ignoreNextZoneApply = false
                     return
                 }
-                Task { await applyFocus(restore: false) }
+                scheduleFocusApply()
             }
             .onChange(of: metaLine) { _, line in
                 Task { await updateMeta(line) }
@@ -956,6 +958,7 @@ private struct ReaderWebContent: View {
                 }
             }
             .onDisappear {
+                focusApply?.cancel()
                 Task { await persistTrail() }
             }
             .task(id: html) {
@@ -998,8 +1001,18 @@ private struct ReaderWebContent: View {
         )
     }
 
+    private func scheduleFocusApply() {
+        focusApply?.cancel()
+        focusApply = Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            await applyFocus(restore: false)
+        }
+    }
+
     @MainActor
     private func applyFocus(restore: Bool) async {
+        guard !Task.isCancelled else { return }
         let trail = restore ? ReadingTrailStore.load(articleID: articleID) : nil
         if restore { didRestoreTrail = true }
         let cfg = ReaderFocus.configuration(
