@@ -312,15 +312,10 @@ struct ArticleRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
         .accessibilityHint("Opens this article")
-        .accessibilityValue(spokenCaption)
+        .modifier(LateCaptionValue(SpokenCaption.value(spoken: spokenStatus, visible: status)))
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
-    }
-
-    private var spokenCaption: String {
-        guard let spokenStatus, spokenStatus != status else { return "" }
-        return spokenStatus
     }
 
     private var thumbnailPlaceholder: some View {
@@ -422,15 +417,10 @@ struct FeaturedStory: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(article.isCurrentReading ? .isSelected : [])
         .accessibilityHint("Opens this article")
-        .accessibilityValue(spokenCaption)
+        .modifier(LateCaptionValue(SpokenCaption.value(spoken: spokenStatus, visible: status)))
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
-    }
-
-    private var spokenCaption: String {
-        guard let spokenStatus, spokenStatus != status else { return "" }
-        return spokenStatus
     }
 
     private var byline: String {
@@ -459,6 +449,19 @@ struct FeaturedStory: View {
         case "pdf": "doc.text"
         case "epub": "book.closed"
         default: "book"
+        }
+    }
+}
+
+/// Applies a late caption for VoiceOver without replacing the row’s value when there is nothing new to say.
+private struct LateCaptionValue: ViewModifier {
+    var text: String?
+
+    func body(content: Content) -> some View {
+        if let text {
+            content.accessibilityValue(text)
+        } else {
+            content
         }
     }
 }

@@ -38,6 +38,10 @@ struct TodayRefreshCoverTests {
         let visual = StoryCaptionPublish.visual(known: known, visibleIDs: [shownID, waitingID])
         #expect(visual == [shownID: "Similar to something you read earlier today"])
         #expect(visual[waitingID] == nil)
+        #expect(SpokenCaption.value(spoken: "Similar to something you read earlier today", visible: nil) == "Similar to something you read earlier today")
+        #expect(SpokenCaption.value(spoken: "Similar to something you read earlier today", visible: "Similar to something you read earlier today") == nil)
+        #expect(SpokenCaption.value(spoken: nil, visible: nil) == nil)
+        #expect(SpokenCaption.value(spoken: "", visible: nil) == nil)
     }
 
     @Test func anEmptyLibraryExplainsItselfBeforeThePlan() {

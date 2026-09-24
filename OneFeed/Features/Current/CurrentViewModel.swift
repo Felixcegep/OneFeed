@@ -379,3 +379,11 @@ enum StoryCaptionPublish {
         return shown
     }
 }
+
+/// VoiceOver hears a late caption only when it is not already on the card.
+enum SpokenCaption {
+    static func value(spoken: String?, visible: String?) -> String? {
+        guard let spoken, !spoken.isEmpty, spoken != visible else { return nil }
+        return spoken
+    }
+}
