@@ -16,11 +16,9 @@ struct CurrentView: View {
         viewModel.remainingArticles.filter(\.isStored)
     }
 
+    /// Every story in the deck. A middle replacement still moves the Mac reader on.
     private var storyEdge: Int {
-        var token = stories.count
-        token = token &* 31 &+ (stories.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (stories.last?.id.hashValue ?? 0)
-        return token
+        ListIdentity.token(ids: stories.lazy.map(\.id))
     }
 
     var body: some View {

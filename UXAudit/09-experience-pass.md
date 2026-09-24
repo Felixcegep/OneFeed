@@ -124,6 +124,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A middle story could stay on screen after it was replaced | Queue, History, Feed, Source | High | The row cache treated the same count and the same ends as the same list | The cache includes every story id, so a middle replacement rebuilds the rows. Opening a story still does not regroup them | `SourceDetailTests.middleIdentityChangesTheListToken` |
 | A folder badge could keep a story that had already left the middle of the list | Feed | High | The folder cache used the count and the ends, so a middle replacement left the old unread count | Folder badges use every open story id. A refresh tick still does not regroup the folders | Code review |
 | A video could stay in the article section of Queue | Queue | Medium | The section cache ignored a story whose kind changed and whose id did not | The queue cache includes each story’s kind, so a video moves into the video section | Code review |
+| The Mac reader could stay on a Today story that had left the middle of the deck | Today | High | The reader only noticed a change in the count or the ends | Any change in the deck moves the reader on to a story that is still there | Code review |
 
 ## Still open
 
