@@ -596,19 +596,19 @@ struct AddSourceView: View {
                 }
             }
             .overlay {
-                if showSuccess {
-                    ZStack {
+                ZStack {
+                    if showSuccess {
                         OneFeedTheme.plaster.opacity(0.97)
                         VStack(spacing: 16) {
                             OneFeedMarkBurst(size: 56)
                             GalleryLabel(text: "Added")
                         }
+                        .transition(.opacity)
                     }
-                    .ignoresSafeArea()
-                    .transition(.opacity)
                 }
+                .ignoresSafeArea()
+                .animation(reduceMotion ? nil : OneFeedMotion.decision, value: showSuccess)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
             .oneFeedPaperScreen()

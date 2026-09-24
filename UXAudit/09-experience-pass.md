@@ -88,6 +88,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Refresh walked every article id to keep folder rows in place | Feed | High | The list stamp and the placement task mapped every id on each progress tick | The list reuses rows while the count and the ends stay put. Placements reload from those ends | Code review |
 | Opening a Queue or History story hashed every row | Queue, History, Today | High | The list stamp walked every id, guid, and date before it could see that nothing had changed | The collapsed queue, the day groups, and the Mac reader check use the count and the ends | Code review |
 | The progress line could paint across the bar while its width moved | Today, Feed, Settings | High | An overlay rectangle stayed in the tree at height 0, and the appear animation could slide the fill | The fill exists only while the line is shown, and the width itself does not animate | Code review. Still needs a device pass for scroll-to-top |
+| Adding a source faded the whole form | Add Source | Medium | The success animation sat on the form, so the fields moved with the cover | The cover fades in its own overlay. The form underneath stays still | Code review |
 
 ## Still open
 
