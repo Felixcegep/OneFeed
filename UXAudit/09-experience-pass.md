@@ -195,6 +195,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a story sanitized the article before the reader could appear | Reader | High | The first frame built and cleaned the whole page on the main thread | The reader chrome appears first. Cleaning and assembling the page happens off the main thread, and a later duration still does not reload it | `ReaderFocusTests.readerDocumentBuiltOffTheMainThreadMatchesTheCachedPage` |
 | Ask Gemini built the not-interested log before the librarian could open | Not interested | Medium | The button fetched and grouped the log on the main thread, then pushed the screen | The librarian opens immediately and builds that prompt off the main thread | `NotInterestedLogTests.reviewPromptMatchesABackgroundRead` |
 | History sections from another year looked like this year | History | Medium | A day older than this year was labeled month and day only, so two Januaries shared a heading | Today and Yesterday stay words. Another year keeps the year | `FeedAndFreshRSSDomainTests.historySectionKeepsTheYearWhenTheDayIsNotThisYear` |
+| Opening Not interested fetched once per row | Not interested | High | Each row looked up its story on its own, including the article body | The list resolves those stories in one lookup and leaves the bodies on disk until a row is opened | `NotInterestedLogTests.notInterestedRowsResolveTheirStoriesInOneLookup` |
 
 ## Still open
 

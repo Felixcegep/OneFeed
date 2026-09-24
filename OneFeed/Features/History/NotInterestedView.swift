@@ -17,7 +17,7 @@ struct NotInterestedView: View {
     @State private var logError: String?
 
     private var groups: [NotInterestedSourceGroup] {
-        listCache.groups(from: entries, stamp: logStamp)
+        listCache.groups(from: entries, stamp: logStamp, in: modelContext)
     }
 
     /// Changes when a mark is added, removed, or retitled. Scrolling does not.
@@ -308,11 +308,17 @@ private final class NotInterestedListCache {
     private var cachedGroups: [NotInterestedSourceGroup] = []
     private var articles: [PersistentIdentifier: Article?] = [:]
 
-    func groups(from entries: [NotInterestedEntry], stamp: Int) -> [NotInterestedSourceGroup] {
+    func groups(from entries: [NotInterestedEntry], stamp: Int, in context: ModelContext) -> [NotInterestedSourceGroup] {
         if self.stamp == stamp { return cachedGroups }
         self.stamp = stamp
         articles.removeAll()
         cachedGroups = NotInterestedLog.groups(from: entries)
+        let matches = NotInterestedLog.articles(matchingGUIDs: entries.map(\.articleGUID), in: context)
+        for entry in entries {
+            if let match = matches[entry.articleGUID] {
+                articles[entry.persistentModelID] = match
+            }
+        }
         return cachedGroups
     }
 

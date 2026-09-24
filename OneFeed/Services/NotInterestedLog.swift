@@ -199,6 +199,20 @@ enum NotInterestedLog {
         return feeds.first { $0.feedURL.absoluteString.caseInsensitiveCompare(trimmed) == .orderedSame }
     }
 
+    /// One lookup for the log, so opening the list does not fetch once per row.
+    nonisolated static func articles(matchingGUIDs guids: [String], in context: ModelContext) -> [String: Article] {
+        let keys = guids.filter { !$0.isEmpty }
+        guard !keys.isEmpty else { return [:] }
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { keys.contains($0.guid) })
+        descriptor.propertiesToFetch = [\.guid]
+        let found = (try? context.fetch(descriptor)) ?? []
+        var byGUID: [String: Article] = [:]
+        for article in found where !article.guid.isEmpty {
+            byGUID[article.guid] = article
+        }
+        return byGUID
+    }
+
     static func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {
         let guid = entry.articleGUID
         if !guid.isEmpty {

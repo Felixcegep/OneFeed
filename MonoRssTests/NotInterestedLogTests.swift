@@ -116,6 +116,20 @@ struct NotInterestedLogTests {
         #expect(offMain.contains("AI glasses are here"))
     }
 
+    @Test func notInterestedRowsResolveTheirStoriesInOneLookup() throws {
+        let context = try context()
+        let kept = Article(guid: "kept", title: "Kept")
+        let other = Article(guid: "other", title: "Other")
+        context.insert(kept)
+        context.insert(other)
+        try context.save()
+
+        let matches = NotInterestedLog.articles(matchingGUIDs: ["kept", "missing"], in: context)
+        #expect(matches["kept"]?.title == "Kept")
+        #expect(matches["other"] == nil)
+        #expect(matches["missing"] == nil)
+    }
+
     @Test func archiveParksTheSourceOutOfToday() throws {
         let context = try context()
         let feed = Feed(
