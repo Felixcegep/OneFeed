@@ -7,17 +7,19 @@ struct RefreshProgressBanner: View {
     @State private var isShown = false
 
     var body: some View {
-        Color.clear
-            .frame(height: isShown ? 2 : 0)
-            .overlay(alignment: .leading) {
+        ZStack(alignment: .leading) {
+            if isShown {
                 Rectangle()
                     .fill(OneFeedTheme.accent)
                     .scaleEffect(x: max(progress.displayedFraction, 0.04), y: 1, anchor: .leading)
             }
-            .clipped()
-            .opacity(isShown ? 1 : 0)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: isShown)
-            .allowsHitTesting(false)
+        }
+        .frame(height: isShown ? 2 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: isShown)
+        .animation(nil, value: progress.displayedFraction)
+        .allowsHitTesting(false)
             .accessibilityHidden(!isShown)
             .accessibilityLabel(progress.accessibilityText())
             .accessibilityAddTraits(isShown ? .updatesFrequently : [])
