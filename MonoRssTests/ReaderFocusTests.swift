@@ -3,6 +3,47 @@ import Testing
 @testable import OneFeed
 
 struct ReaderFocusTests {
+    @Test func resumeCueSitsAboveWhenTheBlockHasRoom() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 280,
+            blockBottom: 360,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .above(top: 252))
+    }
+
+    @Test func resumeCueMovesBelowABlockNearTheTop() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 16,
+            blockBottom: 48,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .below(top: 56))
+    }
+
+    @Test func resumeCueStaysHiddenWhenNeitherSideFits() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 12,
+            blockBottom: 790,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .hidden)
+    }
+
+    @Test func resumeCueScriptUsesTheSameGaps() {
+        let script = ReaderFocus.pageScript
+        #expect(script.contains("edge: \"above\""))
+        #expect(script.contains("edge: \"below\""))
+        #expect(script.contains("edge: \"hidden\""))
+        #expect(script.contains("box.top - height - \(Int(ReaderFocus.resumeCueGap))"))
+        #expect(script.contains("above >= \(Int(ReaderFocus.resumeCueInset))"))
+        #expect(ReaderFocus.pageCSS.contains("background: var(--paper)"))
+        #expect(!script.contains("Math.max(12, box.top - 26)"))
+    }
+
     @Test func defaultZoneSitsBetweenTopAndMiddle() {
         #expect(ReaderFocus.defaultZoneY == 0.37)
         #expect(ReaderFocus.clampZone(0) == ReaderFocus.minimumZoneY)

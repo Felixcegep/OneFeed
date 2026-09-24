@@ -55,8 +55,14 @@ enum ReadingTrailStore {
     }
 }
 
+enum ResumeCuePlacement: Equatable {
+    case above(top: Double)
+    case below(top: Double)
+    case hidden
+}
+
 enum ReaderFocus {
-    static let engineVersion = 2
+    static let engineVersion = 3
     static let defaultZoneY = 0.37
     static let defaultIntensity = 0.55
     static let minimumZoneY = 0.28
@@ -68,6 +74,34 @@ enum ReaderFocus {
 
     static func clampIntensity(_ value: Double) -> Double {
         min(1, max(0, value))
+    }
+
+    /// Gap between the “You stopped here” cue and the restored block.
+    static let resumeCueGap = 8.0
+    /// The cue stays at least this far from the top and bottom of the viewport.
+    static let resumeCueInset = 8.0
+    /// Used until the label has been measured. Matches 11px type plus the paper chip.
+    static let resumeCueFallbackHeight = 20.0
+
+    /// Where the resume cue can sit without covering the restored block.
+    /// Above the block when `blockTop - height - gap` clears the top inset.
+    /// Otherwise below the block when that still fits. Otherwise hidden.
+    static func resumeCuePlacement(
+        blockTop: Double,
+        blockBottom: Double,
+        labelHeight: Double,
+        viewportHeight: Double
+    ) -> ResumeCuePlacement {
+        let height = labelHeight > 0 ? labelHeight : resumeCueFallbackHeight
+        let above = blockTop - height - resumeCueGap
+        if above >= resumeCueInset {
+            return .above(top: above)
+        }
+        let below = blockBottom + resumeCueGap
+        if below + height <= viewportHeight - resumeCueInset {
+            return .below(top: below)
+        }
+        return .hidden
     }
 
     /// Previous / current / next opacity. Surrounding text never drops below 80%.
@@ -162,6 +196,9 @@ enum ReaderFocus {
           letter-spacing: 0.04em;
           text-transform: uppercase;
           color: var(--link);
+          background: var(--paper);
+          padding: 2px 6px;
+          border-radius: 6px;
           opacity: 0;
           pointer-events: none;
           z-index: 5;
@@ -501,13 +538,36 @@ enum ReaderFocus {
             reveal();
           }
 
+          var resumeToken = 0;
+
+          function placeResumeCue(box, height, viewportHeight) {
+            var above = box.top - height - \(Int(resumeCueGap));
+            if (above >= \(Int(resumeCueInset))) return { edge: "above", top: above };
+            var below = box.bottom + \(Int(resumeCueGap));
+            if (below + height <= viewportHeight - \(Int(resumeCueInset))) return { edge: "below", top: below };
+            return { edge: "hidden" };
+          }
+
           function showResume(el) {
             var banner = document.getElementById("onefeed-trail");
             if (!banner || !el) return;
+            resumeToken += 1;
+            var token = resumeToken;
             var box = el.getBoundingClientRect();
-            banner.style.transform = "translateY(" + Math.max(12, box.top - 26) + "px)";
+            var height = banner.offsetHeight || \(Int(resumeCueFallbackHeight));
+            var place = placeResumeCue(box, height, window.innerHeight);
+            if (place.edge === "hidden") {
+              banner.style.opacity = "0";
+              return;
+            }
+            var column = articleRoot().getBoundingClientRect().left;
+            banner.style.left = Math.max(\(Int(resumeCueInset)), column) + "px";
+            banner.style.transform = "translateY(" + place.top + "px)";
             banner.style.opacity = "1";
-            window.setTimeout(function () { banner.style.opacity = "0"; }, 1400);
+            window.setTimeout(function () {
+              if (token !== resumeToken) return;
+              banner.style.opacity = "0";
+            }, 1400);
           }
 
           function restore(trail) {
