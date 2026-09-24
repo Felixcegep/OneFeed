@@ -241,6 +241,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Choosing an OPML file parsed it on the open screen | Settings | Medium | The picked file was read and parsed before the import confirmation could appear | The parse runs off the main thread. A second pick waits until that parse finishes | `OPMLTests.opmlParseRunsOffTheMainActor` |
 | A refresh loaded both copies of a story to keep the longer one | Today, Feed | High | Merging duplicates read `contentHTML` on the articles already in the refresh, so both bodies stayed in memory | The lengths are read on a short-lived context. Only the longer body is copied, and a high reading time does not keep a short teaser | `ArticleIdentityVideoTests.mergeKeepsTheLongerBodyWithoutReadingItOnTheOpenArticles` |
 | Confirming an OPML import inserted every source on the open screen | Settings | High | The confirmation wrote each feed on the screen’s context before the list could update | That write runs on the ingest actor. The screen reloads after the sources are stored | `OPMLTests.confirmingOPMLImportWritesSourcesOnTheIngestActor` |
+| Opening a story read its body just to choose Reader or Website | Reader | High | The first frame checked `contentHTML` on the open article, so a saved page was copied before the off-main build | That check reads a saved body on a short-lived context. A real page still opens in the reader, and blank HTML with a link still opens the website | `ReaderFocusTests.openingASavedArticleChoosesTheReaderWithoutReadingTheBodyOnScreen` |
 
 ## Still open
 

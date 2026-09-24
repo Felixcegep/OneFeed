@@ -732,7 +732,10 @@ struct ReaderView: View {
         return scheme == "http" || scheme == "https"
     }
 
-    private static func initialMode(for article: Article) -> ReaderDisplayMode {
+    /// Times `initialMode` read `contentHTML` on the open article. A saved body does not.
+    static var liveModeBodyReads = 0
+
+    static func initialMode(for article: Article) -> ReaderDisplayMode {
         if article.contentKind == "pdf" {
             return hasReadableDocument(article) ? .reader : .website
         }
@@ -749,9 +752,47 @@ struct ReaderView: View {
         ContentClassifier.hasVisibleText(summary)
     }
 
-    /// True when the stored body has visible text. Stops at the first character, so opening the reader does not copy the article.
+    /// True when the stored body has visible text. Stops at the first character.
+    /// A saved article is read on a short-lived context so the open article stays a fault.
     private static func hasReadableDocument(_ article: Article) -> Bool {
-        ContentClassifier.hasVisibleText(article.contentHTML ?? article.summary)
+        let summary = article.summary
+        if usesLiveBody(article) {
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+        guard let container = article.modelContext?.container else {
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+        switch storedHTML(id: article.id, container: container) {
+        case .found(let html):
+            return ContentClassifier.hasVisibleText(html ?? summary)
+        case .missing:
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+    }
+
+    private static func usesLiveBody(_ article: Article) -> Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
+
+    private enum StoredHTML {
+        case found(String?)
+        case missing
+    }
+
+    private static func storedHTML(id: UUID, container: ModelContainer) -> StoredHTML {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return .missing }
+        return .found(stored.contentHTML)
     }
 
     private var playbackURL: URL? {

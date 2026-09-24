@@ -250,6 +250,39 @@ struct ReaderFocusTests {
         #expect(model.memoryBodyCopies == 1)
     }
 
+    @Test @MainActor func openingASavedArticleChoosesTheReaderWithoutReadingTheBodyOnScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-open",
+            title: "Essay",
+            url: URL(string: "https://source.test/essay"),
+            contentHTML: "<p>Saved page</p>"
+        )
+        context.insert(article)
+        try context.save()
+        ReaderView.liveModeBodyReads = 0
+
+        #expect(ReaderView.initialMode(for: article) == .reader)
+        #expect(ReaderView.liveModeBodyReads == 0)
+    }
+
+    @Test @MainActor func aSavedBlankPageStillOpensTheWebsite() throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-blank",
+            title: "Essay",
+            url: URL(string: "https://source.test/blank"),
+            summary: "A summary that must not replace blank HTML.",
+            contentHTML: "   \n"
+        )
+        context.insert(article)
+        try context.save()
+        ReaderView.liveModeBodyReads = 0
+
+        #expect(ReaderView.initialMode(for: article) == .website)
+        #expect(ReaderView.liveModeBodyReads == 0)
+    }
+
     @Test @MainActor func whitespaceOnlyBodyUsesTheMetadataFallback() async {
         let article = Article(guid: "blank", title: "Empty", contentHTML: "   \n")
         let model = ReaderViewModel(article: article)
