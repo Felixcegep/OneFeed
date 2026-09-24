@@ -116,7 +116,9 @@ nonisolated enum ArticleIdentity {
     }
 
     private static func mergeDuplicateArticles(in context: ModelContext) throws -> Int {
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        var descriptor = FetchDescriptor<Article>()
+        descriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID, \.stateRawValue, \.remoteID, \.isRemoteStarred]
+        let articles = try context.fetch(descriptor)
         var videoGroups: [String: [Article]] = [:]
         var urlGroups: [String: [Article]] = [:]
         for article in articles {
