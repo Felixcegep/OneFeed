@@ -74,9 +74,9 @@ struct SourcesView: View {
         } message: {
             Text("Folders group sources. Add feeds into it next.")
         }
-        .alert("OneFeed", isPresented: Binding(
-            get: { viewModel.statusMessage != nil },
-            set: { if !$0 { viewModel.statusMessage = nil } }
+        .alert(viewModel.statusTitle ?? "Sources", isPresented: Binding(
+            get: { viewModel.statusTitle != nil },
+            set: { if !$0 { viewModel.clearStatus() } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {

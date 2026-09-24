@@ -10,6 +10,7 @@ final class SourcesViewModel {
     var isPresentingAddSource = false
     var isPresentingNewFolder = false
     var newFolderName = ""
+    var statusTitle: String?
     var statusMessage: String?
     private(set) var isImportingPack = false
 
@@ -17,6 +18,16 @@ final class SourcesViewModel {
     func reload() {
         guard let context else { return }
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+    }
+
+    func presentStatus(_ title: String, message: String) {
+        statusTitle = title
+        statusMessage = message
+    }
+
+    func clearStatus() {
+        statusTitle = nil
+        statusMessage = nil
     }
 
     var folders: [FeedFolderGroup] {
@@ -71,11 +82,10 @@ final class SourcesViewModel {
             reload()
             LibraryChange.noteStructureChanged()
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
-                statusMessage = "All seeded sources are already loaded."
+                presentStatus("Sources already loaded", message: "All seeded sources are already loaded.")
                 isImportingPack = false
                 return
             }
-            statusMessage = "Restored \(result.inserted) source\(result.inserted == 1 ? "" : "s"). Updating…"
             Task {
                 defer { isImportingPack = false }
                 let freshRSS = SyncProvider.freshRSS.rawValue
@@ -85,16 +95,23 @@ final class SourcesViewModel {
                 }
                 do {
                     try await FeedService().refreshAll(in: context)
-                    statusMessage = "Library ready · \(result.inserted) new, \(result.updated) updated."
+                    let restored = result.inserted
+                    presentStatus(
+                        "Restored \(restored) source\(restored == 1 ? "" : "s")",
+                        message: "\(result.updated) updated."
+                    )
                     reload()
                 } catch {
-                    statusMessage = UserFacingFailure.shouldSurface(error)
-                        ? UserFacingFailure.message(for: error, fallback: "Sources were restored, but the update did not finish.")
-                        : "Sources restored. The update will finish on the next refresh."
+                    presentStatus(
+                        "Sources restored",
+                        message: UserFacingFailure.shouldSurface(error)
+                            ? UserFacingFailure.message(for: error, fallback: "The update did not finish.")
+                            : "The update will finish on the next refresh."
+                    )
                 }
             }
         } catch {
-            statusMessage = UserFacingFailure.message(for: error, fallback: "Couldn’t restore sources.")
+            presentStatus("Couldn’t restore sources", message: UserFacingFailure.message(for: error, fallback: "Try again."))
             isImportingPack = false
         }
     }
