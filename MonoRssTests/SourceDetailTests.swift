@@ -115,6 +115,29 @@ struct SourceDetailTests {
         #expect(names.contains("Development"))
     }
 
+    @Test func newestSourceStoriesAreChosenBeforeTheOpenScreen() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        for index in 0..<30 {
+            context.insert(Article(
+                guid: "story-\(index)",
+                title: "Story \(index)",
+                publishedAt: start.addingTimeInterval(Double(index) * 60),
+                feed: feed
+            ))
+        }
+        try context.save()
+        let ids = SourceRecentStories.newestIDs(feedID: feed.id, limit: 20, in: context.container)
+        #expect(ids.count == 20)
+        let neededIDs = ids
+        let rows = try context.fetch(ArticleListFetch.rows(predicate: #Predicate { neededIDs.contains($0.id) }))
+        let byID = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0.guid) })
+        #expect(ids.compactMap { byID[$0] }.first == "story-29")
+        #expect(ids.compactMap { byID[$0] }.last == "story-10")
+    }
+
     @Test func typingDoesNotRebuildFolderMembership() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!, folderName: "Philosophy")

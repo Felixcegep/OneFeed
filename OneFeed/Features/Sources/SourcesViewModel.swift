@@ -274,6 +274,22 @@ nonisolated enum SourceFolderNames {
     }
 }
 
+/// The newest story ids for one source. The open form fetches only those rows.
+nonisolated enum SourceRecentStories {
+    static func newestIDs(feedID: UUID, limit: Int, in container: ModelContainer) -> [UUID] {
+        let matchFeed = feedID
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { $0.feed?.id == matchFeed },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        descriptor.propertiesToFetch = [\.id, \.publishedAt]
+        return ((try? lookup.fetch(descriptor)) ?? []).map(\.id)
+    }
+}
+
 @Observable
 final class SourceDetailViewModel {
     let feed: Feed
@@ -333,17 +349,22 @@ final class SourceDetailViewModel {
         guard !didLoadOpeningDetails else { return }
         didLoadOpeningDetails = true
         let container = context.container
-        let names = await Task.detached(priority: .userInitiated) {
-            SourceFolderNames.collected(in: container)
+        let feedID = feed.id
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            (
+                SourceFolderNames.collected(in: container),
+                SourceRecentStories.newestIDs(feedID: feedID, limit: 20, in: container)
+            )
         }.value
         guard !Task.isCancelled else {
             didLoadOpeningDetails = false
             return
         }
         folderListLoads += 1
-        availableFolders = names
+        availableFolders = snapshot.0
         foldersReady = true
-        reloadRecentStories()
+        recentStoryLoads += 1
+        cachedRecentStories = stories(for: snapshot.1)
     }
 
     func refresh() async {
@@ -541,6 +562,16 @@ final class SourceDetailViewModel {
         if let set = value as? Set<PersistentIdentifier> { return Array(set) }
         if let list = value as? [PersistentIdentifier] { return list }
         return []
+    }
+
+    private func stories(for ids: [UUID]) -> [Article] {
+        guard !ids.isEmpty else { return [] }
+        let neededIDs = ids
+        let fetched = (try? context.fetch(ArticleListFetch.rows(
+            predicate: #Predicate { neededIDs.contains($0.id) }
+        ))) ?? []
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
     }
 
     private func reloadRecentStories() {
