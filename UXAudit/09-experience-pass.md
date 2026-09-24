@@ -28,6 +28,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Today hid other sources for the same story | Today | Medium | The deck keeps one slot and did not mention the rest | The row uses Feed’s “N more sources about this story” line. It does not expand those sources on Today | `SemanticDeckTests.oneStoryClusterFillsASingleTodaySlot` |
 | Queue and import alerts showed system errors | Queue, app import, Settings | Medium | `localizedDescription` included SwiftData and file-system text | App errors keep their sentence. Other failures use a short fallback. A dropped connection does not raise an alert | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
 | The progress line reserved space while idle | Today, Feed, Settings | Medium | The top bar was always 2pt tall | The bar’s height is 0 until the line is actually shown | Code review |
+| The in-app browser spinner sat on top of the page | Reader browser | Medium | A `ProgressView` overlay was pinned to the top of the web view | Loading uses the mark in the toolbar, so the page can scroll freely | Code review |
 
 ## Still open
 

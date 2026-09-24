@@ -23,17 +23,18 @@ struct ArticleBrowserView: View {
                 .webViewBackForwardNavigationGestures(.enabled)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(edges: .bottom)
-                .overlay(alignment: .top) {
-                    if page.isLoading {
-                        ProgressView()
-                            .padding(.top, 8)
-                    }
-                }
                 .navigationTitle(page.title ?? url.host() ?? "Article")
                 .oneFeedInlineTitle()
                 .toolbar {
                     ToolbarItem(placement: .oneFeedLeading) {
                         Button("Close", systemImage: "xmark") { dismiss() }
+                    }
+                    if page.isLoading {
+                        ToolbarItem(placement: .oneFeedTrailing) {
+                            OneFeedMarkPulse(isActive: true, size: 18)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .accessibilityLabel("Loading page")
+                        }
                     }
                     ToolbarItemGroup(placement: .oneFeedTrailing) {
                         Button("Back", systemImage: "chevron.backward") {
