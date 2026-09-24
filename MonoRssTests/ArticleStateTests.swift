@@ -9,6 +9,27 @@ struct ArticleStateTests {
         try InMemoryStore.makeContext()
     }
 
+    @Test func nextStorySkipsTheSameSourceBeforeTheOlderCopy() throws {
+        let context = try context()
+        let feedA = Feed(title: "A", feedURL: URL(string: "https://a.test/rss")!)
+        let feedB = Feed(title: "B", feedURL: URL(string: "https://b.test/rss")!)
+        context.insert(feedA)
+        context.insert(feedB)
+        let current = Article(guid: "current", title: "Current", publishedAt: .now.addingTimeInterval(-30), state: .current, feed: feedA)
+        let olderSame = Article(guid: "older-same", title: "Older", publishedAt: .now.addingTimeInterval(-20), feed: feedA)
+        let other = Article(guid: "other", title: "Other", publishedAt: .now.addingTimeInterval(-10), feed: feedB)
+        let newerSame = Article(guid: "newer-same", title: "Newer", publishedAt: .now, feed: feedA)
+        context.insert(current)
+        context.insert(olderSame)
+        context.insert(other)
+        context.insert(newerSame)
+
+        let replacement = try ArticleQueueService().transition(current, to: .read, in: context)
+        #expect(replacement?.guid == "other")
+        #expect(olderSame.state == .queued)
+        #expect(newerSame.state == .queued)
+    }
+
     @Test func choosingTheNextStoryKeepsBodiesOnDisk() throws {
         let container = try InMemoryStore.makeContainer()
         let setup = ModelContext(container)

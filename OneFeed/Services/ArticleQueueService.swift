@@ -23,14 +23,28 @@ struct ArticleQueueService {
         }
 
         let queuedValue = ArticleState.queued.rawValue
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate {
-            $0.stateRawValue == queuedValue && ($0.feed?.isEnabled ?? false)
+        var fallback = FetchDescriptor<Article>(predicate: #Predicate { article in
+            article.stateRawValue == queuedValue && (article.feed?.isEnabled ?? false)
         })
-        descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
-        descriptor.propertiesToFetch = Self.selectionFields
-        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
-        let candidates = try context.fetch(descriptor)
-        let selected = candidates.first(where: { $0.feed?.id != lastDisplayedFeedID }) ?? candidates.first
+        fallback.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
+        fallback.fetchLimit = 1
+        fallback.propertiesToFetch = Self.selectionFields
+        fallback.relationshipKeyPathsForPrefetching = [\.feed]
+        let selected: Article?
+        if let avoidFeed = lastDisplayedFeedID {
+            var preferred = FetchDescriptor<Article>(predicate: #Predicate { article in
+                article.stateRawValue == queuedValue
+                    && (article.feed?.isEnabled ?? false)
+                    && article.feed?.id != avoidFeed
+            })
+            preferred.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
+            preferred.fetchLimit = 1
+            preferred.propertiesToFetch = Self.selectionFields
+            preferred.relationshipKeyPathsForPrefetching = [\.feed]
+            selected = try context.fetch(preferred).first ?? context.fetch(fallback).first
+        } else {
+            selected = try context.fetch(fallback).first
+        }
         selected?.state = .current
         selected?.firstDisplayedAt = .now
         if let selected {
