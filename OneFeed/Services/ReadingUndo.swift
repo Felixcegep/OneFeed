@@ -327,6 +327,10 @@ struct ReadingUndoBanner: ViewModifier {
                     }
                 }
                 .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
+                .onChange(of: undoAnnouncement) { _, message in
+                    guard !message.isEmpty else { return }
+                    AccessibilityNotification.Announcement(message).post()
+                }
             }
             .alert("Couldn’t update that story", isPresented: Binding(
                 get: { center.undoError != nil },
@@ -336,6 +340,14 @@ struct ReadingUndoBanner: ViewModifier {
             } message: {
                 Text(center.undoError ?? "")
             }
+    }
+
+    private var undoAnnouncement: String {
+        guard let offer = center.offer else { return "" }
+        if let strongerTitle = offer.strongerTitle {
+            return "\(offer.title). Undo, or \(strongerTitle)."
+        }
+        return "\(offer.title). Undo available."
     }
 
     private func bar(_ offer: ReadingUndoCenter.Offer) -> some View {
