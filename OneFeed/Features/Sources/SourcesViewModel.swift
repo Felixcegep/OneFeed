@@ -248,10 +248,12 @@ final class SourceDetailViewModel {
         guard feed.refreshesOverRSS, !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
-        do {
-            try await FeedService().refresh(feed, in: context)
-        } catch {
-            refreshError = RefreshFailure.message(for: error, fallback: "Couldn’t refresh this source.")
+        await BackgroundRefreshCoordinator.runExclusive {
+            do {
+                try await FeedService().refresh(self.feed, in: self.context)
+            } catch {
+                self.refreshError = RefreshFailure.message(for: error, fallback: "Couldn’t refresh this source.")
+            }
         }
     }
 
