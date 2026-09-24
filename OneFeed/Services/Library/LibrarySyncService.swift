@@ -442,6 +442,9 @@ final class LibrarySyncService {
             persist(record)
             return .inSync
         case .push:
+            if hasActiveReadingSession, request == .automatic || request == .manual {
+                return .skippedActiveSession
+            }
             try await writeDrive(localData, to: record)
             record.lastSyncedHash = localHash
             record.lastSyncedAt = .now

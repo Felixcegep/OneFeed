@@ -153,7 +153,7 @@ struct OnboardingView: View {
 
     private var subtitle: String {
         switch viewModel.page {
-        case 0: "Read one story at a time in Today. Save stories in Queue for later."
+        case 0: "Read one story at a time in Today. Keep stories in Queue for later."
         case 1: "Add websites, RSS feeds, or connect FreshRSS."
         default: "Open a piece when you are ready. Done when you are finished."
         }

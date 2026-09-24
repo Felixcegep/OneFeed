@@ -179,6 +179,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Add to Queue reported only the last file that failed | Queue | High | Each failure replaced the message, and one failure kept the sheet from saying the other files were added | A single failure keeps its sentence. A mixed batch says how many were imported and how many were not, and the ones that landed stay in Queue | `ImportBatchResultTests.aMixedBatchSaysHowManyLanded` |
 | Refreshing a caught-up Today replaced the screen and resized it on every source | Today | High | An empty deck counted as a first load, and the title, detail, and button changed with each progress tick | The cover stays for the first load, before any source exists. A caught-up refresh keeps its message, and the progress line carries the count | `TodayRefreshCoverTests.caughtUpRefreshKeepsTheScreen` |
 | The first-load cover changed height as each source name arrived | Today, Feed | Medium | The cover status included the current source and a countdown, so the line wrapped and shifted the mark | The cover keeps the phase title and a stable count. The source name stays off that screen | `RefreshProgressTests.finishItemCountsSourcesArticlesAndETA` |
+| A Google Drive sync sent this device’s copy while a story was open | Library | High | A pull waited, but a local change still uploaded on its own | Automatic and manual updates wait until the story closes, then send once. Choosing this device or the cloud file still happens immediately | `LibrarySyncServiceDriveTests.drivePushWaitsUntilReadingEnds` |
+| Onboarding called Queue “Save” | Onboarding | Medium | The first page used Save for the waiting list | It says to keep stories in Queue | Code review |
 
 ## Still open
 

@@ -178,6 +178,39 @@ struct LibrarySyncServiceDriveTests {
         #expect(harness.fake.downloadCount == downloadsAfterPull)
     }
 
+    @Test func drivePushWaitsUntilReadingEnds() async throws {
+        let harness = try DriveSyncHarness()
+        defer { harness.tearDown() }
+
+        let fileID = "drive-file-push-wait"
+        harness.service.linkGoogleDrive(
+            fileID: fileID,
+            displayName: "OneFeed.library.json",
+            accountEmail: nil
+        )
+        #expect(await harness.service.sync(request: .keepThisIPhone) == .pushed)
+        let pushed = try #require(harness.fake.files[fileID])
+
+        harness.context.insert(Feed(title: "Local Source", feedURL: URL(string: "https://local.test/rss")!))
+        harness.service.hasActiveReadingSession = true
+        #expect(await harness.service.sync(request: .automatic) == .skippedActiveSession)
+        #expect(await harness.service.sync(request: .manual) == .skippedActiveSession)
+        #expect(harness.fake.files[fileID] == pushed)
+
+        harness.service.hasActiveReadingSession = false
+        var sent = false
+        for _ in 0..<40 {
+            if harness.fake.files[fileID] != pushed {
+                sent = true
+                break
+            }
+            await Task.yield()
+        }
+        #expect(sent)
+        let body = try #require(harness.fake.files[fileID])
+        #expect(String(decoding: body, as: UTF8.self).contains("Local Source"))
+    }
+
     @Test func useCloudFileStillPullsDuringActiveReadingSession() async throws {
         let harness = try DriveSyncHarness()
         defer { harness.tearDown() }
