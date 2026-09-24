@@ -906,6 +906,9 @@ private struct ReaderWebContent: View {
                 Task { await persistTrail() }
             }
             .task(id: html) {
+                if hasCommitted, didRestoreTrail {
+                    await persistTrail()
+                }
                 didRestoreTrail = false
                 lastPersistedTrail = nil
                 ignoreNextZoneApply = false
