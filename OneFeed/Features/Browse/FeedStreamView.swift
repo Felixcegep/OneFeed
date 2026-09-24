@@ -77,12 +77,9 @@ struct FeedStreamView: View {
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
-        .refreshProgressBanner(refresh.progress)
+        .modifier(FeedStreamRefreshChrome(refresh: refresh))
         .toolbar {
             ToolbarItemGroup(placement: .oneFeedTrailing) {
-                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
-                    Task { await refresh.refresh(in: modelContext) }
-                }
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
                 Menu {
                     Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
@@ -301,5 +298,23 @@ struct FeedStreamView: View {
             FeedDayGroup(kind: .yesterday, articles: yesterday),
             FeedDayGroup(kind: .earlier, articles: earlier)
         ].filter { !$0.articles.isEmpty }
+    }
+}
+
+/// Progress ticks stay on this chrome. The stream does not read the progress line.
+private struct FeedStreamRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    @Environment(\.modelContext) private var modelContext
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(refresh.progress)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                        Task { await refresh.refresh(in: modelContext) }
+                    }
+                }
+            }
     }
 }

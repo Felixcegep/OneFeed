@@ -524,16 +524,7 @@ private struct SourceDetailView: View {
         .oneFeedPaperScreen()
         .oneFeedScrollEdge()
         .oneFeedTabBarClearance()
-        .refreshProgressBanner(viewModel.progress)
-        .toolbar {
-            if viewModel.feed.refreshesOverRSS {
-                ToolbarItem(placement: .oneFeedTrailing) {
-                    OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
-                        Task { await viewModel.refresh() }
-                    }
-                }
-            }
-        }
+        .modifier(SourceDetailRefreshChrome(viewModel: viewModel))
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { viewModel.refreshError != nil },
             set: { if !$0 { viewModel.refreshError = nil } }
@@ -771,6 +762,25 @@ struct AddSourceView: View {
             guard !Task.isCancelled else { return }
             showSuccess = true
         }
+    }
+}
+
+/// Progress ticks stay on this chrome. The source form does not read the progress line, so a refresh does not rebuild recent stories.
+private struct SourceDetailRefreshChrome: ViewModifier {
+    var viewModel: SourceDetailViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(viewModel.progress)
+            .toolbar {
+                if viewModel.feed.refreshesOverRSS {
+                    ToolbarItem(placement: .oneFeedTrailing) {
+                        OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                            Task { await viewModel.refresh() }
+                        }
+                    }
+                }
+            }
     }
 }
 

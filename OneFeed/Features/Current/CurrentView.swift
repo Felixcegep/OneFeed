@@ -65,25 +65,17 @@ struct CurrentView: View {
             }
         }
         .background(OneFeedTheme.plaster)
-        .overlay {
-            ZStack {
-                if showsSourceRefreshCover {
-                    OneFeedLoadingCover(
-                        title: viewModel.progress.primaryText,
-                        status: viewModel.progress.coverStatus,
-                        canvas: OneFeedTheme.plaster
-                    )
-                    .transition(.opacity)
-                }
-            }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
-        }
+        .modifier(TodayRefreshChrome(
+            viewModel: viewModel,
+            hasStories: !stories.isEmpty,
+            hasFeeds: !feeds.isEmpty,
+            reduceMotion: reduceMotion
+        ))
         .navigationTitle("Today")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .navigationSubtitle(subtitle)
-        .refreshProgressBanner(viewModel.progress)
         .toolbar {
             if !feeds.isEmpty {
                 ToolbarItem(placement: .oneFeedTrailing) {
@@ -97,12 +89,6 @@ struct CurrentView: View {
                     .accessibilityIdentifier("today-filter")
                 }
             }
-            ToolbarItem(placement: .oneFeedTrailing) {
-                OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
-                    Task { await viewModel.refresh() }
-                }
-            }
-            .visibilityPriority(.high)
         }
         .task {
             viewModel.configure(with: modelContext)
@@ -166,16 +152,6 @@ struct CurrentView: View {
         readerArticle = article
     }
 
-    /// Full-screen cover only before any source exists. A caught-up Today keeps its message, and the progress line carries the refresh.
-    private var showsSourceRefreshCover: Bool {
-        TodayRefreshCover.isShown(
-            isRefreshing: viewModel.isRefreshing,
-            hasStories: !stories.isEmpty,
-            hasFeeds: !feeds.isEmpty,
-            skipsOpeningCover: ReaderWebWarmup.skipsOpeningCover
-        )
-    }
-
     /// Stays put while a refresh runs. The progress line carries that status, so the title bar does not resize.
     private var subtitle: String {
         if stories.isEmpty { return "" }
@@ -237,7 +213,6 @@ struct CurrentView: View {
         .oneFeedMacEmptyCanvas()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
-        .animation(nil, value: viewModel.progress.completed)
         .sensoryFeedback(.success, trigger: celebrateClear) { _, celebrating in
             celebrating
         }
@@ -263,6 +238,49 @@ struct CurrentView: View {
         if feeds.isEmpty { return "Add a source" }
         if todayHasNoSources { return "Choose sources" }
         return "Refresh"
+    }
+}
+
+/// Progress ticks stay on this chrome. Today’s deck does not read the progress line, so a refresh does not rebuild the stories.
+private struct TodayRefreshChrome: ViewModifier {
+    var viewModel: CurrentViewModel
+    var hasStories: Bool
+    var hasFeeds: Bool
+    var reduceMotion: Bool
+
+    private var showsCover: Bool {
+        TodayRefreshCover.isShown(
+            isRefreshing: viewModel.isRefreshing,
+            hasStories: hasStories,
+            hasFeeds: hasFeeds,
+            skipsOpeningCover: ReaderWebWarmup.skipsOpeningCover
+        )
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                ZStack {
+                    if showsCover {
+                        OneFeedLoadingCover(
+                            title: viewModel.progress.primaryText,
+                            status: viewModel.progress.coverStatus,
+                            canvas: OneFeedTheme.plaster
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsCover)
+            }
+            .refreshProgressBanner(viewModel.progress)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                        Task { await viewModel.refresh() }
+                    }
+                }
+                .visibilityPriority(.high)
+            }
     }
 }
 

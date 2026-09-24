@@ -53,7 +53,7 @@ struct SettingsView: View {
         .oneFeedInlineTitle()
         .oneFeedSettingsCanvas()
         .tint(OneFeedTheme.ink)
-        .refreshProgressBanner(viewModel.progress)
+        .modifier(SettingsRefreshChrome(viewModel: viewModel))
         .task {
             viewModel.configure(with: modelContext)
             library.configure(with: modelContext)
@@ -512,5 +512,14 @@ struct GeminiAPIKeyForm: View {
             if focused { sheetDetent = .large }
         }
         #endif
+    }
+}
+
+/// Progress ticks stay on this chrome. The settings form does not read the progress line.
+private struct SettingsRefreshChrome: ViewModifier {
+    var viewModel: SettingsViewModel
+
+    func body(content: Content) -> some View {
+        content.refreshProgressBanner(viewModel.progress)
     }
 }
