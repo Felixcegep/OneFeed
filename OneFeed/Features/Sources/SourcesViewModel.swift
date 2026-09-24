@@ -270,13 +270,32 @@ final class SourceDetailViewModel {
     private(set) var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
     private var pendingBlockedWords: String?
-    private let recentArticlesCache = RecentArticleCache()
+    private var cachedRecentStories: [Article] = []
+    /// Loads of the newest-twenty list. A redraw does not increment this.
+    private(set) var recentStoryLoads = 0
+    private nonisolated(unsafe) var saveObserver: NSObjectProtocol?
 
     init(feed: Feed, context: ModelContext, freshRSSService: any FreshRSSSyncing = FreshRSSSyncService()) {
         self.feed = feed
         self.context = context
         self.freshRSSService = freshRSSService
         reloadFolders()
+        reloadRecentStories()
+        saveObserver = NotificationCenter.default.addObserver(
+            forName: ModelContext.didSave,
+            object: context,
+            queue: nil
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                self?.noteStoreSaved(note)
+            }
+        }
+    }
+
+    deinit {
+        if let saveObserver {
+            NotificationCenter.default.removeObserver(saveObserver)
+        }
     }
 
     func refresh() async {
@@ -284,7 +303,7 @@ final class SourceDetailViewModel {
         isRefreshing = true
         progress.begin(phase: .sources, total: 1)
         defer {
-            recentArticlesCache.count = -1
+            reloadRecentStories()
             progress.finish()
             isRefreshing = false
         }
@@ -440,21 +459,29 @@ final class SourceDetailViewModel {
         }
     }
 
-    /// The twenty newest stories. A redraw reuses them until the count changes or a refresh finishes.
-    /// The count and the twenty rows are fetched on their own, so opening a source does not load every stored article.
-    var recentArticles: [Article] {
-        let count = storyCount()
-        if recentArticlesCache.count == count { return recentArticlesCache.articles }
-        recentArticlesCache.count = count
-        recentArticlesCache.articles = newestStories(limit: 20)
-        return recentArticlesCache.articles
+    /// The twenty newest stories. Typing and other redraws reuse this list.
+    /// A saved insert or delete loads it again. A refresh loads it once when it finishes.
+    var recentArticles: [Article] { cachedRecentStories }
+
+    /// An article insert or delete changes the newest list. A title or setting save does not.
+    private func noteStoreSaved(_ note: Notification) {
+        guard !isRefreshing else { return }
+        let inserted = Self.identifiers(note, .insertedIdentifiers)
+        let deleted = Self.identifiers(note, .deletedIdentifiers)
+        guard !inserted.isEmpty || !deleted.isEmpty else { return }
+        reloadRecentStories()
     }
 
-    private func storyCount() -> Int {
-        let feedID = feed.id
-        let descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
-        if let count = try? context.fetchCount(descriptor) { return count }
-        return feed.articles.count
+    private static func identifiers(_ note: Notification, _ key: ModelContext.NotificationKey) -> [PersistentIdentifier] {
+        guard let value = note.userInfo?[key] else { return [] }
+        if let set = value as? Set<PersistentIdentifier> { return Array(set) }
+        if let list = value as? [PersistentIdentifier] { return list }
+        return []
+    }
+
+    private func reloadRecentStories() {
+        recentStoryLoads += 1
+        cachedRecentStories = newestStories(limit: 20)
     }
 
     private func newestStories(limit: Int) -> [Article] {
@@ -467,9 +494,4 @@ final class SourceDetailViewModel {
         if let stories = try? context.fetch(descriptor) { return stories }
         return Array(feed.articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(limit))
     }
-}
-
-private final class RecentArticleCache {
-    var count = -1
-    var articles: [Article] = []
 }

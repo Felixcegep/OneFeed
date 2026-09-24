@@ -36,9 +36,16 @@ struct SourceDetailTests {
 
         let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
         let recent = model.recentArticles
+        let loads = model.recentStoryLoads
         #expect(recent.count == 20)
         #expect(recent.first?.guid == "story-29")
         #expect(recent.last?.guid == "story-10")
+        #expect(model.recentArticles.map(\.guid) == recent.map(\.guid))
+        #expect(model.recentStoryLoads == loads)
+
+        model.blockedWords = "Sponsored"
+        model.commitBlockedWords()
+        #expect(model.recentStoryLoads == loads)
         #expect(model.recentArticles.map(\.guid) == recent.map(\.guid))
 
         context.insert(Article(
@@ -48,6 +55,7 @@ struct SourceDetailTests {
             feed: feed
         ))
         try context.save()
+        #expect(model.recentStoryLoads == loads + 1)
         #expect(model.recentArticles.first?.guid == "story-new")
         #expect(model.recentArticles.count == 20)
     }

@@ -498,9 +498,10 @@ private struct SourceDetailView: View {
                 }
                 .listRowBackground(OneFeedTheme.paper)
             }
-            if !viewModel.recentArticles.isEmpty {
+            let recentStories = viewModel.recentArticles
+            if !recentStories.isEmpty {
                 Section {
-                    ForEach(viewModel.recentArticles) { article in
+                    ForEach(recentStories) { article in
                         Button {
                             selectedArticle = article
                         } label: {

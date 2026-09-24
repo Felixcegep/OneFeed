@@ -215,6 +215,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening History copied every title and note | History | High | The day plan copied titles, notes, and source names even when search was empty | An empty search keeps only the dates. A search still matches a title, note, or source | `RetentionAndExtractionTests.historyDayKeepsNewestFirst` |
 | Opening Queue copied every title and note | Queue | High | The section plan copied titles, notes, and source names even when search was empty | An empty search keeps the fields the sections need. A search still matches a title | `RetentionAndExtractionTests.queuePlanKeepsTheSavedStoryAndSplitsTheVideo` |
 | Opening a folder copied every story title | Feed | Medium | The row plan copied titles and source names even when search was empty | An empty search leaves those unread. A search still matches a title or a blurb | `FeedAndFreshRSSDomainTests.feedSearchMatchesTheSummarySample` |
+| Typing on a source counted every stored story | Source | High | Each letter in blocked words asked the store how many stories the feed had, then kept the same twenty | The newest twenty stay on screen. A saved insert or delete loads them again. A refresh loads them once when it finishes. A setting save does not | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 
 ## Still open
 
