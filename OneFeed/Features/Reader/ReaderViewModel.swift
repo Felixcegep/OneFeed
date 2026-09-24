@@ -109,7 +109,9 @@ final class ReaderViewModel {
                     )
                 )
             }
-            persistVideoChat(messages)
+            if let failure = persistVideoChat(messages) {
+                summaryError = failure
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -145,7 +147,9 @@ final class ReaderViewModel {
                 createdAt: Date()
             )
         )
-        persistVideoChat(messages)
+        if let failure = persistVideoChat(messages) {
+            askError = failure
+        }
 
         isAskingVideo = true
         askError = nil
@@ -169,7 +173,9 @@ final class ReaderViewModel {
                     createdAt: Date()
                 )
             )
-            persistVideoChat(updated)
+            if let failure = persistVideoChat(updated) {
+                askError = failure
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -177,9 +183,19 @@ final class ReaderViewModel {
         }
     }
 
-    private func persistVideoChat(_ messages: [VideoChatMessage]) {
+    /// Stores the transcript. Returns a sentence when the save does not land. The messages stay on screen either way.
+    private func persistVideoChat(_ messages: [VideoChatMessage]) -> String? {
         article.videoChatJSON = VideoChatLog.encode(VideoChatLog.trimmed(messages))
-        try? article.modelContext?.save()
+        guard let context = article.modelContext else {
+            return "Couldn’t save that conversation."
+        }
+        LibraryChange.note(article)
+        do {
+            try context.save()
+            return nil
+        } catch {
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t save that conversation.")
+        }
     }
 
     private var cachedDocument: (key: String, html: String)?
