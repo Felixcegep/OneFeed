@@ -90,10 +90,8 @@ final class ReaderViewModel {
         } catch {
             return
         }
-        if html != article.contentHTML {
-            article.contentHTML = html
-            noteDocumentChanged()
-        }
+        article.contentHTML = html
+        noteDocumentChanged()
         article.raiseReadingEstimate(minutes)
         if let failure = saveArticleChanges() {
             bodyError = failure

@@ -444,6 +444,28 @@ struct RetentionAndExtractionTests {
         #expect(articles[0].contentHTML == "<p>Short</p>")
     }
 
+    @Test func aFailedPageFetchLeavesTheStoredTeaser() async throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "short-fetch",
+            title: "Short",
+            url: URL(string: "https://source.test/missing")!,
+            summary: "Short",
+            contentHTML: "<p>Short</p>",
+            feed: feed
+        )
+        context.insert(article)
+        try context.save()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FailingExtractURLProtocol.self]
+        let service = ArticleExtractionService(session: URLSession(configuration: config), extractor: RecordingExtractor())
+        let html = await service.extractedHTML(for: article, alreadyEligible: true)
+        #expect(html == nil)
+        #expect(article.contentHTML == "<p>Short</p>")
+    }
+
     @Test func readingMinutesForAFetchedBodyAreCountedOffTheMainActor() async {
         let html = "<p>" + String(repeating: "word ", count: 440) + "</p>"
         let minutes = await Task.detached {
@@ -499,6 +521,20 @@ private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {
         let body = Array(repeating: "word", count: 500).joined(separator: " ")
         return "<p>Extracted \(pageURL.absoluteString) \(body)</p>"
     }
+}
+
+private final class FailingExtractURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let url = request.url ?? URL(string: "https://source.test/")!
+        let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class StubExtractURLProtocol: URLProtocol, @unchecked Sendable {

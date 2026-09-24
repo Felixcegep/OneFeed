@@ -68,12 +68,21 @@ final class ArticleExtractionService {
                 guard shouldFetch else { return existing }
             }
         }
-        let existing = article.contentHTML ?? article.summary
-        guard let url = article.url else { return existing }
+        let articleID = article.id
+        let existing: String?
+        if let container = article.modelContext?.container {
+            existing = await Task.detached(priority: .utility) {
+                Self.storedBodyFallback(id: articleID, in: container)
+            }.value
+        } else {
+            existing = article.contentHTML ?? article.summary
+        }
+        guard let url = article.url else { return nil }
         let session = self.session
         let extractor = self.extractor
         let downloaded = await Self.downloadedArticle(url: url, session: session, extractor: extractor)
-        return downloaded ?? existing
+        guard let downloaded, downloaded != existing else { return nil }
+        return downloaded
     }
 
     /// Downloads and extracts a page. Returns nil when the page cannot replace the stored body.
@@ -97,6 +106,16 @@ final class ArticleExtractionService {
         } catch {
             return nil
         }
+    }
+
+    /// Reads the stored teaser on another context so a failed download can keep it without copying it on the caller.
+    nonisolated static func storedBodyFallback(id articleID: UUID, in container: ModelContainer) -> String? {
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return nil }
+        return stored.contentHTML ?? stored.summary
     }
 
     /// Reads the stored body on another context so a full article is not copied before the fetch decision.
