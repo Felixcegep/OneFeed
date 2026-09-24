@@ -162,8 +162,8 @@ struct CurrentView: View {
         viewModel.isRefreshing && stories.isEmpty && !ReaderWebWarmup.skipsOpeningCover
     }
 
+    /// Stays put while a refresh runs. The progress line carries that status, so the title bar does not resize.
     private var subtitle: String {
-        if viewModel.isRefreshing { return viewModel.progress.primaryText }
         if stories.isEmpty { return "" }
         if viewModel.totalCount > 0 {
             return "\(stories.count) remaining"

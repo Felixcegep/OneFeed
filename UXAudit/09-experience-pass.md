@@ -126,6 +126,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A video could stay in the article section of Queue | Queue | Medium | The section cache ignored a story whose kind changed and whose id did not | The queue cache includes each story’s kind, so a video moves into the video section | Code review |
 | The Mac reader could stay on a Today story that had left the middle of the deck | Today | High | The reader only noticed a change in the count or the ends | Any change in the deck moves the reader on to a story that is still there | Code review |
 | History could still say Today for yesterday’s stories | History | Medium | Day groups were cached until the list of stories changed, so a new morning left the old labels | Coming back the next day regroups the days, so Today and Yesterday move forward | Code review |
+| The title bar resized while the refresh line was moving | Today, Feed | High | The navigation subtitle swapped to the refresh phase, so the bar height changed during a scroll | The subtitle stays on the story count or the last update. The progress line carries the refresh | Code review |
 
 ## Still open
 

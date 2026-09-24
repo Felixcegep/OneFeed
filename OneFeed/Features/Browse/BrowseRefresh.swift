@@ -13,8 +13,8 @@ final class BrowseRefresh {
     let progress = RefreshProgress()
     var presentedError: String?
 
+    /// Stays put while a refresh runs. The progress line carries that status, so the title bar does not resize.
     var statusText: String {
-        if isRefreshing { return progress.primaryText }
         guard let lastRefreshedAt else { return "Pull to update" }
         return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
     }
