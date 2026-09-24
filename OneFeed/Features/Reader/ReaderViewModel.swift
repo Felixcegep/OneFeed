@@ -43,6 +43,7 @@ final class ReaderViewModel {
         article.videoID.flatMap { YouTubeProcessor.watchURL(for: $0) } ?? article.url
     }
 
+    /// The imported file, looked up once. Later redraws reuse it.
     var importedFileURL: URL? {
         if didResolveFile { return resolvedFile }
         didResolveFile = true
