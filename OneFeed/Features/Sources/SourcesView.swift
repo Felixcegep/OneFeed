@@ -7,7 +7,6 @@ struct SourcesView: View {
     @State private var addPreferredFolder: String?
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
-    @State private var searchText = ""
     @State private var appliedSearch = ""
     @State private var folderToRemove: String?
 
@@ -26,47 +25,9 @@ struct SourcesView: View {
 
     var body: some View {
         let _ = iconTick
-        List {
-            if visibleFolders.isEmpty {
-                Section {
-                    if folderQuery.isEmpty {
-                        ContentUnavailableView {
-                            Label("No folders yet", systemImage: "folder")
-                        } description: {
-                            Text("Add a source or create a folder to organize your reading.")
-                        } actions: {
-                            Button("Add Source") { presentAdd() }
-                                .buttonStyle(PrimaryActionStyle(expands: false))
-                        }
-                    } else {
-                        ContentUnavailableView.search(text: folderQuery)
-                    }
-                }
-                .listRowBackground(OneFeedTheme.paper)
-            } else {
-                if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
-                    Section {
-                        ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
-                            folderLink(folder)
-                        }
-                    } header: {
-                        GallerySectionHeader(text: "With sources")
-                    }
-                }
-                if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
-                    Section {
-                        ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
-                            folderLink(folder)
-                        }
-                    } header: {
-                        GallerySectionHeader(text: "Empty folders")
-                    }
-                }
-            }
+        OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
+            sourcesList
         }
-        .oneFeedGroupedListStyle()
-        .searchable(text: $searchText, prompt: "Folders or sources")
-        .debouncedSearch(searchText, into: $appliedSearch)
         .navigationTitle("Sources")
         .oneFeedLargeTitle()
         .oneFeedScrollEdge()
@@ -140,6 +101,48 @@ struct SourcesView: View {
         } message: {
             Text("This folder has no sources.")
         }
+    }
+
+    private var sourcesList: some View {
+        List {
+            if visibleFolders.isEmpty {
+                Section {
+                    if folderQuery.isEmpty {
+                        ContentUnavailableView {
+                            Label("No folders yet", systemImage: "folder")
+                        } description: {
+                            Text("Add a source or create a folder to organize your reading.")
+                        } actions: {
+                            Button("Add Source") { presentAdd() }
+                                .buttonStyle(PrimaryActionStyle(expands: false))
+                        }
+                    } else {
+                        ContentUnavailableView.search(text: folderQuery)
+                    }
+                }
+                .listRowBackground(OneFeedTheme.paper)
+            } else {
+                if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
+                    Section {
+                        ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
+                        }
+                    } header: {
+                        GallerySectionHeader(text: "With sources")
+                    }
+                }
+                if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
+                    Section {
+                        ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
+                        }
+                    } header: {
+                        GallerySectionHeader(text: "Empty folders")
+                    }
+                }
+            }
+        }
+        .oneFeedGroupedListStyle()
     }
 
     private func folderLink(_ folder: FeedFolderGroup) -> some View {
@@ -232,7 +235,6 @@ private struct FolderFeedsView: View {
     var onAddInFolder: () -> Void
 
     @Environment(\.modelContext) private var modelContext
-    @State private var searchText = ""
     @State private var appliedSearch = ""
 
     private var otherFolders: [String] {
@@ -253,6 +255,12 @@ private struct FolderFeedsView: View {
     }
 
     var body: some View {
+        OneFeedSearchHost("Sources in this folder", applied: $appliedSearch) {
+            folderFeedList
+        }
+    }
+
+    private var folderFeedList: some View {
         List {
             if visibleFeeds.isEmpty {
                 Section {
@@ -304,8 +312,6 @@ private struct FolderFeedsView: View {
             }
         }
         .oneFeedGroupedListStyle()
-        .searchable(text: $searchText, prompt: "Sources in this folder")
-        .debouncedSearch(searchText, into: $appliedSearch)
         .navigationTitle(folderID.title)
         .oneFeedLargeTitle()
         .oneFeedScrollEdge()

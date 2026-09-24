@@ -8,6 +8,27 @@ extension View {
     }
 }
 
+/// Owns the live search field so each keystroke does not rebuild the list.
+/// The list updates when the applied query changes, and a cleared field applies at once.
+struct OneFeedSearchHost<Content: View>: View {
+    @Binding private var applied: String
+    private let prompt: String
+    private let content: Content
+    @State private var text = ""
+
+    init(_ prompt: String, applied: Binding<String>, @ViewBuilder content: () -> Content) {
+        self.prompt = prompt
+        self._applied = applied
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .oneFeedSearchable($text, prompt: prompt)
+            .debouncedSearch(text, into: $applied)
+    }
+}
+
 private struct DebouncedSearchModifier: ViewModifier {
     var text: String
     @Binding var applied: String

@@ -36,7 +36,7 @@ struct FeedStreamView: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var refresh = BrowseRefresh()
     @State private var selectedArticle: Article?
-    @State private var search = ""
+    @State private var appliedSearch = ""
     @State private var selectedFolder: FeedFolderID?
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
@@ -54,7 +54,7 @@ struct FeedStreamView: View {
                 return allowed.contains(feedID)
             }
         }
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return open }
         return open.filter {
             $0.title.localizedStandardContains(query)
@@ -68,66 +68,8 @@ struct FeedStreamView: View {
     }
 
     var body: some View {
-        Group {
-            if visible.isEmpty && folderSummaries.count <= 1 {
-                EmptyLibraryState(
-                    title: emptyTitle,
-                    systemImage: search.isEmpty ? "sparkles" : "magnifyingglass",
-                    description: emptyDescription,
-                    actionTitle: search.isEmpty ? "Add a source" : nil,
-                    action: search.isEmpty ? { showingAddSource = true } : nil
-                )
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        folderChips
-                        if visible.isEmpty {
-                            EmptyLibraryState(
-                                title: emptyTitle,
-                                systemImage: search.isEmpty ? "sparkles" : "magnifyingglass",
-                                description: emptyDescription
-                            )
-                            .frame(maxWidth: .infinity, minHeight: 240)
-                        } else {
-                            ForEach(dayGroups) { group in
-                                VStack(alignment: .leading, spacing: 10) {
-                                    if dayGroups.count > 1 {
-                                        Text(group.title)
-                                            .font(OneFeedTheme.sansUI(13, weight: .semibold))
-                                            .foregroundStyle(OneFeedTheme.graphite)
-                                            .padding(.horizontal, 4)
-                                            .accessibilityAddTraits(.isHeader)
-                                    }
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(group.storedArticles.enumerated()), id: \.element.id) { index, article in
-                                            Button { selectedArticle = article } label: {
-                                                ArticleRow(article: article)
-                                            }
-                                            .buttonStyle(DirectoryRowButtonStyle())
-                                            .articleActions(for: article, in: modelContext)
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 6)
-                                            .background(article.isCurrentReading ? OneFeedTheme.current : Color.clear)
-                                            if index < group.storedArticles.count - 1 {
-                                                Rectangle()
-                                                    .fill(OneFeedTheme.plaster)
-                                                    .frame(height: 8)
-                                            }
-                                        }
-                                    }
-                                    .padding(.vertical, 6)
-                                    .background(OneFeedTheme.paper, in: RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous))
-                                }
-                            }
-                        }
-                    }
-                    .padding(.horizontal, OneFeedTheme.pagePadding)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                .clipped()
-            }
+        OneFeedSearchHost("Search articles", applied: $appliedSearch) {
+            streamColumn
         }
         .background(OneFeedTheme.plaster.ignoresSafeArea())
         .navigationTitle("Feed")
@@ -135,7 +77,6 @@ struct FeedStreamView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .refreshProgressBanner(refresh.progress)
-        .oneFeedSearchable($search, prompt: "Search articles")
         .toolbar {
             ToolbarItemGroup(placement: .oneFeedTrailing) {
                 OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
@@ -192,6 +133,70 @@ struct FeedStreamView: View {
         }
     }
 
+    private var streamColumn: some View {
+        Group {
+            if visible.isEmpty && folderSummaries.count <= 1 {
+                EmptyLibraryState(
+                    title: emptyTitle,
+                    systemImage: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "sparkles" : "magnifyingglass",
+                    description: emptyDescription,
+                    actionTitle: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Add a source" : nil,
+                    action: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? { showingAddSource = true } : nil
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        folderChips
+                        if visible.isEmpty {
+                            EmptyLibraryState(
+                                title: emptyTitle,
+                                systemImage: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "sparkles" : "magnifyingglass",
+                                description: emptyDescription
+                            )
+                            .frame(maxWidth: .infinity, minHeight: 240)
+                        } else {
+                            ForEach(dayGroups) { group in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    if dayGroups.count > 1 {
+                                        Text(group.title)
+                                            .font(OneFeedTheme.sansUI(13, weight: .semibold))
+                                            .foregroundStyle(OneFeedTheme.graphite)
+                                            .padding(.horizontal, 4)
+                                            .accessibilityAddTraits(.isHeader)
+                                    }
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(group.storedArticles.enumerated()), id: \.element.id) { index, article in
+                                            Button { selectedArticle = article } label: {
+                                                ArticleRow(article: article)
+                                            }
+                                            .buttonStyle(DirectoryRowButtonStyle())
+                                            .articleActions(for: article, in: modelContext)
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 6)
+                                            .background(article.isCurrentReading ? OneFeedTheme.current : Color.clear)
+                                            if index < group.storedArticles.count - 1 {
+                                                Rectangle()
+                                                    .fill(OneFeedTheme.plaster)
+                                                    .frame(height: 8)
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 6)
+                                    .background(OneFeedTheme.paper, in: RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, OneFeedTheme.pagePadding)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .clipped()
+            }
+        }
+    }
+
     @ViewBuilder
     private var folderChips: some View {
         if folderSummaries.count > 1 {
@@ -241,13 +246,13 @@ struct FeedStreamView: View {
     }
 
     private var emptyTitle: String {
-        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
         if selectedFolder != nil { return "Nothing in this folder" }
         return "Nothing new"
     }
 
     private var emptyDescription: String {
-        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Try a source name or a different phrase."
         }
         if selectedFolder != nil {

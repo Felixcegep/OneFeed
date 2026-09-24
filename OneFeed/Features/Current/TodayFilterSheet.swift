@@ -9,7 +9,6 @@ struct TodayFilterSheet: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #endif
     @Query(sort: \Feed.title) private var feeds: [Feed]
-    @State private var searchText = ""
     @State private var appliedSearch = ""
     @State private var presentedError: String?
 
@@ -17,7 +16,35 @@ struct TodayFilterSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
+                filterList
+            }
+            .tint(OneFeedTheme.ink)
+            .navigationTitle("In Today")
+            .oneFeedInlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .alert("Couldn’t update Today", isPresented: Binding(
+                get: { presentedError != nil },
+                set: { if !$0 { presentedError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(presentedError ?? "")
+            }
+        }
+        .oneFeedMacFormSheet()
+        #if os(iOS)
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .presentationDragIndicator(.visible)
+        #endif
+    }
+
+    private var filterList: some View {
+        List {
                 if feeds.isEmpty {
                     emptySources
                 } else if visibleFolders.isEmpty {
@@ -42,32 +69,8 @@ struct TodayFilterSheet: View {
                         .listRowBackground(OneFeedTheme.paper)
                     }
                 }
-            }
-            .oneFeedGroupedListStyle()
-            .oneFeedSearchable($searchText, prompt: "Folders or sources")
-            .debouncedSearch(searchText, into: $appliedSearch)
-            .tint(OneFeedTheme.ink)
-            .navigationTitle("In Today")
-            .oneFeedInlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .alert("Couldn’t update Today", isPresented: Binding(
-                get: { presentedError != nil },
-                set: { if !$0 { presentedError = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(presentedError ?? "")
-            }
         }
-        .oneFeedMacFormSheet()
-        #if os(iOS)
-        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
+        .oneFeedGroupedListStyle()
     }
 
     private var emptySources: some View {

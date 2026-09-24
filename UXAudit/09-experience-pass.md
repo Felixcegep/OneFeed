@@ -52,6 +52,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Reading focus reconfigured itself while the page was still | Reader | High | Saving the focus band wrote the same preference the page observes, so configure ran again and redrew the fade | The save still updates the preference. That write does not call configure again. Changing focus from the sheet still does | Code review |
 | Adding a source from Feed left the new stories unloaded | Feed | High | The add sheet did not start a refresh after a source was saved | A saved source refreshes Feed. Cancel still does not | Code review |
 | More sources did not say whether the copies were open | Feed | Medium | The row had a label and no expanded value | VoiceOver hears Expanded or Collapsed, with a hint for the next tap | Code review |
+| Typing in search rebuilt the list on every letter | Feed, Queue, History, Sources, Today filter | High | The list and the live field shared one view, so each keystroke regrouped rows and stripped excerpts again | The field lives in its own view. The list updates when the query is applied. Each article remembers the excerpt it already stripped | Code review |
 
 ## Still open
 

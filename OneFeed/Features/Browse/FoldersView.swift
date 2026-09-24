@@ -593,7 +593,6 @@ struct ArticleCollectionView: View {
     @Query private var articles: [Article]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
-    @State private var searchText = ""
     @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
     @State private var storyPlacements: [String: StoryPlacement] = [:]
@@ -634,7 +633,9 @@ struct ArticleCollectionView: View {
 
     var body: some View {
         OneFeedReadingSplit(article: $selectedArticle) {
-            collectionColumn
+            OneFeedSearchHost("Search articles", applied: $appliedSearch) {
+                collectionColumn
+            }
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
                 selectedArticle = nil
@@ -676,8 +677,6 @@ struct ArticleCollectionView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
-        .searchable(text: $searchText, prompt: "Search articles")
-        .debouncedSearch(searchText, into: $appliedSearch)
         .task(id: articles.map(\.id)) {
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
         }
@@ -717,7 +716,7 @@ struct ArticleCollectionView: View {
     }
 
     private var emptyTitle: String {
-        if !searchText.isEmpty { return "No matches" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
         return switch destination {
         case .unread: "You're caught up"
         case .folder: "Caught up"
@@ -725,7 +724,7 @@ struct ArticleCollectionView: View {
     }
 
     private var emptyImage: String {
-        if !searchText.isEmpty { return "magnifyingglass" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "magnifyingglass" }
         return switch destination {
         case .unread: "checkmark.circle"
         case .folder: "checkmark.circle"
@@ -733,7 +732,7 @@ struct ArticleCollectionView: View {
     }
 
     private var emptyDescription: String {
-        if !searchText.isEmpty { return "Try a different title or source name." }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Try a different title or source name." }
         return switch destination {
         case .unread: "New stories from your sources will land here."
         case .folder: "No unread stories in this folder."

@@ -12,7 +12,6 @@ struct SavedView: View {
     ) private var savedQuery: [Article]
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
-    @State private var searchText = ""
     @State private var appliedSearch = ""
 
     private var waiting: [Article] {
@@ -39,7 +38,9 @@ struct SavedView: View {
 
     var body: some View {
         OneFeedReadingSplit(article: $viewModel.selectedArticle) {
-            queueColumn
+            OneFeedSearchHost("Search queue", applied: $appliedSearch) {
+                queueColumn
+            }
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
                 viewModel.finishReading(article, as: state)
@@ -95,8 +96,6 @@ struct SavedView: View {
         .navigationSubtitle(waiting.isEmpty ? "" : waitingSubtitle)
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
-        .searchable(text: $searchText, prompt: "Search queue")
-        .debouncedSearch(searchText, into: $appliedSearch)
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add", systemImage: "plus") { isAdding = true }

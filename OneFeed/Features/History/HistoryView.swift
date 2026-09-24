@@ -10,7 +10,6 @@ struct HistoryView: View {
     ) private var history: [Article]
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
     @State private var selectedArticle: Article?
-    @State private var searchText = ""
     @State private var appliedSearch = ""
 
     private var trimmedQuery: String {
@@ -36,7 +35,9 @@ struct HistoryView: View {
 
     var body: some View {
         OneFeedReadingSplit(article: $selectedArticle) {
-            historyColumn
+            OneFeedSearchHost("Search history", applied: $appliedSearch) {
+                historyColumn
+            }
         } reader: { article in
             ReaderView(
                 article: article,
@@ -120,8 +121,6 @@ struct HistoryView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
-        .oneFeedSearchable($searchText, prompt: "Search history")
-        .debouncedSearch(searchText, into: $appliedSearch)
     }
 
     private func putInQueue(_ article: Article) {
