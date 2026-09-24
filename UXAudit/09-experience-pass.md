@@ -84,6 +84,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The reader trimmed the full article on every redraw | Reader | High | `readableHTML` scanned the stored body each time the page was asked for | The same stored body is reused. A new body is trimmed once | Code review |
 | Returning to Today reloaded every story caption | Today | High | Each deck reread fetched open articles and every memory | The same deck reuses captions for the hour. A finished story loads them again | Code review |
 | VoiceOver heard “Queue” from the bar icon after the story was saved | Reader | Medium | The bar label spoke its own title and hid the button’s “In Queue” label | The bar speaks the button’s label and hint, including “In Queue” and “Already in Queue” | Code review |
+| The Mac reader bar kept an empty Queue icon after the story was saved | Reader | Medium | The Mac slot always used `square.stack`, and Done was locked to 88 points | The icon fills when the story is in Queue, and Done can grow past 88 points | Code review |
 
 ## Still open
 

@@ -528,8 +528,8 @@ struct ReaderView: View {
             HStack(spacing: 0) {
                 readerBarButton(
                     "Queue",
-                    systemImage: "square.stack",
-                    help: "Add this to Queue",
+                    systemImage: (decision == .saved || article.state == .saved) ? "square.stack.fill" : "square.stack",
+                    help: (decision == .saved || article.state == .saved) ? "Already in Queue" : "Add this to Queue",
                     accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
                 ) {
                     finish(.saved)
@@ -550,10 +550,15 @@ struct ReaderView: View {
                 beginFinishRead()
             }
             .disabled(decision != nil)
-            .frame(width: 88)
+            .frame(minWidth: 88)
             HStack(spacing: 0) {
                 ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
-                    ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
+                    ReaderBarGlyph(
+                        title: "Share",
+                        systemImage: "square.and.arrow.up",
+                        spokenLabel: "Share",
+                        spokenHint: "Shares this article"
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(shareURL == nil)
@@ -587,12 +592,16 @@ struct ReaderView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ReaderBarGlyph(title: title, systemImage: systemImage, emphasized: emphasized)
+            ReaderBarGlyph(
+                title: title,
+                systemImage: systemImage,
+                emphasized: emphasized,
+                spokenLabel: accessibilityLabel ?? title,
+                spokenHint: help
+            )
         }
         .buttonStyle(ReaderBarPressStyle())
         .help(help)
-        .accessibilityLabel(accessibilityLabel ?? title)
-        .accessibilityHint(help)
     }
     #endif
 
@@ -760,6 +769,8 @@ private struct ReaderBarGlyph: View {
     let title: String
     let systemImage: String
     var emphasized = false
+    var spokenLabel: String?
+    var spokenHint: String?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -791,6 +802,9 @@ private struct ReaderBarGlyph: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenLabel ?? title)
+        .accessibilityHint(spokenHint ?? "")
     }
 }
 #endif
