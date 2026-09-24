@@ -137,6 +137,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A search with a trailing space rebuilt the list | Queue, History, Feed | Low | The applied query kept the spaces, so the cache key changed while the filter did not | The applied query is the trimmed text | Code review |
 | A source refresh had no progress line, and its sections used system titles | Source, Add Source | Medium | The form used string section headers and only the toolbar mark while fetching | Section titles match the rest of the app, rows stay on paper, and the same progress line shows while that feed fetches | Code review |
 | A second file dropped on Add to Queue was rejected | Queue | Medium | The sheet returned unhandled while an add was already running | The files wait in the same import line and still copy one at a time | Code review |
+| Remove Source sat under the tab bar | Source | Medium | The source form had no tab-bar clearance, unlike Settings | The same clearance sits under the form, and it leaves while a docked keyboard is up | Code review |
+| A folder checkmark was the only sign a source belonged there | Source | Medium | The row did not expose a selected state, and VoiceOver could hear the checkmark image | The row is selected when the source is in that folder, and the icon is decorative | Code review |
 
 ## Still open
 

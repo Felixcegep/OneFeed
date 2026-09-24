@@ -450,10 +450,13 @@ private struct SourceDetailView: View {
                             if viewModel.feed.containsFolder(name) {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(OneFeedTheme.ink)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(viewModel.feed.containsFolder(name) ? .isSelected : [])
+                    .accessibilityValue(viewModel.feed.containsFolder(name) ? "In this folder" : "Not in this folder")
                 }
                 Button("New Folder…") { isCreatingFolder = true }
             } header: {
@@ -510,6 +513,7 @@ private struct SourceDetailView: View {
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
         .oneFeedScrollEdge()
+        .oneFeedTabBarClearance()
         .refreshProgressBanner(viewModel.progress)
         .toolbar {
             if viewModel.feed.refreshesOverRSS {
