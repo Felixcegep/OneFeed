@@ -80,7 +80,6 @@ final class SourcesViewModel {
         newFolderName = ""
         isPresentingNewFolder = false
         LibraryChange.noteStructureChanged()
-        reload()
     }
 
     func add(_ feed: Feed, to folderName: String) {
@@ -92,7 +91,6 @@ final class SourcesViewModel {
             feed.removeFolder(folderName)
             saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
         }
-        reload()
     }
 
     func remove(_ feed: Feed, from folderName: String) {
@@ -104,7 +102,6 @@ final class SourcesViewModel {
             feed.addFolder(folderName)
             saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
         }
-        reload()
     }
 
     func toggle(_ feed: Feed, folder folderName: String) {

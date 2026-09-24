@@ -62,7 +62,7 @@ struct SourcesView: View {
         .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: {
             addPreferredFolder = nil
         }) {
-            AddSourceView(preferredFolder: addPreferredFolder, onAdded: { viewModel.reload() })
+            AddSourceView(preferredFolder: addPreferredFolder, onAdded: {})
         }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
@@ -104,7 +104,6 @@ struct SourcesView: View {
                 Button("Remove \(folderToRemove)", role: .destructive) {
                     FolderStore.remove(folderToRemove)
                     LibraryChange.noteStructureChanged()
-                    viewModel.reload()
                     self.folderToRemove = nil
                 }
             }
