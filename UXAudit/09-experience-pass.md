@@ -254,6 +254,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Finishing a story registered the next one without the fields the card shows | Today, Queue | High | The next-story fetch omitted the image, summary, and source fields, so drawing the card faulted the page | That fetch uses the same columns as a list row. Today’s candidate list does too | `ArticleStateTests.choosingTheNextStoryKeepsBodiesOnDisk` |
 | Disconnecting FreshRSS registered every story on the open screen | Settings | High | Duplicate cleanup fetched every article into that screen, so the next title read faulted each page | The scan uses a short-lived context. Only a real duplicate pair is opened, with the columns a row reads | `ArticleIdentityVideoTests.mergingDuplicatesLeavesAnUnrelatedStoryOnDisk` |
 | A library sync registered every story without the fields a row shows | Library | High | Applying the file fetched identity and state only, so the next image or summary read faulted each page | That apply uses the same columns as a list row. The page stays out of the fetch | `LibraryMergeTests.listAndLibraryFetchesLeaveThePageOut` |
+| Refreshing a finished Today replaced the caught-up message | Today | Medium | An empty list during refresh always switched to “Updating your stories,” so the title and detail changed under the progress line | A finished selection keeps “You’re caught up.” The updating copy stays for the first load, before a deck exists | `TodayRefreshCoverTests.caughtUpRefreshKeepsTheScreen` |
 
 ## Still open
 

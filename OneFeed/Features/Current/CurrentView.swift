@@ -171,34 +171,15 @@ struct CurrentView: View {
     private var caughtUp: some View {
         ContentUnavailableView {
             VStack(spacing: 20) {
-                if viewModel.isRefreshing {
-                    OneFeedMark(size: 52)
-                    Text("Updating your stories…")
-                        .font(.system(.title, design: .serif))
-                        .foregroundStyle(OneFeedTheme.ink)
-                        .multilineTextAlignment(.center)
-                } else if celebrateClear {
+                if emptyCopy == .celebrate {
                     OneFeedMarkBurst(size: 52)
-                    Text("You’re all caught up")
-                        .font(.system(.title, design: .serif))
-                        .foregroundStyle(OneFeedTheme.ink)
-                } else if feeds.isEmpty {
-                    OneFeedMark(size: 52)
-                    Text("Add a source")
-                        .font(.system(.title, design: .serif))
-                        .foregroundStyle(OneFeedTheme.ink)
-                } else if todayHasNoSources {
-                    OneFeedMark(size: 52)
-                    Text("Nothing set for Today")
-                        .font(.system(.title, design: .serif))
-                        .foregroundStyle(OneFeedTheme.ink)
-                        .multilineTextAlignment(.center)
                 } else {
                     OneFeedMark(size: 52)
-                    Text("You’re caught up")
-                        .font(.system(.title, design: .serif))
-                        .foregroundStyle(OneFeedTheme.ink)
                 }
+                Text(emptyCopy.title)
+                    .font(.system(.title, design: .serif))
+                    .foregroundStyle(OneFeedTheme.ink)
+                    .multilineTextAlignment(.center)
             }
         } description: {
             Text(caughtUpDescription)
@@ -234,11 +215,18 @@ struct CurrentView: View {
         feeds.contains(where: \.isEnabled) && !feeds.contains { $0.isEnabled && $0.includeInToday }
     }
 
+    private var emptyCopy: TodayEmptyCopy {
+        TodayEmptyCopy.choose(
+            isRefreshing: viewModel.isRefreshing,
+            hasFeeds: !feeds.isEmpty,
+            todayHasNoSources: todayHasNoSources,
+            finishedSelection: viewModel.totalCount > 0,
+            celebrate: celebrateClear
+        )
+    }
+
     private var caughtUpDescription: String {
-        if viewModel.isRefreshing { return "Checking your sources for new stories." }
-        if feeds.isEmpty { return "Follow your favorite publications to find your next read here." }
-        if todayHasNoSources { return "Turn a folder or source on. Stories you leave out stay in Feed." }
-        return "You’ve finished today’s selection. Refresh to check for new stories."
+        emptyCopy.detail
     }
 
     private var caughtUpActionTitle: String {
@@ -292,6 +280,49 @@ private struct TodayRefreshChrome: ViewModifier {
 }
 
 /// The full-screen refresh cover is for the first load, before any source exists.
+/// What an empty Today says. A finished selection stays put while a refresh runs.
+enum TodayEmptyCopy: Equatable {
+    case updating
+    case celebrate
+    case addSource
+    case noSources
+    case caughtUp
+
+    static func choose(
+        isRefreshing: Bool,
+        hasFeeds: Bool,
+        todayHasNoSources: Bool,
+        finishedSelection: Bool,
+        celebrate: Bool
+    ) -> TodayEmptyCopy {
+        if isRefreshing && !hasFeeds { return .updating }
+        if celebrate { return .celebrate }
+        if !hasFeeds { return .addSource }
+        if todayHasNoSources { return .noSources }
+        if isRefreshing && !finishedSelection { return .updating }
+        return .caughtUp
+    }
+
+    var title: String {
+        switch self {
+        case .updating: "Updating your stories…"
+        case .celebrate: "You’re all caught up"
+        case .addSource: "Add a source"
+        case .noSources: "Nothing set for Today"
+        case .caughtUp: "You’re caught up"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .updating: "Checking your sources for new stories."
+        case .celebrate, .caughtUp: "You’ve finished today’s selection. Refresh to check for new stories."
+        case .addSource: "Follow your favorite publications to find your next read here."
+        case .noSources: "Turn a folder or source on. Stories you leave out stay in Feed."
+        }
+    }
+}
+
 enum TodayRefreshCover {
     static func isShown(isRefreshing: Bool, hasStories: Bool, hasFeeds: Bool, skipsOpeningCover: Bool) -> Bool {
         isRefreshing && !hasStories && !hasFeeds && !skipsOpeningCover
