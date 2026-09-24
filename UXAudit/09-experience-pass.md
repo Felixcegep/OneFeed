@@ -53,6 +53,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Adding a source from Feed left the new stories unloaded | Feed | High | The add sheet did not start a refresh after a source was saved | A saved source refreshes Feed. Cancel still does not | Code review |
 | More sources did not say whether the copies were open | Feed | Medium | The row had a label and no expanded value | VoiceOver hears Expanded or Collapsed, with a hint for the next tap | Code review |
 | Typing in search rebuilt the list on every letter | Feed, Queue, History, Sources, Today filter | High | The list and the live field shared one view, so each keystroke regrouped rows and stripped excerpts again | The field lives in its own view. The list updates when the query is applied. Each article remembers the excerpt it already stripped | Code review |
+| Closing Add to Queue fetched every saved story | Queue | High | Dismiss and each row action reloaded the whole saved library, including article bodies, into an array the list does not show | The list is the live query. Cancel, undo, and row actions no longer fetch it again. A handoff lookup loads ids only | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 
 ## Still open
 

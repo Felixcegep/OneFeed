@@ -50,7 +50,7 @@ struct SavedView: View {
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
-        .readingUndoBanner { viewModel.reload() }
+        .readingUndoBanner()
     }
 
     private var queueColumn: some View {
@@ -71,7 +71,7 @@ struct SavedView: View {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .accessibilityHint("Opens the next piece in Queue")
-                            .laterQueueActions(article: upNext, restore: restore, onChanged: { viewModel.reload() })
+                            .laterQueueActions(article: upNext, restore: restore, onChanged: {})
                         } header: {
                             GallerySectionHeader(
                                 text: recentlySavedTitle(for: upNext)
@@ -113,8 +113,8 @@ struct SavedView: View {
             viewModel.configure(with: modelContext)
             openPendingImportedArticle()
         }
-        .sheet(isPresented: $isAdding, onDismiss: { viewModel.reload() }) {
-            AddToQueueView { viewModel.reload() }
+        .sheet(isPresented: $isAdding) {
+            AddToQueueView {}
         }
         .onDrop(of: [.pdf, .epub, .url, .plainText], isTargeted: nil) { providers in
             importDropped(providers)
@@ -225,7 +225,7 @@ struct SavedView: View {
         .buttonStyle(DirectoryRowButtonStyle())
         .articleListRow(isCurrent: article.isCurrentReading, isSelected: viewModel.selectedArticle?.id == article.id)
         .accessibilityHint("Opens this piece from Queue")
-        .laterQueueActions(article: article, restore: restore, onChanged: { viewModel.reload() })
+        .laterQueueActions(article: article, restore: restore, onChanged: {})
     }
 
     private func openPendingImportedArticle() {
@@ -259,7 +259,6 @@ struct SavedView: View {
                         last = try await service.importFile(at: url, in: modelContext)
                         try? FileManager.default.removeItem(at: url)
                     }
-                    viewModel.reload()
                     if let last { viewModel.selectedArticle = last }
                 } catch {
                     viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
@@ -281,7 +280,6 @@ struct SavedView: View {
                     guard let address = await Self.droppedAddress(from: provider) else { continue }
                     last = try await QueueLinkService().add(urlString: address, in: modelContext)
                 }
-                viewModel.reload()
                 if let last { viewModel.selectedArticle = last }
             } catch {
                 viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that link.")

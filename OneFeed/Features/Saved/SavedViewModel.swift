@@ -31,6 +31,7 @@ final class SavedViewModel {
         let saved = ArticleState.saved.rawValue
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == saved })
         descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
+        descriptor.propertiesToFetch = [\.id, \.guid, \.stateRawValue]
         do { articles = ArticleIdentity.collapsingDuplicates(try context.fetch(descriptor)) }
         catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
