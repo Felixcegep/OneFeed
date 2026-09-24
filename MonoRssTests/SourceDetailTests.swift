@@ -35,6 +35,7 @@ struct SourceDetailTests {
         try context.save()
 
         let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+        model.loadOpeningDetails()
         let recent = model.recentArticles
         let loads = model.recentStoryLoads
         #expect(recent.count == 20)
@@ -83,6 +84,11 @@ struct SourceDetailTests {
         context.insert(other)
         try context.save()
         let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+        #expect(model.folderListLoads == 0)
+        #expect(model.recentStoryLoads == 0)
+        #expect(model.availableFolders.contains("Philosophy"))
+        #expect(SourceDetailViewModel.showsEmptyFolderList(ready: false, folderCount: 0) == false)
+        model.loadOpeningDetails()
         let loads = model.folderListLoads
         #expect(model.availableFolders.contains("Philosophy"))
         #expect(model.availableFolders.contains("Development"))

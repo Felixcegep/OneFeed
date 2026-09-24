@@ -447,7 +447,7 @@ private struct SourceDetailView: View {
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
-                if viewModel.availableFolders.isEmpty {
+                if SourceDetailViewModel.showsEmptyFolderList(ready: viewModel.foldersReady, folderCount: viewModel.availableFolders.count) {
                     Text("No folders yet")
                         .foregroundStyle(OneFeedTheme.graphite)
                 }
@@ -527,6 +527,7 @@ private struct SourceDetailView: View {
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
+        .task { viewModel.loadOpeningDetails() }
         .oneFeedScrollEdge()
         .oneFeedTabBarClearance()
         .modifier(SourceDetailRefreshChrome(viewModel: viewModel))

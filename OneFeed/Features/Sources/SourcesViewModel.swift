@@ -275,6 +275,7 @@ final class SourceDetailViewModel {
     private(set) var isRefreshing = false
     let progress = RefreshProgress()
     var availableFolders: [String] = []
+    private(set) var foldersReady = false
     private(set) var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
     private var pendingBlockedWords: String?
@@ -286,14 +287,19 @@ final class SourceDetailViewModel {
     private(set) var recentStoryLoads = 0
     /// Fetches of every source, used to build the folder name list.
     private(set) var folderListLoads = 0
+    private var didLoadOpeningDetails = false
     private nonisolated(unsafe) var saveObserver: NSObjectProtocol?
+
+    /// The empty folder line waits until the full list has been read. A known folder still shows immediately.
+    static func showsEmptyFolderList(ready: Bool, folderCount: Int) -> Bool {
+        ready && folderCount == 0
+    }
 
     init(feed: Feed, context: ModelContext, freshRSSService: any FreshRSSSyncing = FreshRSSSyncService()) {
         self.feed = feed
         self.context = context
         self.freshRSSService = freshRSSService
-        reloadFolders()
-        reloadRecentStories()
+        availableFolders = FolderStore.allNames(from: [feed])
         saveObserver = NotificationCenter.default.addObserver(
             forName: ModelContext.didSave,
             object: context,
@@ -309,6 +315,14 @@ final class SourceDetailViewModel {
         if let saveObserver {
             NotificationCenter.default.removeObserver(saveObserver)
         }
+    }
+
+    func loadOpeningDetails() {
+        guard !didLoadOpeningDetails else { return }
+        didLoadOpeningDetails = true
+        reloadFolders()
+        foldersReady = true
+        reloadRecentStories()
     }
 
     func refresh() async {
