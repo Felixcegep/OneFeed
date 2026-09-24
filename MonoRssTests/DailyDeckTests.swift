@@ -176,7 +176,14 @@ struct DailyDeckTests {
         let drop = Feed(title: "Drop", feedURL: URL(string: "https://drop.test/rss")!)
         context.insert(keep)
         context.insert(drop)
-        let kept = Article(guid: "keep", title: "Keep", publishedAt: .now.addingTimeInterval(-60), feed: keep)
+        let keptHTML = "<p>" + String(repeating: "word ", count: 500) + "</p>"
+        let kept = Article(
+            guid: "keep",
+            title: "Keep",
+            publishedAt: .now.addingTimeInterval(-60),
+            contentHTML: keptHTML,
+            feed: keep
+        )
         let dropped = Article(guid: "drop", title: "Drop", publishedAt: .now, feed: drop)
         context.insert(kept)
         context.insert(dropped)
@@ -189,6 +196,7 @@ struct DailyDeckTests {
         try DailyDeckService.reconcileMembership(in: context)
         #expect(try DailyDeckService().remainingArticles(in: context).map(\.guid) == ["keep"])
         #expect(kept.state == .current)
+        #expect(kept.contentHTML == keptHTML)
     }
 
     @Test func turningASourceOnFillsAnOpenSlot() throws {

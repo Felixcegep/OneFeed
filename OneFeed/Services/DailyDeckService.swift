@@ -280,6 +280,12 @@ struct DailyDeckService {
         })
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
         descriptor.fetchLimit = 80
+        // The body stays on disk. Choosing today's stories only needs identity, state, and the source.
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.url, \.title, \.publishedAt, \.stateRawValue, \.videoID,
+            \.firstDisplayedAt, \.libraryUpdatedAt, \.estimatedReadingMinutes, \.contentKind,
+        ]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let fetched = try context.fetch(descriptor)
 
         return fetched.filter { article in
