@@ -165,6 +165,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A slow page woke the reader on a tight loop | Reader | Medium | Loading polled every 160ms until an 8s cap | The first pause stays 80ms. Later pauses grow to one second | `ReaderFocusTests.pageSettleWaitsGrowThenLevelOff` |
 | An empty Not interested list did not say what to do | Not interested | Low | The empty state described the list and stopped | It says to skip a story, then choose Not interested | Code review |
 | Caught up played a second success haptic when the burst ended | Today | Medium | The haptic followed `celebrateClear` in both directions, and the timer was not cancelled with the screen | The haptic plays only when the burst starts. Leaving Today cancels the timer | Code review |
+| Add Source played a second haptic and could dismiss again after the sheet was already closed | Add Source | Medium | The success flag changed both ways, and the wait lived in a task the sheet did not own | The haptic plays when the added mark appears. Closing the sheet cancels the wait | Code review |
 
 ## Still open
 

@@ -628,6 +628,7 @@ struct AddSourceView: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var viewModel = AddSourceViewModel()
     @State private var showSuccess = false
+    @State private var addTask: Task<Void, Never>?
 
     var preferredFolder: String? = nil
     /// Prefills the address field (e.g. from a `feed:` / Share / deep link).
@@ -713,7 +714,22 @@ struct AddSourceView: View {
                         .disabled(viewModel.addresses.isEmpty || viewModel.isAdding || showSuccess)
                 }
             }
-            .sensoryFeedback(.success, trigger: showSuccess)
+            .sensoryFeedback(.success, trigger: showSuccess) { _, showing in
+                showing
+            }
+            .onDisappear { addTask?.cancel() }
+            .task(id: showSuccess) {
+                guard showSuccess else { return }
+                if !reduceMotion {
+                    try? await Task.sleep(for: .milliseconds(420))
+                }
+                guard !Task.isCancelled, showSuccess else { return }
+                if viewModel.presentedError == nil {
+                    dismiss()
+                } else {
+                    showSuccess = false
+                }
+            }
             .onAppear {
                 viewModel.configureFolders(from: Array(feeds), preferred: preferredFolder)
                 if let initialAddress, viewModel.addressList.isEmpty {
@@ -748,19 +764,12 @@ struct AddSourceView: View {
     }
 
     private func add() {
-        Task {
+        addTask?.cancel()
+        addTask = Task {
             guard await viewModel.add(in: modelContext) else { return }
             onAdded()
+            guard !Task.isCancelled else { return }
             showSuccess = true
-            if !reduceMotion {
-                try? await Task.sleep(for: .milliseconds(420))
-            }
-            // Stay open if the user might paste another batch; only dismiss when one batch succeeded cleanly.
-            if viewModel.presentedError == nil {
-                dismiss()
-            } else {
-                showSuccess = false
-            }
         }
     }
 }
