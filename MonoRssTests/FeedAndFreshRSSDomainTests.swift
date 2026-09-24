@@ -317,6 +317,9 @@ struct FeedAndFreshRSSDomainTests {
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) == sources)
         feed.title = "Renamed"
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) != sources)
+        let filter = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true, includesTitle: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 40)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true, includesTitle: true) == filter)
     }
 
     @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {

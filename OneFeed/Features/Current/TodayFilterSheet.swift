@@ -8,7 +8,8 @@ struct TodayFilterSheet: View {
     #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #endif
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var appliedSearch = ""
     @State private var presentedError: String?
     @State private var folderCache = TodayFolderCache()
@@ -17,7 +18,13 @@ struct TodayFilterSheet: View {
     var onUpdated: () -> Void
     var onFailed: (String) -> Void = { _ in }
 
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesToday: true, includesTitle: true)
+    }
+
     var body: some View {
+        let _ = feedTick
         NavigationStack {
             OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
                 filterList
@@ -39,6 +46,13 @@ struct TodayFilterSheet: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(presentedError ?? "")
+            }
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesToday: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesToday: true, includesTitle: true) {
+                    feedTick += 1
+                }
             }
         }
         .oneFeedMacFormSheet()

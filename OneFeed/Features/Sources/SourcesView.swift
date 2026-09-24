@@ -648,7 +648,7 @@ struct AddSourceView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
     @State private var viewModel = AddSourceViewModel()
     @State private var showSuccess = false
     @State private var addTask: Task<Void, Never>?
@@ -754,7 +754,8 @@ struct AddSourceView: View {
                 }
             }
             .onAppear {
-                viewModel.configureFolders(from: Array(feeds), preferred: preferredFolder)
+                let feeds = feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
+                viewModel.configureFolders(from: feeds, preferred: preferredFolder)
                 if let initialAddress, viewModel.addressList.isEmpty {
                     viewModel.addressList = initialAddress
                 }
