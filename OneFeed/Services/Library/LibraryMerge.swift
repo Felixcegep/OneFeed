@@ -129,7 +129,7 @@ nonisolated enum LibraryMerge {
 
         FolderStore.remember(document.folderNames)
 
-        let articles = try context.fetch(ArticleListFetch.library())
+        let articles = try context.fetch(ArticleListFetch.rows())
         var index = ArticleIdentityIndex(articles: articles)
         for record in document.articles {
             guard options.shouldApply(state: record.state) else { continue }
@@ -155,14 +155,7 @@ nonisolated enum LibraryMerge {
 
     static func applyCurrent(_ document: LibraryDocument, to context: ModelContext) throws {
         guard let key = document.currentArticleKey else { return }
-        var descriptor = FetchDescriptor<Article>()
-        descriptor.propertiesToFetch = [
-            \.id, \.guid, \.title, \.url, \.publishedAt, \.stateRawValue,
-            \.completedAt, \.isRemoteStarred, \.libraryUpdatedAt, \.firstDisplayedAt,
-            \.estimatedReadingMinutes, \.readingReactionRawValue, \.readingNote,
-        ]
-        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
-        let articles = try context.fetch(descriptor)
+        let articles = try context.fetch(ArticleListFetch.rows())
         guard let incoming = articles.first(where: { recordKey(for: $0) == key }) else { return }
         incoming.state = .current
         incoming.firstDisplayedAt = incoming.firstDisplayedAt ?? .now
