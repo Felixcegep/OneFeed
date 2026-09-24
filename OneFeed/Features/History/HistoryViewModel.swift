@@ -19,7 +19,10 @@ enum HistoryViewModel {
             if calendar.isDateInToday(day) { label = "Today" }
             else if calendar.isDateInYesterday(day) { label = "Yesterday" }
             else { label = day.formatted(.dateTime.month(.abbreviated).day()) }
-            return HistoryDay(day: day, label: label, articles: groups[day] ?? [])
+            let articles = (groups[day] ?? []).sorted {
+                ($0.completedAt ?? $0.publishedAt) > ($1.completedAt ?? $1.publishedAt)
+            }
+            return HistoryDay(day: day, label: label, articles: articles)
         }
     }
 }

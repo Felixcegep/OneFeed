@@ -81,6 +81,21 @@ struct RetentionAndExtractionTests {
         #expect(first == now.addingTimeInterval(-7 * 86_400))
     }
 
+    @Test func historyDayKeepsNewestFirst() throws {
+        let context = try InMemoryStore.makeContext()
+        let day = Date(timeIntervalSince1970: 1_700_000_000)
+        let older = Article(guid: "older", title: "Older", publishedAt: day, state: .read)
+        older.completedAt = day
+        let newer = Article(guid: "newer", title: "Newer", publishedAt: day, state: .read)
+        newer.completedAt = day.addingTimeInterval(3_600)
+        context.insert(older)
+        context.insert(newer)
+
+        let days = HistoryViewModel.days(from: [older, newer])
+        #expect(days.count == 1)
+        #expect(days[0].articles.map(\.title) == ["Newer", "Older"])
+    }
+
     @Test func cancelledRefreshIsNotShownToTheUser() {
         #expect(RefreshFailure.message(for: CancellationError()) == nil)
         #expect(RefreshFailure.message(for: URLError(.cancelled)) == nil)
