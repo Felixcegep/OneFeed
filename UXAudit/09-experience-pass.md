@@ -47,6 +47,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A second Done, Queue, or Put in Queue wrote another sync | Today, Feed, History | High | The action did not notice the article was already in that state, and the sync queue appended the same change | The action returns when the state already matches, and a pending sync of the same kind is kept once | `SwiftDataFreshRSSSyncTests.enqueueMutationIgnoresARepeatedStar` |
 | Stories inside one History day appeared in an unstable order | History | Medium | Grouping by day used a dictionary, which does not keep the query order | Each day is newest first | `RetentionAndExtractionTests.historyDayKeepsNewestFirst` |
 | Queue and History search missed accented titles | Queue, History | Medium | Those screens used case-insensitive search, so “cafe” did not match “café” | They use the same standard search as Feed and Sources | Code review |
+| Sources and the Today filter regrouped on every keystroke | Sources, Today | Medium | The field and the filter shared one string | The field stays live. The filter waits 180ms, and clears immediately | Code review |
 
 ## Still open
 

@@ -10,6 +10,7 @@ struct TodayFilterSheet: View {
     #endif
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var searchText = ""
+    @State private var appliedSearch = ""
     @State private var presentedError: String?
 
     var onUpdated: () -> Void
@@ -20,7 +21,7 @@ struct TodayFilterSheet: View {
                 if feeds.isEmpty {
                     emptySources
                 } else if visibleFolders.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
+                        ContentUnavailableView.search(text: appliedSearch)
                         .listRowBackground(Color.clear)
                 } else {
                     ForEach(Array(visibleFolders.enumerated()), id: \.element.id) { index, folder in
@@ -44,6 +45,7 @@ struct TodayFilterSheet: View {
             }
             .oneFeedGroupedListStyle()
             .oneFeedSearchable($searchText, prompt: "Folders or sources")
+            .debouncedSearch(searchText, into: $appliedSearch)
             .tint(OneFeedTheme.ink)
             .navigationTitle("In Today")
             .oneFeedInlineTitle()
@@ -136,7 +138,7 @@ struct TodayFilterSheet: View {
 
     private var visibleFolders: [TodayFolderFilter] {
         let groups = FeedFolderGrouping.groups(from: feeds)
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             return groups.map {
                 TodayFolderFilter(group: $0, shown: $0.feeds, offersAllSources: $0.feeds.count > 1)

@@ -8,13 +8,19 @@ struct SourcesView: View {
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
     @State private var searchText = ""
+    @State private var appliedSearch = ""
     @State private var folderToRemove: String?
 
+    private var folderQuery: String {
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var visibleFolders: [FeedFolderGroup] {
-        guard !searchText.isEmpty else { return viewModel.folders }
+        let query = folderQuery
+        guard !query.isEmpty else { return viewModel.folders }
         return viewModel.folders.filter { folder in
-            folder.name.localizedStandardContains(searchText)
-                || folder.feeds.contains { $0.title.localizedStandardContains(searchText) }
+            folder.name.localizedStandardContains(query)
+                || folder.feeds.contains { $0.title.localizedStandardContains(query) }
         }
     }
 
@@ -23,7 +29,7 @@ struct SourcesView: View {
         List {
             if visibleFolders.isEmpty {
                 Section {
-                    if searchText.isEmpty {
+                    if folderQuery.isEmpty {
                         ContentUnavailableView {
                             Label("No folders yet", systemImage: "folder")
                         } description: {
@@ -33,7 +39,7 @@ struct SourcesView: View {
                                 .buttonStyle(PrimaryActionStyle(expands: false))
                         }
                     } else {
-                        ContentUnavailableView.search(text: searchText)
+                        ContentUnavailableView.search(text: folderQuery)
                     }
                 }
                 .listRowBackground(OneFeedTheme.paper)
@@ -60,6 +66,7 @@ struct SourcesView: View {
         }
         .oneFeedGroupedListStyle()
         .searchable(text: $searchText, prompt: "Folders or sources")
+        .debouncedSearch(searchText, into: $appliedSearch)
         .navigationTitle("Sources")
         .oneFeedLargeTitle()
         .oneFeedScrollEdge()
@@ -226,6 +233,7 @@ private struct FolderFeedsView: View {
 
     @Environment(\.modelContext) private var modelContext
     @State private var searchText = ""
+    @State private var appliedSearch = ""
 
     private var otherFolders: [String] {
         viewModel.folderNames.filter { name in
@@ -236,10 +244,11 @@ private struct FolderFeedsView: View {
 
     private var visibleFeeds: [Feed] {
         let feeds = viewModel.feeds(in: folderID)
-        guard !searchText.isEmpty else { return feeds }
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return feeds }
         return feeds.filter {
-            $0.title.localizedStandardContains(searchText)
-                || $0.feedURL.absoluteString.localizedStandardContains(searchText)
+            $0.title.localizedStandardContains(query)
+                || $0.feedURL.absoluteString.localizedStandardContains(query)
         }
     }
 
@@ -247,7 +256,7 @@ private struct FolderFeedsView: View {
         List {
             if visibleFeeds.isEmpty {
                 Section {
-                    if searchText.isEmpty {
+                    if appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         ContentUnavailableView {
                             Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
                         } description: {
@@ -257,7 +266,7 @@ private struct FolderFeedsView: View {
                                 .buttonStyle(PrimaryActionStyle(expands: false))
                         }
                     } else {
-                        ContentUnavailableView.search(text: searchText)
+                        ContentUnavailableView.search(text: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
                 }
                 .listRowBackground(OneFeedTheme.paper)
@@ -296,6 +305,7 @@ private struct FolderFeedsView: View {
         }
         .oneFeedGroupedListStyle()
         .searchable(text: $searchText, prompt: "Sources in this folder")
+        .debouncedSearch(searchText, into: $appliedSearch)
         .navigationTitle(folderID.title)
         .oneFeedLargeTitle()
         .oneFeedScrollEdge()
