@@ -103,6 +103,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The Today source picker used the system empty view | Today | Medium | No sources and no search matches sat in a system unavailable row | They use the same plaster empty state, and say what to do next | Code review |
 | Dragging focus intensity reconfigured the page on every step | Reader | Medium | Each slider change started another focus task, and an older one could finish last | The latest change waits a moment and replaces the one already waiting | Code review |
 | A second library Sync could merge the file twice | Settings | High | The file path did not mark itself busy until after the next tap could start | A sync that is already running ignores the next tap, including the pull and the push | Code review |
+| A background library push could run during Sync | Settings | High | The delayed push did not notice that a sync was already writing the file | The push waits and runs after that sync. Leaving the app does not start a second write | Code review |
 
 ## Still open
 

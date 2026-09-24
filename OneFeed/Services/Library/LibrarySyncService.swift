@@ -209,6 +209,10 @@ final class LibrarySyncService {
             pushTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(1_500))
                 guard !Task.isCancelled else { return }
+                if isSyncing {
+                    schedulePush()
+                    return
+                }
                 _ = await sync(request: .automatic)
             }
             return
@@ -217,6 +221,10 @@ final class LibrarySyncService {
         pushTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1_500))
             guard !Task.isCancelled else { return }
+            if isSyncing {
+                schedulePush()
+                return
+            }
             await pushNow()
         }
     }
@@ -235,12 +243,14 @@ final class LibrarySyncService {
 
     func flush() async {
         pushTask?.cancel()
-        guard isLinked else { return }
+        guard isLinked, !isSyncing else { return }
         if usesGoogleDriveAPI {
             guard isAutoSyncEnabled else { return }
             _ = await sync(request: .automatic)
             return
         }
+        isSyncing = true
+        defer { isSyncing = false }
         await pushNow()
     }
 
