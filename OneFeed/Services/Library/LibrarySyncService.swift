@@ -50,6 +50,7 @@ final class LibrarySyncService {
         didSet {
             guard oldValue, !hasActiveReadingSession else { return }
             resumeDeferredPullIfIdle()
+            resumeDeferredPush()
         }
     }
     /// A cloud pull arrived while a story was open. Pull once reading ends.
@@ -214,13 +215,18 @@ final class LibrarySyncService {
 
     func schedulePush() {
         guard isLinked, !isDisabled, !isApplyingRemote else { return }
+        if usesGoogleDriveAPI, !isAutoSyncEnabled { return }
+        if hasActiveReadingSession {
+            pushTask?.cancel()
+            pushAgain = true
+            return
+        }
         if usesGoogleDriveAPI {
-            guard isAutoSyncEnabled else { return }
             pushTask?.cancel()
             pushTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(1_500))
                 guard !Task.isCancelled else { return }
-                if isSyncing {
+                if isSyncing || self.hasActiveReadingSession {
                     pushAgain = true
                     return
                 }
@@ -232,7 +238,7 @@ final class LibrarySyncService {
         pushTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1_500))
             guard !Task.isCancelled else { return }
-            if isSyncing {
+            if isSyncing || self.hasActiveReadingSession {
                 pushAgain = true
                 return
             }
@@ -248,18 +254,24 @@ final class LibrarySyncService {
     }
 
     /// Runs one deferred cloud pull after the open story closes.
+    /// A file push that also waited runs after that pull, so the open story is not overwritten first.
     private func resumeDeferredPullIfIdle() {
-        guard pullAgain, !hasActiveReadingSession, !isSyncing else { return }
+        guard !hasActiveReadingSession, !isSyncing else { return }
+        let pull = pullAgain
+        let pushFile = pushAgain && !usesGoogleDriveAPI
+        guard pull || pushFile else { return }
         pullAgain = false
-        Task { await resumeDeferredPull() }
+        if pushFile { pushAgain = false }
+        Task { await resumeDeferredLibraryWork(pull: pull, pushFile: pushFile) }
     }
 
-    private func resumeDeferredPull() async {
+    private func resumeDeferredLibraryWork(pull: Bool, pushFile: Bool) async {
         if usesGoogleDriveAPI {
-            _ = await sync(request: .automatic)
-        } else {
-            await pullAndMerge()
+            if pull { _ = await sync(request: .automatic) }
+            return
         }
+        if pull { await pullAndMerge() }
+        if pushFile { await pushNow() }
     }
 
     func syncNow() async {
@@ -275,13 +287,17 @@ final class LibrarySyncService {
             resumeDeferredPullIfIdle()
         }
         await pullAndMerge()
-        await pushNow()
+        if hasActiveReadingSession {
+            pushAgain = true
+        } else {
+            await pushNow()
+        }
     }
 
     func flush() async {
         pushTask?.cancel()
         guard isLinked else { return }
-        if isSyncing {
+        if isSyncing || hasActiveReadingSession {
             pushAgain = true
             return
         }

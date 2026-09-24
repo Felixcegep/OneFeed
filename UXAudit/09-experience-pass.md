@@ -175,6 +175,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | VoiceOver could miss Done, Queued, or Next | Reader | Medium | The decision curtain was only a label on a view that was not focused | The curtain announces that word when it appears | Code review |
 | VoiceOver could miss the Undo bar | Today, Feed, reader | Medium | The bar appeared at the bottom without moving focus | It announces Skipped or Not interested, and that Undo is available | Code review |
 | The Feed title changed length while a refresh was running | Feed | High | The subtitle used a relative time, so each progress tick could turn “just now” into “1 minute ago” and resize the large title | The subtitle keeps a clock time for today, says yesterday after that, and stays put while the progress line moves | `BrowseRefreshTests.aPassingMinuteDoesNotRewriteTheFeedSubtitle` |
+| A library file sync wrote over the open story | Library | High | The pull waited until the story closed, then the same sync still merged and wrote the file | The write waits with the pull. After the story closes, the file is read first and the local changes go up after that | `LibrarySyncServiceFileTests.syncWhileReadingLeavesTheFileUntilTheStoryCloses` |
 
 ## Still open
 
