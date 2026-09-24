@@ -150,6 +150,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Remove Source left the screen before the deletion was saved | Source, Not interested | High | The screen dismissed first, and a failed local delete was ignored | The screen stays until the source is actually gone. If that save fails, the source remains and an alert explains why | Code review |
 | A takeaway note closed the sheet when the save failed | Reader | High | Save dismissed and marked the note written even when the save was discarded | Save stays on the sheet until the note is stored. A swipe that cannot keep the draft tells the reader | Code review |
 | A video reply looked saved when the write failed | Reader | High | The transcript was assigned on the story and the save error was ignored | The messages stay on screen, and the ask sheet says the conversation was not stored | Code review |
+| Archive, a folder move, or a librarian change claimed success when the save failed | Not interested, librarian | High | Those actions saved with `try?` and then told the user the change was done | The source stays as it was, and the screen or the librarian says the update did not land | Code review |
 
 ## Still open
 
