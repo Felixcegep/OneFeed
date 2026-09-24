@@ -9,6 +9,7 @@ struct HistoryView: View {
         order: .reverse
     ) private var history: [Article]
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedArticle: Article?
     @State private var appliedSearch = ""
     /// Day groups stay put while the open story changes.
@@ -40,11 +41,14 @@ struct HistoryView: View {
         return days
     }
 
-    /// Search and every story id. Opening a story does not regroup the days.
+    /// Search, every story, and the calendar day. Opening a story does not regroup the days.
+    /// Coming back the next morning moves “Today” and “Yesterday” forward.
     private var historyEdge: Int {
+        _ = scenePhase
         var token = ListIdentity.token(ids: history.lazy.map(\.id))
         token = token &* 31 &+ appliedSearch.hashValue
         token = token &* 31 &+ notInterested.count
+        token = token &* 31 &+ Calendar.current.startOfDay(for: .now).hashValue
         return token
     }
 
