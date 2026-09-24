@@ -119,7 +119,6 @@ final class SourcesViewModel {
             let result = try FeedSeedService().apply(in: context)
             UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
             UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
-            reload()
             LibraryChange.noteStructureChanged()
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
                 presentStatus("Sources already loaded", message: "All seeded sources are already loaded.")
@@ -140,7 +139,6 @@ final class SourcesViewModel {
                         "Restored \(restored) source\(restored == 1 ? "" : "s")",
                         message: "\(result.updated) updated."
                     )
-                    reload()
                 } catch {
                     presentStatus(
                         "Sources restored",
