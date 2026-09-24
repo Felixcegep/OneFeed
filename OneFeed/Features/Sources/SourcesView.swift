@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SourcesView: View {
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Feed.title) private var storedFeeds: [Feed]
     @State private var viewModel = SourcesViewModel()
     @State private var addPreferredFolder: String?
     @State private var pickingFolder: FolderIconTarget?
@@ -15,9 +16,10 @@ struct SourcesView: View {
     }
 
     private var visibleFolders: [FeedFolderGroup] {
+        let groups = viewModel.folders(matching: storedFeeds)
         let query = folderQuery
-        guard !query.isEmpty else { return viewModel.folders }
-        return viewModel.folders.filter { folder in
+        guard !query.isEmpty else { return groups }
+        return groups.filter { folder in
             folder.name.localizedStandardContains(query)
                 || folder.feeds.contains { $0.title.localizedStandardContains(query) }
         }

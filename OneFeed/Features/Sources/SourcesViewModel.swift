@@ -35,7 +35,10 @@ final class SourcesViewModel {
     private var cachedFolders: [FeedFolderGroup] = []
 
     /// Folder groups stay put until a source or a remembered folder name changes.
-    var folders: [FeedFolderGroup] {
+    var folders: [FeedFolderGroup] { folders(matching: feeds) }
+
+    /// Groups the feeds already loaded. The source list can draw before `reload()` fetches again.
+    func folders(matching feeds: [Feed]) -> [FeedFolderGroup] {
         let edge = Self.folderEdge(of: feeds)
         if edge == cachedFolderEdge { return cachedFolders }
         cachedFolders = FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
