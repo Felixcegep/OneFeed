@@ -55,6 +55,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Typing in search rebuilt the list on every letter | Feed, Queue, History, Sources, Today filter | High | The list and the live field shared one view, so each keystroke regrouped rows and stripped excerpts again | The field lives in its own view. The list updates when the query is applied. Each article remembers the excerpt it already stripped | Code review |
 | Closing Add to Queue fetched every saved story | Queue | High | Dismiss and each row action reloaded the whole saved library, including article bodies, into an array the list does not show | The list is the live query. Cancel, undo, and row actions no longer fetch it again. A handoff lookup loads ids only | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 | Canceling Connect or the Today filter reloaded the screen | Settings, Today | Medium | The sheet’s dismiss always fetched accounts and feeds, or reread the deck | A successful connection reloads accounts. A Today filter change reloads the deck. Cancel does neither | Code review |
+| Scrolling a list downloaded the same artwork more than once | Today, Queue, Feed | High | Each row started its own full download, and ImageIO ran on the cache actor | One download serves every row of that size. Decoding happens off the actor. A row that scrolls away drops its claim, and the download stops when nobody is still waiting | Code review |
 
 ## Still open
 
