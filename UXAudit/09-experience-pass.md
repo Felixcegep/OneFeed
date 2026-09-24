@@ -98,6 +98,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The in-app browser shifted Back and Share when loading started | Reader browser | Medium | The loading mark was inserted as a toolbar item | The mark is a 2-point line in the top safe area. It still waits 160ms, and the toolbar stays still | Code review |
 | A focus dot covered the bottom line of the article | Reader | High | A 44-point control floated over the page, and the same action already lives in Reading options | The page is clear. Reading options still opens Focus and speaks the current mode | Code review |
 | Summarizing shifted the reading-options button | Reader | Medium | The loading mark was inserted beside the button | The mark draws on top of that button, so the button stays put | Code review |
+| Opening a Queue story rebuilt every section | Queue | High | Each open walked the saved list again to split videos, files, articles, and audio | Those sections stay cached until the queue or the search changes | Code review |
 
 ## Still open
 

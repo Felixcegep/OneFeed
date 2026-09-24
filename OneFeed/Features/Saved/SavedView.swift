@@ -15,6 +15,8 @@ struct SavedView: View {
     @State private var appliedSearch = ""
     /// Collapsed queue stays put while the open story changes.
     @State private var queueCache = QueueListCache()
+    /// Section splits stay put while the open story changes.
+    @State private var sectionCache = QueueSectionCache()
 
     private var waiting: [Article] {
         let edge = queueEdge
@@ -49,7 +51,30 @@ struct SavedView: View {
         }
     }
 
-    private var upNext: Article? { visibleQueue.first }
+    private var queueLayout: QueueLayout {
+        var edge = queueEdge
+        edge = edge &* 31 &+ appliedSearch.hashValue
+        if sectionCache.edge == edge { return sectionCache.layout }
+        let queue = visibleQueue
+        let featured = queue.first
+        var layout = QueueLayout(upNext: featured, subtitle: waitingSubtitle(waiting))
+        for article in queue where article.id != featured?.id {
+            switch article.contentKind {
+            case "youtube": layout.videos.append(article)
+            case "podcast", "music": layout.audio.append(article)
+            case "pdf", "epub": layout.files.append(article)
+            default:
+                if article.isImportedDocument {
+                    layout.files.append(article)
+                } else {
+                    layout.articles.append(article)
+                }
+            }
+        }
+        sectionCache.edge = edge
+        sectionCache.layout = layout
+        return layout
+    }
 
     var body: some View {
         OneFeedReadingSplit(article: $viewModel.selectedArticle) {
@@ -69,14 +94,15 @@ struct SavedView: View {
     }
 
     private var queueColumn: some View {
-        Group {
+        let layout = queueLayout
+        return Group {
             if waiting.isEmpty && searchQuery.isEmpty {
                 empty
-            } else if visibleQueue.isEmpty {
+            } else if layout.upNext == nil && searchQuery.isEmpty == false {
                 noMatches
             } else {
                 List {
-                    if let upNext {
+                    if let upNext = layout.upNext {
                         Section {
                             Button { viewModel.selectedArticle = upNext } label: {
                                 FeaturedStory(article: upNext)
@@ -97,10 +123,10 @@ struct SavedView: View {
                         #endif
                     }
 
-                    laterSection(title: "Videos", articles: videos)
-                    laterSection(title: "Files", articles: files)
-                    laterSection(title: "Articles", articles: articles)
-                    laterSection(title: "Listen", articles: audio)
+                    laterSection(title: "Videos", articles: layout.videos)
+                    laterSection(title: "Files", articles: layout.files)
+                    laterSection(title: "Articles", articles: layout.articles)
+                    laterSection(title: "Listen", articles: layout.audio)
                 }
                 .oneFeedGroupedListStyle()
             }
@@ -108,7 +134,7 @@ struct SavedView: View {
         .navigationTitle("Queue")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
-        .navigationSubtitle(waiting.isEmpty ? "" : waitingSubtitle)
+        .navigationSubtitle(waiting.isEmpty ? "" : queueLayout.subtitle)
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
         .toolbar {
@@ -168,37 +194,18 @@ struct SavedView: View {
         )
     }
 
-    private var waitingSubtitle: String {
-        let videos = waiting.filter { $0.contentKind == "youtube" }.count
-        let rest = waiting.count - videos
+    private func waitingSubtitle(_ queue: [Article]) -> String {
+        let videos = queue.reduce(into: 0) { count, article in
+            if article.contentKind == "youtube" { count += 1 }
+        }
+        let rest = queue.count - videos
         if videos > 0, rest > 0 {
-            return "\(waiting.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
+            return "\(queue.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
         }
         if videos > 0 {
             return "\(videos) video\(videos == 1 ? "" : "s") in queue"
         }
-        return "\(waiting.count) in queue"
-    }
-
-    private var videos: [Article] {
-        rest.filter { $0.contentKind == "youtube" }
-    }
-
-    private var audio: [Article] {
-        rest.filter { $0.contentKind == "podcast" || $0.contentKind == "music" }
-    }
-
-    private var files: [Article] {
-        rest.filter(\.isImportedDocument)
-    }
-
-    private var articles: [Article] {
-        rest.filter { article in
-            !article.isImportedDocument
-                && article.contentKind != "youtube"
-                && article.contentKind != "podcast"
-                && article.contentKind != "music"
-        }
+        return "\(queue.count) in queue"
     }
 
     private func recentlySavedTitle(for article: Article) -> String {
@@ -208,11 +215,6 @@ struct SavedView: View {
         case "epub": "Recently saved\u{00A0}·\u{00A0}Book"
         default: "Recently saved"
         }
-    }
-
-    private var rest: [Article] {
-        guard let upNext else { return visibleQueue }
-        return visibleQueue.filter { $0.id != upNext.id }
     }
 
     @ViewBuilder
@@ -439,6 +441,20 @@ private struct LaterQueueActions: ViewModifier {
 private final class QueueListCache {
     var edge = Int.min
     var articles: [Article] = []
+}
+
+private struct QueueLayout {
+    var upNext: Article?
+    var videos: [Article] = []
+    var audio: [Article] = []
+    var files: [Article] = []
+    var articles: [Article] = []
+    var subtitle = ""
+}
+
+private final class QueueSectionCache {
+    var edge = Int.min
+    var layout = QueueLayout()
 }
 
 private extension View {
