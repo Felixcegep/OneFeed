@@ -181,6 +181,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The first-load cover changed height as each source name arrived | Today, Feed | Medium | The cover status included the current source and a countdown, so the line wrapped and shifted the mark | The cover keeps the phase title and a stable count. The source name stays off that screen | `RefreshProgressTests.finishItemCountsSourcesArticlesAndETA` |
 | A Google Drive sync sent this device’s copy while a story was open | Library | High | A pull waited, but a local change still uploaded on its own | Automatic and manual updates wait until the story closes, then send once. Choosing this device or the cloud file still happens immediately | `LibrarySyncServiceDriveTests.drivePushWaitsUntilReadingEnds` |
 | Onboarding called Queue “Save” | Onboarding | Medium | The first page used Save for the waiting list | It says to keep stories in Queue | Code review |
+| A refresh tick regrouped Feed while the progress line moved | Feed | High | The folder list and the story list read the progress line, so each tick walked the rows again | The progress line and the refresh cover live on chrome around the lists. A tick does not rebuild the rows | Code review |
 
 ## Still open
 

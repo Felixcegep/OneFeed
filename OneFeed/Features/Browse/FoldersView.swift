@@ -45,11 +45,6 @@ struct FoldersView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Full-screen cover only while refreshing with no folder rows and no articles yet.
-    private var showsSourceRefreshCover: Bool {
-        refresh.isRefreshing && feeds.isEmpty && openQuery.isEmpty && !isEditingFolders && !ReaderWebWarmup.skipsOpeningCover
-    }
-
     var body: some View {
         let _ = iconTick
         let _ = folderOrderTick
@@ -85,25 +80,18 @@ struct FoldersView: View {
         }
         .oneFeedGroupedListStyle()
         .debouncedSearch(folderQuery, into: $appliedFolderQuery)
-        .overlay {
-            ZStack {
-                if showsSourceRefreshCover {
-                    OneFeedLoadingCover(
-                        title: refresh.progress.primaryText,
-                        status: refresh.progress.coverStatus,
-                        canvas: OneFeedTheme.plaster
-                    )
-                    .transition(.opacity)
-                }
-            }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
-        }
+        .modifier(FeedListRefreshChrome(
+            refresh: refresh,
+            hasSources: !feeds.isEmpty,
+            hasArticles: !openQuery.isEmpty,
+            isEditing: isEditingFolders,
+            reduceMotion: reduceMotion
+        ))
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .navigationSubtitle(refresh.statusText)
-        .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .oneFeedPinnedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
@@ -666,6 +654,55 @@ private struct FeedRootDirectory {
     }
 }
 
+/// Progress ticks stay on this chrome. The folder list does not read the progress line, so a refresh does not rebuild the rows.
+private struct FeedListRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    var hasSources: Bool
+    var hasArticles: Bool
+    var isEditing: Bool
+    var reduceMotion: Bool
+
+    private var showsCover: Bool {
+        refresh.isRefreshing && !hasSources && !hasArticles && !isEditing && !ReaderWebWarmup.skipsOpeningCover
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                ZStack {
+                    if showsCover {
+                        OneFeedLoadingCover(
+                            title: refresh.progress.primaryText,
+                            status: refresh.progress.coverStatus,
+                            canvas: OneFeedTheme.plaster
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsCover)
+            }
+            .refreshProgressBanner(refresh.progress)
+    }
+}
+
+/// Progress ticks stay on this chrome. The story list does not read the progress line, so a refresh does not regroup the rows.
+private struct StoryListRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    @Environment(\.modelContext) private var modelContext
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(refresh.progress)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                        Task { await refresh.refresh(in: modelContext) }
+                    }
+                }
+            }
+    }
+}
+
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
@@ -813,15 +850,8 @@ struct ArticleCollectionView: View {
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
-        .refreshProgressBanner(refresh.progress)
         .background(OneFeedTheme.plaster)
-        .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
-                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
-                    Task { await refresh.refresh(in: modelContext) }
-                }
-            }
-        }
+        .modifier(StoryListRefreshChrome(refresh: refresh))
         .task { refresh.adoptLatestFetch(from: feeds) }
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { refresh.presentedError != nil },
