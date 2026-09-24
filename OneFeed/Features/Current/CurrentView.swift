@@ -166,9 +166,14 @@ struct CurrentView: View {
         readerArticle = article
     }
 
-    /// Full-screen cover only while refreshing with no stories yet. Existing stories stay on screen.
+    /// Full-screen cover only before any source exists. A caught-up Today keeps its message, and the progress line carries the refresh.
     private var showsSourceRefreshCover: Bool {
-        viewModel.isRefreshing && stories.isEmpty && !ReaderWebWarmup.skipsOpeningCover
+        TodayRefreshCover.isShown(
+            isRefreshing: viewModel.isRefreshing,
+            hasStories: !stories.isEmpty,
+            hasFeeds: !feeds.isEmpty,
+            skipsOpeningCover: ReaderWebWarmup.skipsOpeningCover
+        )
     }
 
     /// Stays put while a refresh runs. The progress line carries that status, so the title bar does not resize.
@@ -185,7 +190,7 @@ struct CurrentView: View {
             VStack(spacing: 20) {
                 if viewModel.isRefreshing {
                     OneFeedMark(size: 52)
-                    Text(viewModel.progress.remainingText.isEmpty ? "Updating your stories…" : viewModel.progress.remainingText)
+                    Text("Updating your stories…")
                         .font(.system(.title, design: .serif))
                         .foregroundStyle(OneFeedTheme.ink)
                         .multilineTextAlignment(.center)
@@ -248,23 +253,23 @@ struct CurrentView: View {
     }
 
     private var caughtUpDescription: String {
-        if viewModel.isRefreshing { return caughtUpProgressCopy }
+        if viewModel.isRefreshing { return "Checking your sources for new stories." }
         if feeds.isEmpty { return "Follow your favorite publications to find your next read here." }
         if todayHasNoSources { return "Turn a folder or source on. Stories you leave out stay in Feed." }
         return "You’ve finished today’s selection. Refresh to check for new stories."
     }
 
     private var caughtUpActionTitle: String {
-        if viewModel.isRefreshing { return viewModel.progress.countText }
         if feeds.isEmpty { return "Add a source" }
         if todayHasNoSources { return "Choose sources" }
         return "Refresh"
     }
+}
 
-    private var caughtUpProgressCopy: String {
-        let detail = viewModel.progress.detailText()
-        if detail.isEmpty { return "Fetching your sources. This can take a minute the first time." }
-        return detail
+/// The full-screen refresh cover is for the first load, before any source exists.
+enum TodayRefreshCover {
+    static func isShown(isRefreshing: Bool, hasStories: Bool, hasFeeds: Bool, skipsOpeningCover: Bool) -> Bool {
+        isRefreshing && !hasStories && !hasFeeds && !skipsOpeningCover
     }
 }
 
