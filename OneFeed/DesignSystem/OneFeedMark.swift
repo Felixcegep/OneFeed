@@ -75,26 +75,25 @@ struct OneFeedMark: View {
     }
 }
 
-/// Thinking pulse: 1200ms scale 1.0 → 1.15. Frozen when inactive or Reduce Motion.
+/// Thinking pulse: scale 1.0 → 1.15 and back. Still when inactive or Reduce Motion.
 struct OneFeedMarkPulse: View {
     var isActive: Bool
     var size: CGFloat = 28
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expanded = false
+
+    private var animates: Bool { isActive && !reduceMotion }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion)) { timeline in
-            OneFeedMark(size: size)
-                .scaleEffect((isActive && !reduceMotion) ? Self.pulseScale(at: timeline.date) : 1)
-        }
-        .accessibilityLabel(isActive ? "Updating" : "")
-        .accessibilityAddTraits(isActive ? .updatesFrequently : [])
-    }
-
-    private static func pulseScale(at date: Date) -> CGFloat {
-        let period = 1.2
-        let cycle = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
-        let wave = 0.5 - 0.5 * cos(2 * Double.pi * (cycle / period))
-        return CGFloat(1.0 + 0.15 * wave)
+        OneFeedMark(size: size)
+            .scaleEffect(animates && expanded ? 1.15 : 1)
+            .animation(animates ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: expanded)
+            .onAppear { expanded = animates }
+            .onChange(of: animates) { _, active in
+                expanded = active
+            }
+            .accessibilityLabel(isActive ? "Updating" : "")
+            .accessibilityAddTraits(isActive ? .updatesFrequently : [])
     }
 }
 

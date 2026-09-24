@@ -56,6 +56,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Closing Add to Queue fetched every saved story | Queue | High | Dismiss and each row action reloaded the whole saved library, including article bodies, into an array the list does not show | The list is the live query. Cancel, undo, and row actions no longer fetch it again. A handoff lookup loads ids only | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 | Canceling Connect or the Today filter reloaded the screen | Settings, Today | Medium | The sheet’s dismiss always fetched accounts and feeds, or reread the deck | A successful connection reloads accounts. A Today filter change reloads the deck. Cancel does neither | Code review |
 | Scrolling a list downloaded the same artwork more than once | Today, Queue, Feed | High | Each row started its own full download, and ImageIO ran on the cache actor | One download serves every row of that size. Decoding happens off the actor. A row that scrolls away drops its claim, and the download stops when nobody is still waiting | Code review |
+| The updating mark redrew the screen thirty times a second | Today, Feed, Reader, Settings | High | A timeline drove the pulse for the whole refresh | The mark scales with a repeating animation, and it stays still when Reduce Motion is on | Code review |
 
 ## Still open
 
