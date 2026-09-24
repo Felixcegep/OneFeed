@@ -49,6 +49,9 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Queue and History search missed accented titles | Queue, History | Medium | Those screens used case-insensitive search, so “cafe” did not match “café” | They use the same standard search as Feed and Sources | Code review |
 | Sources and the Today filter regrouped on every keystroke | Sources, Today | Medium | The field and the filter shared one string | The field stays live. The filter waits 180ms, and clears immediately | Code review |
 | Opening Reading or About reloaded every source | Settings | Medium | Every settings page fetched all feeds on appear | Only Accounts and Import reload, because those pages show that data | Code review |
+| Reading focus reconfigured itself while the page was still | Reader | High | Saving the focus band wrote the same preference the page observes, so configure ran again and redrew the fade | The save still updates the preference. That write does not call configure again. Changing focus from the sheet still does | Code review |
+| Adding a source from Feed left the new stories unloaded | Feed | High | The add sheet did not start a refresh after a source was saved | A saved source refreshes Feed. Cancel still does not | Code review |
+| More sources did not say whether the copies were open | Feed | Medium | The row had a label and no expanded value | VoiceOver hears Expanded or Collapsed, with a hint for the next tap | Code review |
 
 ## Still open
 

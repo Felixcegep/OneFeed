@@ -129,7 +129,9 @@ struct FoldersView: View {
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
         }
-        .sheet(isPresented: $showingAddSource) { AddSourceView() }
+        .sheet(isPresented: $showingAddSource) {
+            AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
+        }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
                 iconTick += 1
@@ -710,6 +712,8 @@ struct ArticleCollectionView: View {
         .buttonStyle(DirectoryRowButtonStyle())
         .articleListRow()
         .accessibilityLabel(title)
+        .accessibilityValue(expandedClusterIDs.contains(clusterID) ? "Expanded" : "Collapsed")
+        .accessibilityHint(expandedClusterIDs.contains(clusterID) ? "Hides the other sources" : "Shows the other sources")
     }
 
     private var emptyTitle: String {

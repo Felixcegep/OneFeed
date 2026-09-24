@@ -843,6 +843,8 @@ private struct ReaderWebContent: View {
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
     @State private var didRestoreTrail = false
     @State private var lastPersistedTrail: ReadingTrail?
+    /// The page already applied a zone the reader dragged. Skip the echo that would reconfigure focus mid-scroll.
+    @State private var ignoreNextZoneApply = false
 
     private var showCover: Bool { !hasCommitted }
     private var resolvedMode: ReaderFocusMode {
@@ -878,6 +880,10 @@ private struct ReaderWebContent: View {
                 Task { await applyFocus(restore: false) }
             }
             .onChange(of: focusZoneY) { _, _ in
+                if ignoreNextZoneApply {
+                    ignoreNextZoneApply = false
+                    return
+                }
                 Task { await applyFocus(restore: false) }
             }
             .onChange(of: scenePhase) { _, phase in
@@ -891,6 +897,7 @@ private struct ReaderWebContent: View {
             .task(id: html) {
                 didRestoreTrail = false
                 lastPersistedTrail = nil
+                ignoreNextZoneApply = false
                 page.load(html: html, baseURL: baseURL)
                 try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
                 hasCommitted = true
@@ -966,6 +973,7 @@ private struct ReaderWebContent: View {
         lastPersistedTrail = trail
         ReadingTrailStore.save(trail)
         if abs(trail.zoneY - focusZoneY) > 0.002 {
+            ignoreNextZoneApply = true
             focusZoneY = trail.zoneY
         }
     }

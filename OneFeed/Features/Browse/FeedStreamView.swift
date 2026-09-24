@@ -170,7 +170,9 @@ struct FeedStreamView: View {
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
-        .sheet(isPresented: $showingAddSource) { AddSourceView() }
+        .sheet(isPresented: $showingAddSource) {
+            AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
+        }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
                 selectedArticle = nil
