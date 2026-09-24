@@ -155,7 +155,14 @@ nonisolated enum LibraryMerge {
 
     static func applyCurrent(_ document: LibraryDocument, to context: ModelContext) throws {
         guard let key = document.currentArticleKey else { return }
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        var descriptor = FetchDescriptor<Article>()
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.title, \.url, \.publishedAt, \.stateRawValue,
+            \.completedAt, \.isRemoteStarred, \.libraryUpdatedAt, \.firstDisplayedAt,
+            \.estimatedReadingMinutes, \.readingReactionRawValue, \.readingNote,
+        ]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let articles = try context.fetch(descriptor)
         guard let incoming = articles.first(where: { recordKey(for: $0) == key }) else { return }
         incoming.state = .current
         incoming.firstDisplayedAt = incoming.firstDisplayedAt ?? .now
@@ -166,8 +173,9 @@ nonisolated enum LibraryMerge {
         }
         if let deck = try DailyDeckService.todayDeck(in: context) {
             var sawCurrent = false
+            let articlesByID = Dictionary(uniqueKeysWithValues: articles.map { ($0.id, $0) })
             for item in deck.items.sorted(by: { $0.position < $1.position }) {
-                guard let article = item.article, article.isStored else { continue }
+                guard let id = item.resolvedArticleID(), let article = articlesByID[id] else { continue }
                 if article.id == incoming.id {
                     item.status = .current
                     sawCurrent = true

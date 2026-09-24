@@ -409,6 +409,38 @@ struct LibraryMergeTests {
         #expect(document.feeds.count == 1)
         #expect(document.feeds[0].resolvedFolderNames == ["Security"])
     }
+
+    @Test func applyingTheCurrentStoryUsesTheStoredDeckID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let html = "<p>\(String(repeating: "word ", count: 80))</p>"
+        let article = Article(
+            guid: "current",
+            title: "Current",
+            url: URL(string: "https://source.test/current"),
+            contentHTML: html,
+            state: .queued,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .queued, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+        let key = ArticleIdentity.libraryKey(url: article.url, guid: article.guid, id: article.id)
+
+        var document = LibraryDocument.empty()
+        document.currentArticleKey = key
+        try LibraryMerge.applyCurrent(document, to: context)
+
+        #expect(item.status == .current)
+        #expect(article.state == .current)
+        #expect(article.contentHTML == html)
+    }
 }
 
 private extension LibraryDocument {
