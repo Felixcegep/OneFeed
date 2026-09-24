@@ -225,6 +225,55 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(feeds.refreshed)
         #expect(sync.synced)
     }
+
+    @Test func aRefreshThatStartsDuringAnotherRunsOnceAfterward() async {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let gate = RefreshGate()
+        let first = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<50 where gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        let third = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        gate.release()
+        await first.value
+        await second.value
+        await third.value
+        #expect(gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+}
+
+@MainActor
+private final class RefreshGate {
+    private(set) var entered = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func enter() async {
+        entered += 1
+        guard entered == 1 else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private actor DuplicateStorySyncAPI: FreshRSSAPI {

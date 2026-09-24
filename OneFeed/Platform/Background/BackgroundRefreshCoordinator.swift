@@ -10,13 +10,26 @@ enum BackgroundRefreshCoordinator {
     static let staleInterval: TimeInterval = 15 * 60
     private static var exclusiveRefresh: Task<Void, Never>?
     private static var enrichTask: Task<Void, Never>?
+    /// Bumps when a refresh pass starts. A request that arrived during a pass runs once after it.
+    private static var refreshGeneration = 0
+    /// Bumps when an enrichment pass starts. The latest request during a pass runs once after it.
+    private static var enrichGeneration = 0
+    private static var pendingEnrich: (ModelContext, DailyDeckItem?, Int)?
 
     /// Lets Today, Feed, and scene-phase refresh share one in-flight update.
+    /// A refresh that starts while one is running waits, then runs once so a source added mid-refresh is fetched.
     static func runExclusive(_ work: @escaping @MainActor () async -> Void) async {
-        if let exclusiveRefresh {
-            await exclusiveRefresh.value
+        if exclusiveRefresh != nil {
+            let seen = refreshGeneration
+            while refreshGeneration == seen, let running = exclusiveRefresh {
+                await running.value
+            }
+            if refreshGeneration == seen {
+                await runExclusive(work)
+            }
             return
         }
+        refreshGeneration += 1
         let task = Task { @MainActor in
             defer { exclusiveRefresh = nil }
             await work()
@@ -31,6 +44,9 @@ enum BackgroundRefreshCoordinator {
         exclusiveRefresh = nil
         enrichTask?.cancel()
         enrichTask = nil
+        refreshGeneration = 0
+        enrichGeneration = 0
+        pendingEnrich = nil
     }
 #endif
 
@@ -72,10 +88,20 @@ enum BackgroundRefreshCoordinator {
         from item: DailyDeckItem? = nil,
         extraQueued: Int = 0
     ) async {
-        if let enrichTask {
-            await enrichTask.value
+        if enrichTask != nil {
+            pendingEnrich = (context, item, extraQueued)
+            let seen = enrichGeneration
+            while enrichGeneration == seen, let running = enrichTask {
+                await running.value
+            }
+            if enrichGeneration == seen, let pending = pendingEnrich {
+                pendingEnrich = nil
+                await enrichAfterRefresh(in: pending.0, from: pending.1, extraQueued: pending.2)
+            }
             return
         }
+        enrichGeneration += 1
+        pendingEnrich = nil
         let task = Task(priority: .utility) {
             defer { enrichTask = nil }
             let current = item ?? (try? DailyDeckService().currentItem(in: context))

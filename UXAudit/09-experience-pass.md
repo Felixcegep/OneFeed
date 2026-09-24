@@ -113,6 +113,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The reader formatted a new long date on every redraw | Reader | Low | The byline called `formatted` whenever the page was asked for | The same calendar day reuses one long date | `FeedAndFreshRSSDomainTests.listDateLabelReusesTheSameCalendarDay` |
 | Increase Contrast left captions and rules at the normal palette | Lists, reader | High | Graphite and sand did not read the contrast setting | Secondary text, separators, and the reader meta line move toward the ink when Increase Contrast is on. The normal palette stays the same | `OneFeedPaletteTests.increaseContrastMovesSecondaryTextTowardInk` |
 | Bold Text left the article at regular weight | Reader | High | The page sets its own font weight, so the system setting never reached it | Bold Text uses a heavier body, heading, and byline. The same page stays cached until that setting changes | `ReaderFocusTests.lateDurationLeavesTheReaderPageInPlace` |
+| A refresh that started during another was dropped | Today, Feed | High | The shared refresh lock waited, then returned without fetching again | The in-flight pass finishes, then one later request runs. A second request during that later pass does not add a third | `SwiftDataFreshRSSSyncTests.aRefreshThatStartsDuringAnotherRunsOnceAfterward` |
+| A follow-up summary that started during another was dropped | Today | Medium | Enrichment waited for the current pass and did not look at the newer story | The latest request runs once after the pass that was already going | Code review |
 
 ## Still open
 
