@@ -94,6 +94,25 @@ struct RetentionAndExtractionTests {
         let days = HistoryViewModel.days(from: [older, newer])
         #expect(days.count == 1)
         #expect(days[0].articles.map(\.title) == ["Newer", "Older"])
+        let plans = HistoryViewModel.dayPlans(from: [older, newer].map(historySnap), query: "")
+        #expect(plans.count == 1)
+        #expect(plans[0].articleIDs == [newer.id, older.id])
+        #expect(plans[0].day == days[0].day)
+    }
+
+    private func historySnap(_ article: Article) -> HistoryStorySnap {
+        HistoryStorySnap(
+            id: article.id,
+            completedAt: article.completedAt,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            readingNote: article.readingNote,
+            reactionRaw: article.readingReactionRawValue,
+            feedTitle: article.feed?.title,
+            url: article.url,
+            author: article.author,
+            contentKind: article.contentKind
+        )
     }
 
     @Test func cancelledRefreshIsNotShownToTheUser() {

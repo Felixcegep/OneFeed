@@ -209,21 +209,25 @@ struct DecisionActionStyle: ButtonStyle {
 /// Display-only attribution for subscribed stories and standalone saved links.
 enum ArticlePresentation {
     static func sourceName(for article: Article) -> String {
-        if let title = article.feed?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        sourceName(feedTitle: article.feed?.title, url: article.url, author: article.author, contentKind: article.contentKind)
+    }
+
+    nonisolated static func sourceName(feedTitle: String?, url: URL?, author: String?, contentKind: String) -> String {
+        if let title = feedTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
-        if let host = article.url?.host(),
-           let scheme = article.url?.scheme?.lowercased(),
+        if let host = url?.host(),
+           let scheme = url?.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
             return host
         }
-        if article.contentKind == "epub" {
-            if let author = article.author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+        if contentKind == "epub" {
+            if let author = author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
                 return author
             }
             return String(localized: "EPUB")
         }
-        if article.contentKind == "pdf" {
+        if contentKind == "pdf" {
             return String(localized: "PDF")
         }
         return String(localized: "Saved link")

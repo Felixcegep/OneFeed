@@ -14,33 +14,46 @@ struct HistoryView: View {
     @State private var appliedSearch = ""
     @State private var queueError: String?
     @State private var storyError: String?
-    /// Day groups stay put while the open story changes.
-    @State private var dayCache = HistoryDayCache()
+    /// Day groups stay put while the open story changes. Rebuilt off the main thread when search or the list changes.
+    @State private var historyDays: [HistoryDay] = []
+    @State private var historyReady = false
 
     private var trimmedQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Filters the history query already in memory. Search does not fetch.
-    private var visibleHistory: [Article] {
-        let query = trimmedQuery
-        guard !query.isEmpty else { return history }
-        return history.filter { article in
-            guard article.isStored else { return false }
-            return article.title.localizedStandardContains(query)
-                || article.readingNote.localizedStandardContains(query)
-                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
-        }
-    }
-
-    private var days: [HistoryDay] {
+    private func reloadHistoryDays() async {
         let edge = historyEdge
-        if dayCache.edge == edge { return dayCache.days }
-        let days = HistoryViewModel.days(from: visibleHistory)
-        dayCache.edge = edge
-        dayCache.days = days
-        return days
+        let query = trimmedQuery
+        let snaps = history.compactMap { article -> HistoryStorySnap? in
+            guard article.isStored else { return nil }
+            return HistoryStorySnap(
+                id: article.id,
+                completedAt: article.completedAt,
+                publishedAt: article.publishedAt,
+                title: article.title,
+                readingNote: article.readingNote,
+                reactionRaw: article.readingReactionRawValue,
+                feedTitle: article.feed?.title,
+                url: article.url,
+                author: article.author,
+                contentKind: article.contentKind
+            )
+        }
+        let plans = await Task.detached(priority: .userInitiated) {
+            HistoryViewModel.dayPlans(from: snaps, query: query)
+        }.value
+        guard !Task.isCancelled, edge == historyEdge else { return }
+        let byID = Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let calendar = Calendar.current
+        historyDays = plans.map { plan in
+            HistoryDay(
+                day: plan.day,
+                label: OneFeedDateLabel.historySection(plan.day, calendar: calendar),
+                articles: plan.articleIDs.compactMap { byID[$0] }.filter(\.isStored)
+            )
+        }
+        historyReady = true
     }
 
     /// Search, every story, and the calendar day. Opening a story does not regroup the days.
@@ -88,9 +101,12 @@ struct HistoryView: View {
     }
 
     private var historyColumn: some View {
-        let groupedDays = days
-        return Group {
-            if trimmedQuery.isEmpty && groupedDays.isEmpty && notInterested.isEmpty {
+        Group {
+            if !historyReady && historyDays.isEmpty && notInterested.isEmpty {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+            } else if trimmedQuery.isEmpty && historyDays.isEmpty && notInterested.isEmpty {
                 EmptyLibraryState(
                     title: "No history yet",
                     systemImage: "clock",
@@ -98,7 +114,7 @@ struct HistoryView: View {
                     actionTitle: "Open Today",
                     action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
                 )
-            } else if !trimmedQuery.isEmpty && groupedDays.isEmpty {
+            } else if historyReady && !trimmedQuery.isEmpty && historyDays.isEmpty {
                 EmptyLibraryState(
                     title: "No matches",
                     systemImage: "magnifyingglass",
@@ -127,7 +143,7 @@ struct HistoryView: View {
                         .listRowBackground(OneFeedTheme.paper)
                     }
 
-                    ForEach(groupedDays) { group in
+                    ForEach(historyDays) { group in
                         Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 Button { selectedArticle = article } label: {
@@ -160,6 +176,9 @@ struct HistoryView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
+        .task(id: historyEdge) {
+            await reloadHistoryDays()
+        }
         .alert("Couldn’t put that in Queue", isPresented: Binding(
             get: { queueError != nil },
             set: { if !$0 { queueError = nil } }
@@ -193,9 +212,4 @@ struct HistoryView: View {
             queueError = UserFacingFailure.message(for: failure, fallback: "Couldn’t put that in Queue.")
         }
     }
-}
-
-private final class HistoryDayCache {
-    var edge = Int.min
-    var days: [HistoryDay] = []
 }
