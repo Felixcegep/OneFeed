@@ -95,7 +95,12 @@ actor LibraryIngestActor {
         } else {
             descriptor = FetchDescriptor<Article>()
         }
-        descriptor.propertiesToFetch = [\.guid, \.url, \.remoteID]
+        // Every field the index and a later sync update, except the article body.
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary,
+            \.estimatedReadingMinutes, \.stateRawValue, \.remoteID, \.isRemoteStarred,
+            \.contentKind, \.durationSeconds, \.videoID,
+        ]
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         return (try? modelContext.fetch(descriptor)) ?? []
     }

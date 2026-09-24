@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import OneFeed
 
@@ -90,6 +91,37 @@ struct FreshRSSTests {
         #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 2, remoteMinutes: 2) == .compareLengths)
         #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 2, remoteMinutes: nil) == .compareLengths)
         #expect(FreshRSSBodyChoice.choice(isNew: false, storedMinutes: 1, remoteMinutes: 5) == .compareLengths)
+    }
+
+    @Test @MainActor func anEqualEstimateLeavesTheLongerStoredBodyUnread() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let stored = "<p>\(String(repeating: "word ", count: 40))</p>"
+        setup.insert(Article(guid: "stored", title: "Stored", contentHTML: stored, estimatedReadingMinutes: 2))
+        try setup.save()
+
+        var descriptor = FetchDescriptor<Article>()
+        descriptor.propertiesToFetch = [\.id, \.estimatedReadingMinutes]
+        let article = try #require(try ModelContext(container).fetch(descriptor).first)
+        FreshRSSBodyLength.liveHTMLReads = 0
+
+        let shortRemote = FreshRSSBodyLength.replacement(
+            article: article,
+            remoteHTML: "<p>Short</p>",
+            isNew: false,
+            remoteMinutes: 2
+        )
+        let longerRemote = stored + "<p>And more.</p>"
+        let longer = FreshRSSBodyLength.replacement(
+            article: article,
+            remoteHTML: longerRemote,
+            isNew: false,
+            remoteMinutes: 2
+        )
+
+        #expect(shortRemote == nil)
+        #expect(longer == longerRemote)
+        #expect(FreshRSSBodyLength.liveHTMLReads == 0)
     }
 
     @Test func unreadIDsRequestUsesReaderReadExclusionAndAuthorizationHeader() async throws {

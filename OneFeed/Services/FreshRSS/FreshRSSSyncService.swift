@@ -308,27 +308,22 @@ extension LibraryIngestActor {
         let article = existing ?? Article(guid: snapshot.guid, title: snapshot.title, feed: feed)
         let isNew = existing == nil
         if isNew { modelContext.insert(article) }
+        let replacementHTML = snapshot.contentHTML.flatMap { remoteHTML in
+            FreshRSSBodyLength.replacement(
+                article: article,
+                remoteHTML: remoteHTML,
+                isNew: isNew,
+                remoteMinutes: snapshot.consumeMinutes
+            )
+        }
         article.guid = snapshot.guid
         article.title = snapshot.title
         article.url = snapshot.url
         article.author = snapshot.author
         article.publishedAt = snapshot.publishedAt ?? article.publishedAt
         article.summary = snapshot.summary
-        if let remoteHTML = snapshot.contentHTML {
-            switch FreshRSSBodyChoice.choice(
-                isNew: isNew,
-                storedMinutes: article.estimatedReadingMinutes,
-                remoteMinutes: snapshot.consumeMinutes
-            ) {
-            case .replace:
-                article.contentHTML = remoteHTML
-            case .keep:
-                break
-            case .compareLengths:
-                if remoteHTML.count >= (article.contentHTML ?? "").count {
-                    article.contentHTML = remoteHTML
-                }
-            }
+        if let replacementHTML {
+            article.contentHTML = replacementHTML
         }
         if let minutes = snapshot.consumeMinutes, minutes > 0 {
             article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, minutes)
@@ -378,6 +373,55 @@ extension LibraryIngestActor {
 }
 
 extension FreshRSSSyncService: FreshRSSSyncing {}
+
+/// Decides whether a remote body replaces the stored one without faulting a saved article.
+enum FreshRSSBodyLength {
+    /// Reads of `contentHTML` on the article being synced. A saved body is measured elsewhere.
+    static var liveHTMLReads = 0
+
+    static func replacement(article: Article, remoteHTML: String, isNew: Bool, remoteMinutes: Int?) -> String? {
+        switch FreshRSSBodyChoice.choice(
+            isNew: isNew,
+            storedMinutes: article.estimatedReadingMinutes,
+            remoteMinutes: remoteMinutes
+        ) {
+        case .replace:
+            return remoteHTML
+        case .keep:
+            return nil
+        case .compareLengths:
+            return remoteHTML.count >= count(article) ? remoteHTML : nil
+        }
+    }
+
+    private static func count(_ article: Article) -> Int {
+        if usesLiveHTML(article) {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        guard let container = article.modelContext?.container else {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = article.id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        return stored.contentHTML?.count ?? 0
+    }
+
+    private static func usesLiveHTML(_ article: Article) -> Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
+}
 
 /// A longer stored read stays on disk during sync. Equal estimates still compare the text.
 enum FreshRSSBodyChoice: Equatable {
