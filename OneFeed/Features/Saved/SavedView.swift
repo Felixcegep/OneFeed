@@ -12,6 +12,7 @@ struct SavedView: View {
     ) private var savedQuery: [Article]
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
+    @State private var isImportingDrop = false
     @State private var appliedSearch = ""
     /// Collapsed queue stays put while the open story changes.
     @State private var queueCache = QueueListCache()
@@ -262,12 +263,15 @@ struct SavedView: View {
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
+        guard !isImportingDrop else { return true }
         let files = providers.filter { provider in
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
         }
         if !files.isEmpty {
+            isImportingDrop = true
             Task {
+                defer { isImportingDrop = false }
                 do {
                     let service = ImportedDocumentService()
                     var last: Article?
@@ -290,7 +294,9 @@ struct SavedView: View {
                 || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
         }
         guard !links.isEmpty else { return false }
+        isImportingDrop = true
         Task {
+            defer { isImportingDrop = false }
             do {
                 var last: Article?
                 for provider in links {

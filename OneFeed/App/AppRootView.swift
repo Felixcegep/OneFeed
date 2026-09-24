@@ -10,6 +10,8 @@ struct AppRootView: View {
     @State private var isPresentingSubscribe = false
     @State private var importError: String?
     @State private var isPickingDocument = false
+    @State private var isImportingDocuments = false
+    @State private var pendingImportURLs: [URL] = []
     @State private var warmReaderWeb = false
     @State private var isLaunching = !ReaderWebWarmup.skipsOpeningCover
     @State private var allowLaunchCover = false
@@ -147,18 +149,26 @@ struct AppRootView: View {
     }
 
     private func importIncomingDocuments(_ urls: [URL]) async {
-        do {
-            var last: Article?
-            let service = ImportedDocumentService()
-            for url in urls {
-                last = try await service.importFile(at: url, in: modelContext)
+        pendingImportURLs.append(contentsOf: urls)
+        guard !isImportingDocuments else { return }
+        isImportingDocuments = true
+        defer { isImportingDocuments = false }
+        let service = ImportedDocumentService()
+        while !pendingImportURLs.isEmpty {
+            let batch = pendingImportURLs
+            pendingImportURLs.removeAll()
+            do {
+                var last: Article?
+                for url in batch {
+                    last = try await service.importFile(at: url, in: modelContext)
+                }
+                if let last {
+                    QueueHandoff.pendingArticleID = last.id
+                    NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
+                }
+            } catch {
+                importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
             }
-            if let last {
-                QueueHandoff.pendingArticleID = last.id
-                NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
-            }
-        } catch {
-            importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
         }
     }
 }

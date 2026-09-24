@@ -829,7 +829,7 @@ struct ArticleCollectionView: View {
         if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Try a different title or source name." }
         return switch destination {
         case .unread: "New stories from your sources will land here."
-        case .folder: "No unread stories in this folder."
+        case .folder: "New stories from this folder will land here."
         }
     }
 }
