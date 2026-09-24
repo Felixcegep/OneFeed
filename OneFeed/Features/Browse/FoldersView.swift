@@ -41,14 +41,7 @@ struct FoldersView: View {
 
     /// Full-screen cover only while refreshing with no folder rows and no articles yet.
     private var showsSourceRefreshCover: Bool {
-        refresh.isRefreshing && !hasFolderRows && openQuery.isEmpty && !ReaderWebWarmup.skipsOpeningCover
-    }
-
-    private var hasFolderRows: Bool {
-        if isEditingFolders {
-            return !FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds).isEmpty
-        }
-        return !FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery).isEmpty
+        refresh.isRefreshing && feeds.isEmpty && openQuery.isEmpty && !isEditingFolders && !ReaderWebWarmup.skipsOpeningCover
     }
 
     var body: some View {
@@ -530,7 +523,7 @@ struct FoldersView: View {
                 folderAddError = nil
             } catch {
                 if openFolderID == .named(folderName) {
-                    folderAddError = RefreshFailure.message(for: error) ?? "Couldn’t add that source."
+                    folderAddError = RefreshFailure.message(for: error, fallback: "Couldn’t add that source.")
                 }
             }
             isAddingAddress = false

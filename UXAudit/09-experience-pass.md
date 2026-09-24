@@ -41,6 +41,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The reader wrote a reading position every few seconds | Reader | Medium | A timer saved the trail even when the page had not moved, and kept running in the background | The timer runs only while the app is active, and it writes when the position or focus band actually changes | Code review |
 | A featured card stripped the whole article body to draw two lines | Today | High | `plainExcerpt` ran the HTML regex over the full summary on every redraw | The card reads the first 8,000 characters, which is enough for the excerpt | `FeedAndFreshRSSDomainTests` excerpt assertion |
 | Star and onboarding text still animated with Reduce Motion on | Reader, onboarding | Medium | Symbol and opacity transitions were not gated | Those transitions become instant when Reduce Motion is on | Code review |
+| Refresh and add-source alerts could show a system error | Today, Feed, Sources | Medium | `RefreshFailure` passed through `localizedDescription` | App sentences stay. Other failures use a short fallback. A dropped connection stays quiet | `RetentionAndExtractionTests.cancelledRefreshIsNotShownToTheUser` |
+| The Feed cover regrouped every folder on each redraw | Feed | Medium | The cover asked for full folder summaries just to see whether any source existed | The cover appears only while refreshing with no sources and no articles | Code review |
 
 ## Still open
 

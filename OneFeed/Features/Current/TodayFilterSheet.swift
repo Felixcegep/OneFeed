@@ -130,7 +130,7 @@ struct TodayFilterSheet: View {
             try DailyDeckService.setIncludedInToday(included, feeds: feeds, in: modelContext)
             onUpdated()
         } catch {
-            presentedError = RefreshFailure.message(for: error) ?? "Try again."
+            presentedError = RefreshFailure.message(for: error, fallback: "Try again.")
         }
     }
 

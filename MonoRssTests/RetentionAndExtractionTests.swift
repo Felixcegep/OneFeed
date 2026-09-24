@@ -87,7 +87,8 @@ struct RetentionAndExtractionTests {
         #expect(RefreshFailure.message(for: URLError(.timedOut)) == nil)
         #expect(RefreshFailure.message(for: URLError(.cannotConnectToHost)) == nil)
         #expect(RefreshFailure.message(for: URLError(.notConnectedToInternet)) == nil)
-        #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == FeedServiceError.http(500).localizedDescription)
+        #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == "The source could not be loaded (HTTP 500).")
+        #expect(RefreshFailure.message(for: NSError(domain: "SwiftData", code: 1)) == "Couldn’t refresh.")
     }
 
     @Test func readerFailuresStayInPlainLanguage() {

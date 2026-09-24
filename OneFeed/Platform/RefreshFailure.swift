@@ -1,10 +1,11 @@
 import Foundation
 
 enum RefreshFailure {
-    /// User-facing copy for a failed refresh, or `nil` when the work was simply cancelled or a slow source timed out.
-    nonisolated static func message(for error: Error) -> String? {
-        if error.isCancellation || error.isTransientNetwork { return nil }
-        return error.localizedDescription
+    /// User-facing copy, or `nil` when the work was cancelled or the connection dropped.
+    /// App errors keep their sentence. Anything else uses `fallback`.
+    nonisolated static func message(for error: Error, fallback: String = "Couldn’t refresh.") -> String? {
+        guard UserFacingFailure.shouldSurface(error) else { return nil }
+        return UserFacingFailure.message(for: error, fallback: fallback)
     }
 }
 
