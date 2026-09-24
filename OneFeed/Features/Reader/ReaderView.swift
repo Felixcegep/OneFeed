@@ -168,6 +168,14 @@ struct ReaderView: View {
             } message: {
                 Text(viewModel.summaryError ?? "")
             }
+            .alert("Couldn’t keep this article", isPresented: Binding(
+                get: { viewModel.bodyError != nil },
+                set: { if !$0 { viewModel.bodyError = nil } }
+            )) {
+                Button("OK", role: .cancel) { viewModel.bodyError = nil }
+            } message: {
+                Text(viewModel.bodyError ?? "")
+            }
             .sheet(isPresented: $showingFocusSheet) {
                 ReaderFocusSheet(mode: $focusMode, intensity: $focusIntensity)
             }

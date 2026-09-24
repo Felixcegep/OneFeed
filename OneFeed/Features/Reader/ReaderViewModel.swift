@@ -14,6 +14,7 @@ final class ReaderViewModel {
     private(set) var isAskingVideo = false
     var summaryError: String?
     var askError: String?
+    var bodyError: String?
     private let gemini: GeminiClient
     private var videoAsk: Task<Void, Never>?
     private var summaryTask: Task<Void, Never>?
@@ -67,7 +68,9 @@ final class ReaderViewModel {
             article.contentHTML = html
         }
         article.refreshEstimatedReadingMinutes()
-        try? article.modelContext?.save()
+        if let failure = saveArticleChanges() {
+            bodyError = failure
+        }
     }
 
     func declineYouTubeSummary() {
@@ -400,7 +403,9 @@ final class ReaderViewModel {
         if minutes > article.estimatedReadingMinutes {
             article.estimatedReadingMinutes = minutes
         }
-        try? article.modelContext?.save()
+        if let failure = saveArticleChanges() {
+            bodyError = failure
+        }
     }
 
     private func loadEPUBIfNeeded() async {
@@ -417,9 +422,25 @@ final class ReaderViewModel {
                 try EPUBReader.html(fromEPUB: file, extractedTo: extracted)
             }.value
             article.contentHTML = html
-            try? article.modelContext?.save()
+            if let failure = saveArticleChanges() {
+                bodyError = failure
+            }
         } catch {
             return
+        }
+    }
+
+    /// Keeps the article the reader is showing. Returns a sentence when that write does not land.
+    private func saveArticleChanges() -> String? {
+        guard let context = article.modelContext else {
+            return "Couldn’t keep this article."
+        }
+        LibraryChange.note(article)
+        do {
+            try context.save()
+            return nil
+        } catch {
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t keep this article.")
         }
     }
 

@@ -153,6 +153,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Archive, a folder move, or a librarian change claimed success when the save failed | Not interested, librarian | High | Those actions saved with `try?` and then told the user the change was done | The source stays as it was, and the screen or the librarian says the update did not land | Code review |
 | Undo removed its bar before the story was restored | Today, Feed, reader | High | The bar dismissed, then the restore discarded a failed save | The bar stays, the story stays skipped, and an alert explains the failure | Code review |
 | Removing a Not interested entry vanished before the save | Not interested | Medium | The row deleted the log entry and ignored a failed save | The entry stays in the list, and an alert explains the failure | Code review |
+| A fetched article or imported file looked kept when the save failed | Reader | High | Extraction wrote the page onto the story and ignored the save | The page stays on screen for this visit, and an alert says it was not kept | Code review |
 
 ## Still open
 
