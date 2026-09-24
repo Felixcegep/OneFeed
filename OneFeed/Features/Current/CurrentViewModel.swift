@@ -109,8 +109,7 @@ final class CurrentViewModel {
                 ReadingUndo.commit(article, in: context)
             }
             apply(item: next, totalCount: item.deck?.items.count ?? totalCount)
-            Task { await ArticleExtractionService().enrichUpcoming(in: context, from: next) }
-            Task(priority: .utility) { await SemanticEnrichment.enrichUpcoming(in: context) }
+            Task { await BackgroundRefreshCoordinator.enrichAfterRefresh(in: context, from: next, extraQueued: 2) }
         } catch {
             presentedError = RefreshFailure.message(for: error)
         }
@@ -181,11 +180,7 @@ final class CurrentViewModel {
             await self.performRefreshWork(in: context)
         }
         loadCurrent()
-        Task(priority: .utility) {
-            let current = try? self.deckService.currentItem(in: context)
-            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
-            await SemanticEnrichment.enrichUpcoming(in: context)
-        }
+        Task { await BackgroundRefreshCoordinator.enrichAfterRefresh(in: context) }
     }
 
     private func performRefreshWork(in context: ModelContext) async {

@@ -9,6 +9,7 @@ enum BackgroundRefreshCoordinator {
     static let identifier = "felix.MonoRss.feed-refresh"
     static let staleInterval: TimeInterval = 15 * 60
     private static var exclusiveRefresh: Task<Void, Never>?
+    private static var enrichTask: Task<Void, Never>?
 
     /// Lets Today, Feed, and scene-phase refresh share one in-flight update.
     static func runExclusive(_ work: @escaping @MainActor () async -> Void) async {
@@ -28,6 +29,8 @@ enum BackgroundRefreshCoordinator {
     static func resetExclusiveRefreshForTests() {
         exclusiveRefresh?.cancel()
         exclusiveRefresh = nil
+        enrichTask?.cancel()
+        enrichTask = nil
     }
 #endif
 
@@ -59,10 +62,28 @@ enum BackgroundRefreshCoordinator {
             try? await SwiftDataIngest.actor(from: context).finishToday()
             lastSuccessfulRefresh = .now
         }
-        let current = try? DailyDeckService().currentItem(in: context)
-        await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
-        Task(priority: .utility) { await SemanticEnrichment.enrichUpcoming(in: context) }
+        await enrichAfterRefresh(in: context)
         await LibrarySyncService.shared.flush()
+    }
+
+    /// One extraction-and-summary pass at a time. A second caller waits for that pass instead of starting another.
+    static func enrichAfterRefresh(
+        in context: ModelContext,
+        from item: DailyDeckItem? = nil,
+        extraQueued: Int = 0
+    ) async {
+        if let enrichTask {
+            await enrichTask.value
+            return
+        }
+        let task = Task(priority: .utility) {
+            defer { enrichTask = nil }
+            let current = item ?? (try? DailyDeckService().currentItem(in: context))
+            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: extraQueued)
+            await SemanticEnrichment.enrichUpcoming(in: context)
+        }
+        enrichTask = task
+        await task.value
     }
 
     static var lastSuccessfulRefresh: Date? {

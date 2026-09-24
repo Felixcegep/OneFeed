@@ -43,6 +43,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Star and onboarding text still animated with Reduce Motion on | Reader, onboarding | Medium | Symbol and opacity transitions were not gated | Those transitions become instant when Reduce Motion is on | Code review |
 | Refresh and add-source alerts could show a system error | Today, Feed, Sources | Medium | `RefreshFailure` passed through `localizedDescription` | App sentences stay. Other failures use a short fallback. A dropped connection stays quiet | `RetentionAndExtractionTests.cancelledRefreshIsNotShownToTheUser` |
 | The Feed cover regrouped every folder on each redraw | Feed | Medium | The cover asked for full folder summaries just to see whether any source existed | The cover appears only while refreshing with no sources and no articles | Code review |
+| Refresh and Skip each started another extract and summary | Today, background refresh | High | Follow-up work ran again after the shared refresh lock was released | One extraction-and-summary pass runs at a time. A second caller waits for it | Code review |
 
 ## Still open
 
