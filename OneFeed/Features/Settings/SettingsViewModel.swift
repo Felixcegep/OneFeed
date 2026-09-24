@@ -48,10 +48,9 @@ final class SettingsViewModel {
         statusMessage = ""
     }
 
+    /// Keeps the context for later edits. Accounts and feeds load when those screens appear.
     func configure(with context: ModelContext) {
-        let shouldReload = self.context == nil
         self.context = context
-        if shouldReload { reload() }
     }
     func reload() {
         guard let context else { return }

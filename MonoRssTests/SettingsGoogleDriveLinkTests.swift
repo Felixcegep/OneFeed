@@ -1,10 +1,23 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import OneFeed
 
 @Suite(.serialized)
 @MainActor
 struct SettingsGoogleDriveLinkTests {
+    @Test func openingSettingsDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        context.insert(Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!))
+        try context.save()
+        let model = SettingsViewModel()
+        model.configure(with: context)
+        #expect(model.feeds.isEmpty)
+        #expect(model.accounts.isEmpty)
+        model.reload()
+        #expect(model.feeds.map(\.title) == ["Swift"])
+    }
+
     @Test func openingExistingFileLinksWithoutHashAndRequestsManualSync() async throws {
         let drive = SettingsDriveFake()
         drive.existingFile = GoogleDriveFile(id: "file-1", name: "", md5Checksum: "ignore")

@@ -272,6 +272,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Not interested stayed blank, then showed a flat list, then jumped into source groups | Not interested | Medium | Source groups waited off screen, and a slow plan first showed every mark in one list | A modest log is grouped by source on the open screen before that plan returns. A long log still waits. The same groups are not published again, so the story lookup does not run twice | `NotInterestedLogTests.groupPlanKeepsNewestFirstInsideTheSource` |
 | Opening Queue fetched and collapsed every saved story again | Queue | High | The screen query already had the rows, and opening the tab fetched them a second time on the main thread | Opening keeps the context for saves and for one imported story. It does not fetch the queue again | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
 | Opening Sources fetched every feed again | Sources | Medium | The folder list already grouped the feeds on screen, and opening the tab fetched them a second time | Opening keeps the context for later edits. A later edit can still reload the stored feeds | `FeedAndFreshRSSDomainTests.openingSourcesDoesNotFetchEveryFeed` |
+| Opening Settings fetched every feed | Settings | Medium | The root screen does not list feeds, and opening the tab fetched every source anyway | Opening keeps the context. Accounts and the export list load when those screens appear | `SettingsGoogleDriveLinkTests.openingSettingsDoesNotFetchEveryFeed` |
 
 ## Still open
 
