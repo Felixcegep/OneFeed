@@ -423,6 +423,25 @@ struct FeedAndFreshRSSDomainTests {
         #expect(planCaption == caption)
     }
 
+    @Test func aLongFeedCopiesStoriesAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!)
+        let queued = Article(guid: "open", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, summary: "A blurb", state: .queued, feed: feed)
+        let read = Article(guid: "read", title: "Finished", url: URL(string: "https://c.test/read"), publishedAt: .now, state: .read, feed: feed)
+        context.insert(feed)
+        context.insert(queued)
+        context.insert(read)
+        try context.save()
+        let copied = StoryListPlan.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id) == [queued.id])
+        #expect(copied.first?.title == "")
+        #expect(copied.first?.summary == nil)
+        let found = StoryListPlan.snaps(searching: true, in: context.container)
+        #expect(found.first?.title == "New")
+        #expect(found.first?.feedTitle == "Swift")
+        #expect(found.first?.summary == "A blurb")
+    }
+
     private func storyListSnap(_ article: Article) -> StoryListSnap {
         StoryListSnap(
             id: article.id,

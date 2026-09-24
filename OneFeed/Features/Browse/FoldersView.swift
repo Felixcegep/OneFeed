@@ -828,42 +828,29 @@ struct ArticleCollectionView: View {
         let feedsByID = Dictionary(feeds.map { ($0.id, FolderFeedSnap(id: $0.id, memberships: $0.memberships)) }, uniquingKeysWith: { first, _ in first })
         let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         let searching = !query.isEmpty
-        let snaps = articles.map { article in
-            StoryListSnap(
-                id: article.id,
-                feedID: article.feed?.id,
-                feedTitle: searching ? article.feed?.title : nil,
-                publishedAt: article.publishedAt,
-                title: searching ? article.title : "",
-                aiSummary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.aiSummary),
-                summary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.summary),
-                videoID: article.videoID,
-                url: article.url,
-                guid: article.guid,
-                hasRemoteID: article.remoteID != nil,
-                stateRaw: article.stateRawValue,
-                isRemoteStarred: article.isRemoteStarred
-            )
-        }
         let placements = storyPlacements
         let expanded = expandedClusterIDs
         let now = Date()
-        if StoryListPlan.rowsOnTheOpenScreen(storyCount: snaps.count, isSearching: searching) {
+        let onScreen = StoryListPlan.rowsOnTheOpenScreen(storyCount: articles.count, isSearching: searching)
+        let openSnaps = onScreen ? articles.map { storyListSnap($0, searching: false) } : []
+        if onScreen {
             publishStoryRows(StoryListPlan.rows(
                 destination: destination,
                 feeds: feedsByID,
-                stories: snaps,
+                stories: openSnaps,
                 placements: placements,
                 expanded: expanded,
-                query: query,
+                query: "",
                 now: now
             ))
         }
+        let container = modelContext.container
         let plans = await Task.detached(priority: .userInitiated) {
-            StoryListPlan.rows(
+            let stories = onScreen ? openSnaps : StoryListPlan.snaps(searching: searching, in: container)
+            return StoryListPlan.rows(
                 destination: destination,
                 feeds: feedsByID,
-                stories: snaps,
+                stories: stories,
                 placements: placements,
                 expanded: expanded,
                 query: query,
@@ -872,6 +859,24 @@ struct ArticleCollectionView: View {
         }.value
         guard !Task.isCancelled, edge == storyEdge else { return }
         publishStoryRows(plans)
+    }
+
+    private func storyListSnap(_ article: Article, searching: Bool) -> StoryListSnap {
+        StoryListSnap(
+            id: article.id,
+            feedID: article.feed?.id,
+            feedTitle: searching ? article.feed?.title : nil,
+            publishedAt: article.publishedAt,
+            title: searching ? article.title : "",
+            aiSummary: searching ? ContentClassifier.cardExcerptSample(article.aiSummary) : nil,
+            summary: searching ? ContentClassifier.cardExcerptSample(article.summary) : nil,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
     }
 
     private func publishStoryRows(_ plans: [StoryRowPlan]) {

@@ -236,6 +236,49 @@ nonisolated enum StoryListPlan {
         !isSearching && storyCount > 0 && storyCount <= synchronousRowLimit
     }
 
+    /// Copies open stories on a short-lived context. A long list or a search uses this instead of walking the rows on screen.
+    static func snaps(searching: Bool, in container: ModelContainer) -> [StoryListSnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        if searching {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.title, \.aiSummary, \.summary, \.videoID, \.url, \.guid,
+                \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        } else {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.videoID, \.url, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        }
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let stories = (try? context.fetch(descriptor)) ?? []
+        return stories.map { article in
+            StoryListSnap(
+                id: article.id,
+                feedID: article.feed?.id,
+                feedTitle: searching ? article.feed?.title : nil,
+                publishedAt: article.publishedAt,
+                title: searching ? article.title : "",
+                aiSummary: searching ? ContentClassifier.cardExcerptSample(article.aiSummary) : nil,
+                summary: searching ? ContentClassifier.cardExcerptSample(article.summary) : nil,
+                videoID: article.videoID,
+                url: article.url,
+                guid: article.guid,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
+        }
+    }
+
     static func rows(
         destination: FeedBrowseDestination,
         feeds: [UUID: FolderFeedSnap],
