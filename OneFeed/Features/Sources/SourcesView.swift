@@ -515,6 +515,7 @@ private struct SourceDetailView: View {
             }
             Section {
                 Button("Remove Source", role: .destructive) { viewModel.isConfirmingRemoval = true }
+                    .disabled(viewModel.isRemoving)
             }
             .listRowBackground(OneFeedTheme.paper)
         }
@@ -587,10 +588,21 @@ private struct SourceDetailView: View {
                 newFolderName = ""
             }
         }
+        .alert("Couldn’t remove that source", isPresented: Binding(
+            get: { viewModel.removeError != nil },
+            set: { if !$0 { viewModel.removeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.removeError = nil }
+        } message: {
+            Text(viewModel.removeError ?? "")
+        }
         .confirmationDialog("Remove this source and its locally stored articles?", isPresented: $viewModel.isConfirmingRemoval, titleVisibility: .visible) {
             Button("Remove Source", role: .destructive) {
-                dismiss()
-                Task { @MainActor in await viewModel.remove() }
+                Task { @MainActor in
+                    if await viewModel.remove() {
+                        dismiss()
+                    }
+                }
             }
         }
         .onChange(of: scenePhase) { _, phase in

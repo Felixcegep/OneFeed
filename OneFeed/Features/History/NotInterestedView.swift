@@ -12,6 +12,7 @@ struct NotInterestedView: View {
     @State private var isRemovingSource = false
     @State private var queueError: String?
     @State private var storyError: String?
+    @State private var removeError: String?
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -111,6 +112,14 @@ struct NotInterestedView: View {
             Button("OK", role: .cancel) { storyError = nil }
         } message: {
             Text(storyError ?? "")
+        }
+        .alert("Couldn’t remove that source", isPresented: Binding(
+            get: { removeError != nil },
+            set: { if !$0 { removeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { removeError = nil }
+        } message: {
+            Text(removeError ?? "")
         }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
@@ -245,9 +254,14 @@ struct NotInterestedView: View {
         do {
             try await FreshRSSSyncService().removeSubscription(feed, in: modelContext)
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
             modelContext.delete(feed)
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+                LibraryChange.noteRemovedFeed(feed)
+            } catch {
+                modelContext.rollback()
+                removeError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
+            }
         }
     }
 }

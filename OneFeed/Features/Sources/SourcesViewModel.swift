@@ -242,10 +242,11 @@ final class SourceDetailViewModel {
     var presentedError: String?
     var refreshError: String?
     var saveError: String?
+    var removeError: String?
     private(set) var isRefreshing = false
     let progress = RefreshProgress()
     var availableFolders: [String] = []
-    private var isRemoving = false
+    private(set) var isRemoving = false
     private var blockedWordsTask: Task<Void, Never>?
     private var pendingBlockedWords: String?
     private let recentArticlesCache = RecentArticleCache()
@@ -386,17 +387,34 @@ final class SourceDetailViewModel {
         }
     }
 
-    func remove() async {
-        guard !isRemoving else { return }
+    @discardableResult
+    func remove() async -> Bool {
+        guard !isRemoving else { return false }
         isRemoving = true
-        defer { isRemoving = false }
+        let showsLine = !progress.isActive
+        if showsLine {
+            progress.begin(phase: .sources, total: 1)
+        }
+        defer {
+            if showsLine { progress.finish() }
+            isRemoving = false
+        }
         do {
             try await freshRSSService.removeSubscription(feed, in: context)
+            if showsLine { progress.finishItem() }
+            return true
         } catch {
-            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
-            LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
-            try? context.save()
+            do {
+                try context.save()
+                LibraryChange.noteRemovedFeed(feed)
+                if showsLine { progress.finishItem() }
+                return true
+            } catch {
+                context.rollback()
+                removeError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
+                return false
+            }
         }
     }
 
