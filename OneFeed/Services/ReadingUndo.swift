@@ -8,13 +8,14 @@ final class ReadingUndoCenter {
     static let shared = ReadingUndoCenter()
 
     private(set) var offer: Offer?
+    var undoError: String?
     private var dismissTask: Task<Void, Never>?
 
     struct Offer: Identifiable {
         let id = UUID()
         var title: String
         var strongerTitle: String?
-        let undo: () -> Void
+        let undo: () -> Bool
         var stronger: (() -> Void)?
     }
 
@@ -22,7 +23,7 @@ final class ReadingUndoCenter {
         title: String,
         strongerTitle: String? = nil,
         stronger: (() -> Void)? = nil,
-        undo: @escaping () -> Void
+        undo: @escaping () -> Bool
     ) {
         dismissTask?.cancel()
         let shown = Offer(
@@ -35,11 +36,17 @@ final class ReadingUndoCenter {
         scheduleDismiss(of: shown.id)
     }
 
-    func performUndo() {
-        let action = offer?.undo
+    @discardableResult
+    func performUndo() -> Bool {
+        guard let current = offer else { return false }
+        guard current.undo() else {
+            undoError = String(localized: "Couldn’t put that story back.")
+            scheduleDismiss(of: current.id)
+            return false
+        }
         offer = nil
         dismissTask?.cancel()
-        action?()
+        return true
     }
 
     /// Skip can become Not interested. Undo still restores the story from before the skip.
@@ -123,7 +130,13 @@ enum ReadingUndo {
             strongerTitle: marked ? nil : String(localized: "Not interested"),
             stronger: stronger
         ) {
-            restore(snapshot, in: context)
+            do {
+                try restore(snapshot, in: context)
+                return true
+            } catch {
+                context.rollback()
+                return false
+            }
         }
     }
 
@@ -193,7 +206,7 @@ enum ReadingUndo {
         )
     }
 
-    private static func restore(_ snapshot: FinishSnapshot, in context: ModelContext) {
+    private static func restore(_ snapshot: FinishSnapshot, in context: ModelContext) throws {
         guard let article = storedArticle(id: snapshot.articleID, in: context) else { return }
         article.stateRawValue = snapshot.stateRaw
         article.completedAt = snapshot.completedAt
@@ -223,7 +236,7 @@ enum ReadingUndo {
         }
         LibraryChange.note(article)
         reconcileRemoteQueue(snapshot, article: article, in: context)
-        try? context.save()
+        try context.save()
         let current = (try? DailyDeckService().currentItem(in: context))?.article
         WidgetSnapshotStore.write(article: current ?? article)
     }
@@ -304,6 +317,14 @@ struct ReadingUndoBanner: ViewModifier {
                 }
                 .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
             }
+            .alert("Couldn’t undo", isPresented: Binding(
+                get: { center.undoError != nil },
+                set: { if !$0 { center.undoError = nil } }
+            )) {
+                Button("OK", role: .cancel) { center.undoError = nil }
+            } message: {
+                Text(center.undoError ?? "")
+            }
     }
 
     private func bar(_ offer: ReadingUndoCenter.Offer) -> some View {
@@ -324,8 +345,9 @@ struct ReadingUndoBanner: ViewModifier {
                 .accessibilityHint("Files this story as not interested. Undo still puts it back.")
             }
             Button("Undo") {
-                center.performUndo()
-                onApplied()
+                if center.performUndo() {
+                    onApplied()
+                }
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(OneFeedTheme.plaster)
