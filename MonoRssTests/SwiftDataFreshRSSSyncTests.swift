@@ -296,6 +296,52 @@ struct SwiftDataFreshRSSSyncTests {
         BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
     }
 
+    @Test func aSecondPullDuringARefreshFetchesOnceMore() async throws {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let context = try context()
+        let feeds = GatedFeedRepository()
+        let browse = BrowseRefresh(feedService: feeds, freshRSSService: RecordingFreshRSSService())
+        let first = Task { await browse.refresh(in: context) }
+        for _ in 0..<50 where feeds.gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task { await browse.refresh(in: context) }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        feeds.gate.release()
+        await first.value
+        await second.value
+        #expect(feeds.gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func aPullDuringTodaysAutomaticRefreshFetchesOnceMore() async throws {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let context = try context()
+        let feeds = GatedFeedRepository()
+        let model = CurrentViewModel(
+            deckService: DailyDeckService(),
+            feedService: feeds,
+            freshRSSService: RecordingFreshRSSService()
+        )
+        model.configure(with: context)
+        let feed = Feed(title: "Example", feedURL: URL(string: "https://example.com/rss")!)
+        context.insert(feed)
+        model.startRefreshIfNeeded(feeds: [feed])
+        for _ in 0..<50 where feeds.gate.entered == 0 {
+            await Task.yield()
+        }
+        let pull = Task { await model.refresh() }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        feeds.gate.release()
+        await pull.value
+        #expect(feeds.gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
     @Test func todaySkipsARefreshWhenTheFeedsOnScreenAreFresh() {
         let now = Date()
         let fresh = FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: now.addingTimeInterval(-60))
@@ -432,6 +478,21 @@ private actor PagingSyncAPI: FreshRSSAPI {
     }
     func unsubscribe(streamID: String, authToken: String) async throws {}
     func recordedPages() -> [String?] { pages }
+}
+
+@MainActor
+private final class GatedFeedRepository: FeedRepository {
+    let gate = RefreshGate()
+
+    func addSource(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!, folderName: folderName)
+    }
+
+    func refresh(_ feed: Feed, in context: ModelContext) async throws {}
+
+    func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws {
+        await gate.enter()
+    }
 }
 
 @MainActor

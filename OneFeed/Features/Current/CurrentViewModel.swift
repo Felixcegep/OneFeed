@@ -11,6 +11,8 @@ final class CurrentViewModel {
     private let freshRSSService: any FreshRSSSyncing
     private var inFlightRefresh: Task<Void, Never>?
     private var inFlightIsFullRefresh = false
+    /// A pull or a new source arrived while a pass was already fetching. That pass runs once more.
+    private var askedForAnotherPass = false
     private var didRunUtilityBackfill = false
     private var hasAppeared = false
 
@@ -157,9 +159,12 @@ final class CurrentViewModel {
 
     func refresh() async {
         if let existing = inFlightRefresh {
-            let joiningFullRefresh = inFlightIsFullRefresh
+            if inFlightIsFullRefresh {
+                askedForAnotherPass = true
+                await existing.value
+                return
+            }
             await existing.value
-            if joiningFullRefresh { return }
         }
         guard inFlightRefresh == nil else {
             await refresh()
@@ -208,6 +213,12 @@ final class CurrentViewModel {
         }
         await BackgroundRefreshCoordinator.runExclusive(followsUp: followsUp) {
             await self.performRefreshWork(in: context)
+        }
+        while askedForAnotherPass {
+            askedForAnotherPass = false
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: true) {
+                await self.performRefreshWork(in: context)
+            }
         }
         loadCurrent()
         Task { await BackgroundRefreshCoordinator.enrichAfterRefresh(in: context) }

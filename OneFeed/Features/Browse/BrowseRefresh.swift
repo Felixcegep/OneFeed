@@ -8,6 +8,8 @@ final class BrowseRefresh {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
     private var inFlight: Task<Void, Never>?
+    /// A second pull, or a source added while this pass is fetching, runs once after it.
+    private var askedForAnotherPass = false
     private(set) var isRefreshing = false
     private(set) var lastRefreshedAt: Date?
     let progress = RefreshProgress()
@@ -32,6 +34,7 @@ final class BrowseRefresh {
 
     func refresh(in context: ModelContext) async {
         if let inFlight {
+            askedForAnotherPass = true
             await inFlight.value
             return
         }
@@ -50,6 +53,13 @@ final class BrowseRefresh {
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)
             self.recordRefreshTime(.now)
+        }
+        while askedForAnotherPass {
+            askedForAnotherPass = false
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: true) {
+                await self.performRefreshWork(in: context)
+                self.recordRefreshTime(.now)
+            }
         }
     }
 
