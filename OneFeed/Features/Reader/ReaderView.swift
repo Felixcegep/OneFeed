@@ -215,6 +215,10 @@ struct ReaderView: View {
 
     private var article: Article { viewModel.article }
 
+    private var queueIsFilled: Bool {
+        decision == .saved || article.state == .saved
+    }
+
     #if os(iOS)
     /// Standard sizes keep five equal slots. Accessibility sizes stack a full-width
     /// Done control above the remaining actions so captions never clip or scroll away.
@@ -254,9 +258,10 @@ struct ReaderView: View {
             .accessibilityHint("Marks this article done")
 
             readerSecondaryAction(
-                (decision == .saved || article.state == .saved) ? "In Queue" : "Queue",
-                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: (decision == .saved || article.state == .saved) ? "Already in Queue" : "Adds this to Queue"
+                queueIsFilled ? "In Queue" : "Queue",
+                systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                hint: queueIsFilled ? "Already in Queue" : "Adds this to Queue",
+                disabled: article.state == .saved
             ) {
                 finish(.saved)
             }
@@ -277,9 +282,10 @@ struct ReaderView: View {
         HStack(spacing: 0) {
             readerBarItem(
                 "Queue",
-                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: (decision == .saved || article.state == .saved) ? "Already in Queue" : "Adds this to Queue",
-                accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
+                systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                hint: queueIsFilled ? "Already in Queue" : "Adds this to Queue",
+                accessibilityLabel: queueIsFilled ? "In Queue" : "Queue",
+                disabled: article.state == .saved
             ) {
                 finish(.saved)
             }
@@ -317,6 +323,7 @@ struct ReaderView: View {
         _ title: String,
         systemImage: String,
         hint: String,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -325,7 +332,7 @@ struct ReaderView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .buttonStyle(DecisionActionStyle())
-        .disabled(decision != nil)
+        .disabled(decision != nil || disabled)
         .accessibilityLabel(title)
         .accessibilityHint(hint)
     }
@@ -336,6 +343,7 @@ struct ReaderView: View {
         hint: String,
         emphasized: Bool = false,
         accessibilityLabel: String? = nil,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -348,7 +356,7 @@ struct ReaderView: View {
             )
         }
         .buttonStyle(ReaderBarPressStyle())
-        .disabled(decision != nil)
+        .disabled(decision != nil || disabled)
         .frame(maxWidth: .infinity)
     }
     #endif
@@ -367,6 +375,7 @@ struct ReaderView: View {
 
     private func finish(_ state: ArticleState) {
         guard decision == nil else { return }
+        if state == .saved, article.state == .saved { return }
         decision = state
         switch state {
         case .saved: savePulse += 1
@@ -542,13 +551,13 @@ struct ReaderView: View {
             HStack(spacing: 0) {
                 readerBarButton(
                     "Queue",
-                    systemImage: (decision == .saved || article.state == .saved) ? "square.stack.fill" : "square.stack",
-                    help: (decision == .saved || article.state == .saved) ? "Already in Queue" : "Add this to Queue",
-                    accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
+                    systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                    help: queueIsFilled ? "Already in Queue" : "Add this to Queue",
+                    accessibilityLabel: queueIsFilled ? "In Queue" : "Queue"
                 ) {
                     finish(.saved)
                 }
-                .disabled(decision != nil)
+                .disabled(decision != nil || article.state == .saved)
                 readerBarButton("Skip", systemImage: "forward", help: "Skip this article. Hold for Not interested.") {
                     finish(.skipped)
                 }

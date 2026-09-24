@@ -13,6 +13,7 @@ struct SavedView: View {
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
     @State private var isImportingDrop = false
+    @State private var pendingDropProviders: [NSItemProvider] = []
     @State private var appliedSearch = ""
     /// Collapsed queue stays put while the open story changes.
     @State private var queueCache = QueueListCache()
@@ -267,52 +268,50 @@ struct SavedView: View {
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
-        guard !isImportingDrop else { return true }
-        let files = providers.filter { provider in
+        let useful = providers.filter { provider in
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
+                || provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+                || provider.canLoadObject(ofClass: URL.self)
+                || provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
         }
-        if !files.isEmpty {
-            isImportingDrop = true
-            Task {
-                defer { isImportingDrop = false }
+        guard !useful.isEmpty else { return false }
+        pendingDropProviders.append(contentsOf: useful)
+        guard !isImportingDrop else { return true }
+        isImportingDrop = true
+        Task { await drainDroppedImports() }
+        return true
+    }
+
+    private func drainDroppedImports() async {
+        let service = ImportedDocumentService()
+        var last: Article?
+        while !pendingDropProviders.isEmpty {
+            let batch = pendingDropProviders
+            pendingDropProviders.removeAll()
+            for provider in batch {
+                let isFile = provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+                    || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
                 do {
-                    let service = ImportedDocumentService()
-                    var last: Article?
-                    for provider in files {
+                    if isFile {
                         let url = try await AddToQueueView.fileURLForDrop(from: provider)
                         last = try await service.importFile(at: url, in: modelContext)
                         try? FileManager.default.removeItem(at: url)
+                    } else if let address = await Self.droppedAddress(from: provider) {
+                        last = try await QueueLinkService().add(urlString: address, in: modelContext)
                     }
-                    if let last { viewModel.selectedArticle = last }
                 } catch {
-                    viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
+                    let fallback = isFile ? "Couldn’t import that file." : "Couldn’t add that link."
+                    viewModel.presentedError = UserFacingFailure.message(for: error, fallback: fallback)
                 }
             }
-            return true
         }
-
-        let links = providers.filter {
-            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-                || $0.canLoadObject(ofClass: URL.self)
-                || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        if let last { viewModel.selectedArticle = last }
+        isImportingDrop = false
+        if !pendingDropProviders.isEmpty {
+            isImportingDrop = true
+            await drainDroppedImports()
         }
-        guard !links.isEmpty else { return false }
-        isImportingDrop = true
-        Task {
-            defer { isImportingDrop = false }
-            do {
-                var last: Article?
-                for provider in links {
-                    guard let address = await Self.droppedAddress(from: provider) else { continue }
-                    last = try await QueueLinkService().add(urlString: address, in: modelContext)
-                }
-                if let last { viewModel.selectedArticle = last }
-            } catch {
-                viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that link.")
-            }
-        }
-        return true
     }
 
     private static func droppedAddress(from provider: NSItemProvider) async -> String? {

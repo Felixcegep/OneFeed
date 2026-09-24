@@ -46,7 +46,7 @@ private struct DebouncedSearchModifier: ViewModifier {
             }
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
-            applied = text
+            applied = trimmed
         }
     }
 }

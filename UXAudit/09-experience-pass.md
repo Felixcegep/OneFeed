@@ -129,6 +129,12 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The title bar resized while the refresh line was moving | Today, Feed | High | The navigation subtitle swapped to the refresh phase, so the bar height changed during a scroll | The subtitle stays on the story count or the last update. The progress line carries the refresh | Code review |
 | A folder of stories could not be refreshed in place | Feed | Medium | Pull to refresh and the progress line lived only on the folder list | New articles and a folder can be pulled to refresh, and the same progress line shows there | Code review |
 | A source screen could not check for new stories | Source | Medium | Refresh lived on Feed, so an open source had no way to fetch | The source toolbar refreshes that feed. A second tap waits, and it does not write the feed while a full refresh is already running | Code review |
+| A second file drop on Queue was accepted and then discarded | Queue | High | The drop returned handled while an import was already running, so the new files never started | The new files wait in line. File copies still run one at a time, including a share-sheet import | `ImportedDocumentTests.aSecondImportWaitsUntilTheFirstFinishes` |
+| The librarian composer dropped the tab gap for any focused field | Librarian | Medium | The spacer left whenever the field was focused, including a hardware or floating keyboard | The gap leaves only while a docked keyboard covers the tab bar | Code review |
+| Queue on the iPhone reader stayed an empty icon after the story was already saved | Reader | Medium | The filled icon followed only the tap in this visit | The icon fills when the story is already in Queue, and another Queue tap does nothing | Code review |
+| History with nothing in it had no next step | History | Medium | The empty state described the list and stopped | It offers Open Today | Code review |
+| Asking about a video used Done to leave the sheet | Reader | Low | Done is the reading verb. This button only closes the sheet | The button says Close | Code review |
+| A search with a trailing space rebuilt the list | Queue, History, Feed | Low | The applied query kept the spaces, so the cache key changed while the filter did not | The applied query is the trimmed text | Code review |
 
 ## Still open
 

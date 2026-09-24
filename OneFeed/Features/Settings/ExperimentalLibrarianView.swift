@@ -223,7 +223,6 @@ struct ExperimentalLibrarianView: View {
     @State private var geminiKey = ""
     @State private var showingKeySheet = false
     @State private var didSendInitial = false
-    @FocusState private var composerFocused: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -265,13 +264,7 @@ struct ExperimentalLibrarianView: View {
                 composer
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            #if os(iOS)
-            if !composerFocused {
-                Color.clear.frame(height: 96)
-            }
-            #endif
-        }
+        .oneFeedTabBarClearance()
         .navigationTitle("Librarian")
         .oneFeedInlineTitle()
         .toolbar {
@@ -462,7 +455,6 @@ struct ExperimentalLibrarianView: View {
                 .textFieldStyle(.plain)
                 .disabled(viewModel.pendingRemoval != nil || viewModel.isWorking)
                 .oneFeedSubmitGo()
-                .focused($composerFocused)
                 .onSubmit { Task { await viewModel.send() } }
                 .accessibilityIdentifier("experimental-composer")
                 Button("Send") {

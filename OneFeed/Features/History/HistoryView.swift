@@ -76,7 +76,9 @@ struct HistoryView: View {
                 EmptyLibraryState(
                     title: "No history yet",
                     systemImage: "clock",
-                    description: "Read and skipped pieces appear here quietly."
+                    description: "Read and skipped pieces from Today and Queue land here.",
+                    actionTitle: "Open Today",
+                    action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
                 )
             } else if !trimmedQuery.isEmpty && days.isEmpty {
                 EmptyLibraryState(
