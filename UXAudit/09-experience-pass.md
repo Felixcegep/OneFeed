@@ -77,6 +77,10 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A second Sync, Disconnect, or Connect could start another request | Settings | High | The button disabled only after the first request had already begun | A second call returns while that request is still running | Code review |
 | The opening cover flashed on a page that was already ready | Reader | Medium | The cover appeared on the same frame the page started loading | The cover and the browser mark wait 160ms, and stay hidden if the page is ready first | Code review |
 | Launch covered the app even when the room was already warm | Launch | Medium | The cover appeared before the warmup had a chance to finish | The cover waits 160ms, and stays hidden if warmup finishes first | Code review |
+| Typing a Gemini key wrote the Keychain on every character and deleted it when the field was cleared | Settings | High | The field saved on each change, and an empty string deletes the item | A finished key is saved after a short pause, off the main thread. Clearing the field keeps the stored key. Remove key is the delete | Code review |
+| List rows hashed the excerpt on every redraw | Today, Queue, Feed | High | The excerpt cache key included `hashValue`, which walks the text before it can hit | The row keeps the same excerpt string and skips the strip when that string is unchanged | `FeedAndFreshRSSDomainTests.displayExcerptPrefersAISummary` |
+| Opening the reader hashed the whole article on every redraw | Reader | High | The page cache key hashed the body before it could see that the page was already built | The same body reuses its hash. A changed body still rebuilds the page | `ReaderFocusTests.replacingTheArticleBodyRebuildsThePage` |
+| Not interested fetched an article for every row on every redraw | Not interested | Medium | Each row queried SwiftData while the list was built, and formatted a new date | Groups and article lookups are reused until the log changes. Dates use the shared day label | Code review |
 
 ## Still open
 

@@ -183,6 +183,9 @@ final class ReaderViewModel {
     }
 
     private var cachedDocument: (key: String, html: String)?
+    private var cachedBodyHash: (text: String, hash: Int)?
+    private var cachedSummaryHash: (text: String, hash: Int)?
+    private var cachedVideoBody: (summary: String, html: String)?
 
     /// Date and length under the title. Kept off the document cache key so a late duration does not reload the page.
     var readerMetaLine: String {
@@ -217,7 +220,12 @@ final class ReaderViewModel {
         let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let rawBody: String
         if article.contentKind == "youtube", !summary.isEmpty {
-            rawBody = ReaderHTML.videoSummaryBody(from: summary)
+            if let cachedVideoBody, cachedVideoBody.summary == summary {
+                rawBody = cachedVideoBody.html
+            } else {
+                rawBody = ReaderHTML.videoSummaryBody(from: summary)
+                cachedVideoBody = (summary, rawBody)
+            }
         } else {
             rawBody = article.readableHTML ?? fallback
         }
@@ -227,7 +235,8 @@ final class ReaderViewModel {
         let typeSize = "standard"
         #endif
         // Length and date stay out of this key. A late duration must not rebuild the page.
-        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(summary.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+        // The body hash is remembered, so a redraw does not walk the article again.
+        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(summary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
@@ -344,6 +353,14 @@ final class ReaderViewModel {
         """
         cachedDocument = (key, html)
         return html
+    }
+
+    /// Reuses the hash when the text is the same buffer. A redraw should not walk the article.
+    private func fingerprint(_ text: String, cache: inout (text: String, hash: Int)?) -> Int {
+        if let cache, cache.text == text { return cache.hash }
+        let hash = text.hashValue
+        cache = (text, hash)
+        return hash
     }
 
     private func loadPDFTextIfNeeded() async {

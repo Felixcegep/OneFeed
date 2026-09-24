@@ -647,6 +647,9 @@ struct FeedAndFreshRSSDomainTests {
             aiSummary: "The video explains why 1/137 shows up in physics."
         )
         #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+        #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+        article.aiSummary = nil
+        #expect(article.displayExcerpt == "Feed blurb")
     }
 
     @Test @MainActor func listDateLabelReusesTheSameCalendarDay() {

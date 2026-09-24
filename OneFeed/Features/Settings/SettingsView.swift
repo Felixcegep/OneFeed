@@ -11,9 +11,13 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.semanticVideoEnrichment) private var semanticVideoEnrichment = false
     @State private var viewModel = SettingsViewModel()
     @State private var geminiKey = ""
+    /// Key already stored. An empty field while editing must not delete this.
+    @State private var committedGeminiKey = ""
+    @State private var geminiKeySave: Task<Void, Never>?
     @State private var library = LibrarySyncService.shared
     @State private var isPickingLibraryFolder = false
     @State private var isPickingLibraryFile = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Form {
@@ -28,7 +32,7 @@ struct SettingsView: View {
                 settingsLink("Storage", summary: "Keep articles · \(ArticleRetentionChoice(rawValue: retentionDays)?.label ?? "\(retentionDays) days")") {
                     storageSection
                 }
-                settingsLink("Video & AI", summary: geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Summaries off" : "Summaries available") {
+                settingsLink("Video & AI", summary: geminiKeyStatus, flushGeminiKey: true) {
                     videoSection
                 }
             }
@@ -53,7 +57,19 @@ struct SettingsView: View {
         .task {
             viewModel.configure(with: modelContext)
             library.configure(with: modelContext)
-            geminiKey = GeminiAPIKeyStore.load() ?? ""
+            let stored = await Task.detached(priority: .utility) {
+                GeminiAPIKeyStore.load() ?? ""
+            }.value
+            guard geminiKey.isEmpty else {
+                if committedGeminiKey.isEmpty { committedGeminiKey = stored }
+                return
+            }
+            committedGeminiKey = stored
+            geminiKey = stored
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            commitGeminiKeyOnLeave()
         }
         .sheet(isPresented: $viewModel.isConnectingFreshRSS) {
             FreshRSSConnectView(existingAccount: viewModel.freshRSS, onConnected: { viewModel.reload() })
@@ -171,12 +187,11 @@ struct SettingsView: View {
                 .oneFeedAutocapitalizationNever()
                 .autocorrectionDisabled()
                 .onChange(of: geminiKey) { _, newValue in
-                    GeminiAPIKeyStore.save(newValue)
+                    scheduleGeminiKeySave(newValue)
                 }
-            if !geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if showsRemoveGeminiKey {
                 Button("Remove key", role: .destructive) {
-                    geminiKey = ""
-                    GeminiAPIKeyStore.delete()
+                    removeGeminiKey()
                 }
             }
             Toggle("Tell similar videos apart", isOn: $semanticVideoEnrichment)
@@ -190,6 +205,59 @@ struct SettingsView: View {
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)
+    }
+
+    private var geminiKeyStatus: String {
+        let draft = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty && committedGeminiKey.isEmpty { return "Summaries off" }
+        return "Summaries available"
+    }
+
+    private var showsRemoveGeminiKey: Bool {
+        !geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !committedGeminiKey.isEmpty
+    }
+
+    /// Writes a finished key after a short pause. Clearing the field does not delete the stored key.
+    private func scheduleGeminiKeySave(_ value: String) {
+        geminiKeySave?.cancel()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != committedGeminiKey else { return }
+        geminiKeySave = Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await persistGeminiKey(trimmed)
+        }
+    }
+
+    private func commitGeminiKeyOnLeave() {
+        geminiKeySave?.cancel()
+        geminiKeySave = nil
+        let trimmed = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            if geminiKey != committedGeminiKey {
+                geminiKey = committedGeminiKey
+            }
+            return
+        }
+        guard trimmed != committedGeminiKey else { return }
+        Task { await persistGeminiKey(trimmed) }
+    }
+
+    private func persistGeminiKey(_ trimmed: String) async {
+        await Task.detached(priority: .utility) {
+            GeminiAPIKeyStore.save(trimmed)
+        }.value
+        committedGeminiKey = trimmed
+    }
+
+    private func removeGeminiKey() {
+        geminiKeySave?.cancel()
+        geminiKeySave = nil
+        geminiKey = ""
+        committedGeminiKey = ""
+        Task.detached(priority: .utility) {
+            GeminiAPIKeyStore.delete()
+        }
     }
 
     private var freshRSSSection: some View {
@@ -253,6 +321,7 @@ struct SettingsView: View {
         _ title: String,
         summary: String,
         reloadsOnAppear: Bool = false,
+        flushGeminiKey: Bool = false,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         NavigationLink {
@@ -265,6 +334,9 @@ struct SettingsView: View {
             .tint(OneFeedTheme.ink)
             .onAppear {
                 if reloadsOnAppear { viewModel.reload() }
+            }
+            .onDisappear {
+                if flushGeminiKey { commitGeminiKeyOnLeave() }
             }
         } label: {
             VStack(alignment: .leading, spacing: 4) {

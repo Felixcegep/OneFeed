@@ -8,9 +8,20 @@ struct NotInterestedView: View {
     @State private var selectedArticle: Article?
     @State private var pendingRemoval: NotInterestedSourceGroup?
     @State private var librarianPrompt: LibrarianPrompt?
+    @State private var listCache = NotInterestedListCache()
 
     private var groups: [NotInterestedSourceGroup] {
-        NotInterestedLog.groups(from: entries)
+        listCache.groups(from: entries, stamp: logStamp)
+    }
+
+    /// Changes when a mark is added, removed, or retitled. Scrolling does not.
+    private var logStamp: Int {
+        var stamp = entries.count
+        for entry in entries {
+            stamp ^= entry.persistentModelID.hashValue
+            stamp ^= entry.recordedAt.hashValue
+        }
+        return stamp
     }
 
     var body: some View {
@@ -123,7 +134,7 @@ struct NotInterestedView: View {
     }
 
     private func entryRow(_ entry: NotInterestedEntry) -> some View {
-        let article = NotInterestedLog.article(for: entry, in: modelContext)
+        let article = listCache.article(for: entry, in: modelContext)
         return Button {
             selectedArticle = article
         } label: {
@@ -133,7 +144,7 @@ struct NotInterestedView: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(entry.recordedAt.formatted(date: .abbreviated, time: .omitted))
+                Text(OneFeedDateLabel.monthDayAndYear(entry.recordedAt))
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
             }
@@ -191,6 +202,27 @@ struct NotInterestedView: View {
             modelContext.delete(feed)
             try? modelContext.save()
         }
+    }
+}
+
+private final class NotInterestedListCache {
+    private var stamp = 0
+    private var cachedGroups: [NotInterestedSourceGroup] = []
+    private var articles: [PersistentIdentifier: Article?] = [:]
+
+    func groups(from entries: [NotInterestedEntry], stamp: Int) -> [NotInterestedSourceGroup] {
+        if self.stamp == stamp { return cachedGroups }
+        self.stamp = stamp
+        articles.removeAll()
+        cachedGroups = NotInterestedLog.groups(from: entries)
+        return cachedGroups
+    }
+
+    func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {
+        if let cached = articles[entry.persistentModelID] { return cached }
+        let found = NotInterestedLog.article(for: entry, in: context)
+        articles[entry.persistentModelID] = found
+        return found
     }
 }
 

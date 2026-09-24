@@ -115,6 +115,23 @@ struct ReaderFocusTests {
         #expect(resized.contains("10 min"))
     }
 
+    @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {
+        let article = Article(
+            guid: "essay",
+            title: "Caches",
+            contentHTML: "<p>The first page.</p>"
+        )
+        let model = ReaderViewModel(article: article)
+        let first = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        let second = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(first == second)
+        article.contentHTML = "<p>The revised page.</p>"
+        let revised = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(revised != first)
+        #expect(revised.contains("The revised page."))
+        #expect(!revised.contains("The first page."))
+    }
+
     @Test func sanitizerStripsJavascriptURLs() {
         let cleaned = ReaderHTML.sanitizedBody(#"<p><a href="javascript:alert(1)">Open</a></p>"#)
         #expect(!cleaned.contains("javascript:"))

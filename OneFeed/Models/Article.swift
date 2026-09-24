@@ -170,7 +170,8 @@ final class Article {
     var displayImageURL: URL? { FeedImageURL.displayable(imageURL) }
 
     /// Last plain excerpt for this instance. Lists redraw often; the HTML strip should not.
-    @Transient private var cachedExcerptKey: String?
+    @Transient private var cachedExcerptSource: String?
+    @Transient private var cachedExcerptLimit: Int?
     @Transient private var cachedExcerpt: String?
 
     var displayExcerpt: String? {
@@ -185,10 +186,12 @@ final class Article {
         } else {
             return nil
         }
-        let key = "\(limit)|\(source.utf16.count)|\(source.hashValue)"
-        if cachedExcerptKey == key { return cachedExcerpt }
+        if cachedExcerptSource == source, cachedExcerptLimit == limit {
+            return cachedExcerpt
+        }
         let value = ContentClassifier.proseExcerpt(source, maxCharacters: limit)
-        cachedExcerptKey = key
+        cachedExcerptSource = source
+        cachedExcerptLimit = limit
         cachedExcerpt = value
         return value
     }
