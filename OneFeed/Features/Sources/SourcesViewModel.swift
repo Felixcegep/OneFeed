@@ -88,11 +88,13 @@ final class SourcesViewModel {
                     statusMessage = "Library ready · \(result.inserted) new, \(result.updated) updated."
                     reload()
                 } catch {
-                    statusMessage = RefreshFailure.message(for: error) ?? error.localizedDescription
+                    statusMessage = UserFacingFailure.shouldSurface(error)
+                        ? UserFacingFailure.message(for: error, fallback: "Sources were restored, but the update did not finish.")
+                        : "Sources restored. The update will finish on the next refresh."
                 }
             }
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = UserFacingFailure.message(for: error, fallback: "Couldn’t restore sources.")
             isImportingPack = false
         }
     }
@@ -182,7 +184,7 @@ final class AddSourceViewModel {
                 }
                 addedCount += 1
             } catch {
-                failures.append("\(input): \(error.localizedDescription)")
+                failures.append("\(input): \(UserFacingFailure.message(for: error, fallback: "Couldn’t add that source."))")
             }
         }
 
@@ -276,7 +278,7 @@ final class SourceDetailViewModel {
         do {
             try await freshRSSService.removeSubscription(feed, in: context)
         } catch {
-            presentedError = error.localizedDescription
+            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
             LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
             try? context.save()

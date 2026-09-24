@@ -158,7 +158,7 @@ final class ExperimentalLibrarianViewModel {
             }
             messages.append(LibrarianMessage(kind: .error("Gemini kept making changes. Stopped after eight steps.")))
         } catch {
-            messages.append(LibrarianMessage(kind: .error(error.localizedDescription)))
+            messages.append(LibrarianMessage(kind: .error(UserFacingFailure.message(for: error, fallback: "That request did not finish."))))
         }
     }
 
