@@ -379,6 +379,10 @@ struct FoldersView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(group.name)
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+            .accessibilityHint(isOpen ? "Collapses this folder" : "Shows the sources in this folder")
         }
         .oneFeedDirectoryRow()
         .contextMenu {

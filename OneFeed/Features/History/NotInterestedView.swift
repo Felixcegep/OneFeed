@@ -226,7 +226,7 @@ struct NotInterestedView: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(OneFeedDateLabel.monthDayAndYear(entry.recordedAt))
+                Text(OneFeedDateLabel.historySection(entry.recordedAt))
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
             }
