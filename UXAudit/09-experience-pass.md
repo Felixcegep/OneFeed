@@ -166,6 +166,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | An empty Not interested list did not say what to do | Not interested | Low | The empty state described the list and stopped | It says to skip a story, then choose Not interested | Code review |
 | Caught up played a second success haptic when the burst ended | Today | Medium | The haptic followed `celebrateClear` in both directions, and the timer was not cancelled with the screen | The haptic plays only when the burst starts. Leaving Today cancels the timer | Code review |
 | Add Source played a second haptic and could dismiss again after the sheet was already closed | Add Source | Medium | The success flag changed both ways, and the wait lived in a task the sheet did not own | The haptic plays when the added mark appears. Closing the sheet cancels the wait | Code review |
+| Add to Queue could close the next screen after the sheet was already gone | Queue | Medium | The import finished in a task the sheet did not own, then called dismiss | The import still finishes and refreshes Queue. It dismisses only while the sheet is still up | Code review |
 
 ## Still open
 

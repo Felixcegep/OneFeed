@@ -15,6 +15,8 @@ struct AddToQueueView: View {
     @State private var pendingFileURLs: [URL] = []
     @State private var pendingDropProviders: [NSItemProvider] = []
     @State private var presentedError: String?
+    /// False once the sheet is gone, so a finished import does not dismiss the next screen.
+    @State private var stillPresented = true
     @State private var isPickingFile = false
     #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -130,6 +132,7 @@ struct AddToQueueView: View {
                     isPickingFile = true
                 }
             }
+            .onDisappear { stillPresented = false }
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
@@ -218,6 +221,7 @@ struct AddToQueueView: View {
         }
         if presentedError == nil {
             onAdded()
+            guard stillPresented else { return }
             dismiss()
         } else {
             isAdding = false
