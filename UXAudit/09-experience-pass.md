@@ -197,6 +197,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | History sections from another year looked like this year | History | Medium | A day older than this year was labeled month and day only, so two Januaries shared a heading | Today and Yesterday stay words. Another year keeps the year | `FeedAndFreshRSSDomainTests.historySectionKeepsTheYearWhenTheDayIsNotThisYear` |
 | Opening Not interested fetched once per row | Not interested | High | Each row looked up its story on its own, including the article body | The list resolves those stories in one lookup and leaves the bodies on disk until a row is opened | `NotInterestedLogTests.notInterestedRowsResolveTheirStoriesInOneLookup` |
 | A set-aside row always spelled out the year, and an editing folder did not say if it was open | Not interested, Feed | Medium | Every log row used a full date, and the folder disclosure was only a chevron | A mark from today says Today. Another year keeps the year. VoiceOver hears Expanded or Collapsed | Code review |
+| Queue, History, Feed, and Not interested walked every row several times per redraw | Queue, History, Feed, Not interested | High | The same list was grouped for the empty check, the rows, and the toolbar, and each pass hashed every id | Each of those screens groups once per update. A middle set-aside date still regroups | Code review |
 
 ## Still open
 

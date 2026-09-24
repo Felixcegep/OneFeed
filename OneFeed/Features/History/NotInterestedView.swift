@@ -20,7 +20,7 @@ struct NotInterestedView: View {
         listCache.groups(from: entries, stamp: logStamp, in: modelContext)
     }
 
-    /// Changes when a mark is added, removed, or retitled. Scrolling does not.
+    /// Changes when a mark is added, removed, or recorded again. A title edit shows on the row without regrouping.
     private var logStamp: Int {
         var stamp = entries.count
         for entry in entries {
@@ -31,8 +31,9 @@ struct NotInterestedView: View {
     }
 
     var body: some View {
-        Group {
-            if groups.isEmpty {
+        let grouped = groups
+        return Group {
+            if grouped.isEmpty {
                 EmptyLibraryState(
                     title: "Nothing set aside",
                     systemImage: "hand.thumbsdown",
@@ -40,7 +41,7 @@ struct NotInterestedView: View {
                 )
             } else {
                 List {
-                    ForEach(groups) { group in
+                    ForEach(grouped) { group in
                         Section {
                             ForEach(group.entries) { entry in
                                 entryRow(entry)
@@ -59,7 +60,7 @@ struct NotInterestedView: View {
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
         .toolbar {
-            if !groups.isEmpty {
+            if !grouped.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Ask Gemini") {
                         librarianPrompt = LibrarianPrompt(preparesReview: true)

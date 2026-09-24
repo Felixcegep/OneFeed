@@ -58,7 +58,8 @@ struct FoldersView: View {
     var body: some View {
         let _ = iconTick
         let _ = folderOrderTick
-        List {
+        let summaries = isEditingFolders ? [] : directorySummaries
+        return List {
             Section {
                 if isEditingFolders {
                     if FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds).isEmpty {
@@ -68,10 +69,10 @@ struct FoldersView: View {
                         editingRow(row)
                     }
                     newFolderRow
-                } else if directorySummaries.isEmpty {
+                } else if summaries.isEmpty {
                     emptySourceInvite
                 } else {
-                    ForEach(directorySummaries) { summary in
+                    ForEach(summaries) { summary in
                         folderRow(summary)
                     }
                 }
@@ -844,8 +845,9 @@ struct ArticleCollectionView: View {
     }
 
     private var collectionColumn: some View {
-        Group {
-            if storyRows.isEmpty {
+        let rows = storyRows
+        return Group {
+            if rows.isEmpty {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
@@ -857,7 +859,7 @@ struct ArticleCollectionView: View {
                 )
             } else {
                 List {
-                    ForEach(storyRows) { row in
+                    ForEach(rows) { row in
                         switch row.kind {
                         case .article(let article, let caption):
                             articleButton(article, caption: caption)

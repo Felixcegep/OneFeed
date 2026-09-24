@@ -88,8 +88,9 @@ struct HistoryView: View {
     }
 
     private var historyColumn: some View {
-        Group {
-            if trimmedQuery.isEmpty && days.isEmpty && notInterested.isEmpty {
+        let groupedDays = days
+        return Group {
+            if trimmedQuery.isEmpty && groupedDays.isEmpty && notInterested.isEmpty {
                 EmptyLibraryState(
                     title: "No history yet",
                     systemImage: "clock",
@@ -97,7 +98,7 @@ struct HistoryView: View {
                     actionTitle: "Open Today",
                     action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
                 )
-            } else if !trimmedQuery.isEmpty && days.isEmpty {
+            } else if !trimmedQuery.isEmpty && groupedDays.isEmpty {
                 EmptyLibraryState(
                     title: "No matches",
                     systemImage: "magnifyingglass",
@@ -126,7 +127,7 @@ struct HistoryView: View {
                         .listRowBackground(OneFeedTheme.paper)
                     }
 
-                    ForEach(days) { group in
+                    ForEach(groupedDays) { group in
                         Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 Button { selectedArticle = article } label: {

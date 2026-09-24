@@ -45,26 +45,15 @@ struct SavedView: View {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// In-memory filter of `waiting`. An empty query returns the queue unchanged.
-    private var visibleQueue: [Article] {
-        let query = searchQuery
-        guard !query.isEmpty else { return waiting }
-        return waiting.filter { article in
-            article.title.localizedStandardContains(query)
-                || article.readingNote.localizedStandardContains(query)
-                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
-        }
-    }
-
-    private var queueLayout: QueueLayout {
-        var edge = queueEdge
+    /// Sections for a queue already collapsed once this update. The subtitle counts the whole queue.
+    private func layout(of queue: [Article]) -> QueueLayout {
+        var edge = queueCache.edge
         edge = edge &* 31 &+ appliedSearch.hashValue
         if sectionCache.edge == edge { return sectionCache.layout }
-        let queue = visibleQueue
-        let featured = queue.first
-        var layout = QueueLayout(upNext: featured, subtitle: waitingSubtitle(waiting))
-        for article in queue where article.id != featured?.id {
+        let visible = filtered(queue)
+        let featured = visible.first
+        var layout = QueueLayout(upNext: featured, subtitle: waitingSubtitle(queue))
+        for article in visible where article.id != featured?.id {
             switch article.contentKind {
             case "youtube": layout.videos.append(article)
             case "podcast", "music": layout.audio.append(article)
@@ -80,6 +69,18 @@ struct SavedView: View {
         sectionCache.edge = edge
         sectionCache.layout = layout
         return layout
+    }
+
+    /// In-memory filter. An empty query returns the queue unchanged.
+    private func filtered(_ queue: [Article]) -> [Article] {
+        let query = searchQuery
+        guard !query.isEmpty else { return queue }
+        return queue.filter { article in
+            article.title.localizedStandardContains(query)
+                || article.readingNote.localizedStandardContains(query)
+                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
+                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
+        }
     }
 
     var body: some View {
@@ -100,9 +101,10 @@ struct SavedView: View {
     }
 
     private var queueColumn: some View {
-        let layout = queueLayout
+        let queue = waiting
+        let layout = layout(of: queue)
         return Group {
-            if waiting.isEmpty && searchQuery.isEmpty {
+            if queue.isEmpty && searchQuery.isEmpty {
                 empty
             } else if layout.upNext == nil && searchQuery.isEmpty == false {
                 noMatches
@@ -140,7 +142,7 @@ struct SavedView: View {
         .navigationTitle("Queue")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
-        .navigationSubtitle(waiting.isEmpty ? "" : queueLayout.subtitle)
+        .navigationSubtitle(queue.isEmpty ? "" : layout.subtitle)
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
         .toolbar {
