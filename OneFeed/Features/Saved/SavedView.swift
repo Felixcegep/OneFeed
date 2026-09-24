@@ -167,7 +167,12 @@ struct SavedView: View {
         .navigationTitle("Queue")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
-        .navigationSubtitle(layout.hasQueue ? layout.subtitle : "")
+        .navigationSubtitle(
+            QueueNavigationSubtitle.text(
+                planned: layout.subtitle,
+                storedCount: savedQuery.reduce(into: 0) { if $1.isStored { $0 += 1 } }
+            )
+        )
         .task(id: queuePlanEdge) {
             await reloadQueue()
         }
@@ -523,6 +528,15 @@ struct QueueSectionPlan: Sendable {
     var files: [UUID] = []
     var articles: [UUID] = []
     var subtitle = ""
+}
+
+/// The Queue title bar. A stored queue shows a count before the section plan arrives, so the bar does not grow.
+enum QueueNavigationSubtitle {
+    static func text(planned: String, storedCount: Int) -> String {
+        if !planned.isEmpty { return planned }
+        guard storedCount > 0 else { return "" }
+        return "\(storedCount) in queue"
+    }
 }
 
 /// Same collapse and sections as the Queue screen, from copied fields.

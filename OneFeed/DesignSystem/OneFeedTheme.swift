@@ -160,9 +160,6 @@ struct PrimaryActionStyle: ButtonStyle {
             .background(OneFeedTheme.ink.opacity(isEnabled ? 1 : 0.35), in: Capsule())
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
-            .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.55), trigger: configuration.isPressed) { _, pressed in
-                pressed
-            }
     }
 }
 
