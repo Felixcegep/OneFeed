@@ -119,6 +119,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | An empty folder said there was nothing there | Feed | Medium | The empty state described the absence and not what happens next | It says new stories from that folder will land there | Code review |
 | The librarian field sat above a gap while the keyboard was up | Librarian | Medium | A 96-point tab-bar spacer stayed under the composer after the keyboard opened | That spacer leaves while the field is focused, so the composer sits on the keyboard | Code review |
 | Settings fields sat above a gap while the keyboard was up | Settings | Medium | Every settings form kept a 96-point tab-bar inset after the keyboard covered the tab bar | A docked keyboard drops that inset. A floating keyboard leaves it, so the tab bar stays clear | `OneFeedPaletteTests.dockedKeyboardDropsTabClearance` |
+| A library change during Sync kept scheduling another push | Settings | Medium | The delayed push started a new 1.5-second wait every time it found a sync still running | One follow-up push is remembered and runs after that sync. Leaving the app during a sync does the same | Code review |
 
 ## Still open
 

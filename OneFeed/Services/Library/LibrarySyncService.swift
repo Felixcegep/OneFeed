@@ -53,6 +53,8 @@ final class LibrarySyncService {
     private var libraryFileURL: URL?
     private var isFileBookmark = false
     private var pushTask: Task<Void, Never>?
+    /// A library change arrived while a sync was already writing. One push runs after that sync.
+    private var pushAgain = false
     private var lastWrittenData: Data?
     private var presenter: LibraryFilePresenter?
     private var isApplyingRemote = false
@@ -163,6 +165,7 @@ final class LibrarySyncService {
         lastOutcome = .unlinked
         isLinked = false
         isSyncing = false
+        pushAgain = false
         status = .unlinked
     }
 
@@ -210,7 +213,7 @@ final class LibrarySyncService {
                 try? await Task.sleep(for: .milliseconds(1_500))
                 guard !Task.isCancelled else { return }
                 if isSyncing {
-                    schedulePush()
+                    pushAgain = true
                     return
                 }
                 _ = await sync(request: .automatic)
@@ -222,11 +225,18 @@ final class LibrarySyncService {
             try? await Task.sleep(for: .milliseconds(1_500))
             guard !Task.isCancelled else { return }
             if isSyncing {
-                schedulePush()
+                pushAgain = true
                 return
             }
             await pushNow()
         }
+    }
+
+    /// Runs one delayed push after the sync that was already in progress.
+    private func resumeDeferredPush() {
+        guard pushAgain else { return }
+        pushAgain = false
+        schedulePush()
     }
 
     func syncNow() async {
@@ -236,21 +246,31 @@ final class LibrarySyncService {
             return
         }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+        }
         await pullAndMerge()
         await pushNow()
     }
 
     func flush() async {
         pushTask?.cancel()
-        guard isLinked, !isSyncing else { return }
+        guard isLinked else { return }
+        if isSyncing {
+            pushAgain = true
+            return
+        }
         if usesGoogleDriveAPI {
             guard isAutoSyncEnabled else { return }
             _ = await sync(request: .automatic)
             return
         }
         isSyncing = true
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+        }
         await pushNow()
     }
 
@@ -267,7 +287,10 @@ final class LibrarySyncService {
 
         isSyncing = true
         status = .syncing
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+        }
 
         do {
             let outcome = try await performDriveSync(request: request)
