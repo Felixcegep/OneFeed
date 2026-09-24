@@ -70,13 +70,13 @@ nonisolated enum ArticleIdentity {
         normalizedURLString(url) ?? url.absoluteString
     }
 
+    /// Lists call this for every row. Do not touch `contentHTML`; that faults the stored body.
     private static func score(_ article: Article) -> Int {
         var value = 0
         if article.feed != nil { value += 8 }
         if article.remoteID != nil { value += 4 }
         if article.state == .saved || article.isRemoteStarred { value += 3 }
         if article.state == .current { value += 2 }
-        if article.contentHTML?.isEmpty == false { value += 1 }
         return value
     }
 

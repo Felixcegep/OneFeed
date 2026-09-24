@@ -57,6 +57,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Canceling Connect or the Today filter reloaded the screen | Settings, Today | Medium | The sheet’s dismiss always fetched accounts and feeds, or reread the deck | A successful connection reloads accounts. A Today filter change reloads the deck. Cancel does neither | Code review |
 | Scrolling a list downloaded the same artwork more than once | Today, Queue, Feed | High | Each row started its own full download, and ImageIO ran on the cache actor | One download serves every row of that size. Decoding happens off the actor. A row that scrolls away drops its claim, and the download stops when nobody is still waiting | Code review |
 | The updating mark redrew the screen thirty times a second | Today, Feed, Reader, Settings | High | A timeline drove the pulse for the whole refresh | The mark scales with a repeating animation, and it stays still when Reduce Motion is on | Code review |
+| Queue and Feed lists loaded every article body to hide a duplicate | Queue, Feed | High | Choosing which copy to show checked whether `contentHTML` was empty, which faults the stored body | The choice uses the feed, the sync id, and the reading state. Lists no longer open the body | Code review |
 
 ## Still open
 
