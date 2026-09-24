@@ -9,6 +9,47 @@ struct ArticleStateTests {
         try InMemoryStore.makeContext()
     }
 
+    @Test func choosingTheNextStoryKeepsBodiesOnDisk() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        setup.insert(feed)
+        let body = "<p>" + String(repeating: "word ", count: 400) + "</p>"
+        let current = Article(guid: "current", title: "Current", contentHTML: body, state: .current, feed: feed)
+        let next = Article(
+            guid: "next",
+            title: "Next",
+            publishedAt: .now.addingTimeInterval(10),
+            contentHTML: body,
+            feed: feed
+        )
+        let later = Article(
+            guid: "later",
+            title: "Later",
+            publishedAt: .now.addingTimeInterval(20),
+            contentHTML: body,
+            feed: feed
+        )
+        setup.insert(current)
+        setup.insert(next)
+        setup.insert(later)
+        try setup.save()
+
+        let context = ModelContext(container)
+        let currentValue = ArticleState.current.rawValue
+        let storedCurrent = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == currentValue })).first
+        )
+        let replacement = try ArticleQueueService().transition(storedCurrent, to: .skipped, in: context)
+        #expect(replacement?.guid == "next")
+        #expect(replacement?.contentHTML == body)
+        let laterID = later.id
+        let storedLater = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == laterID })).first
+        )
+        #expect(storedLater.contentHTML == body)
+    }
+
     @Test func duplicateCurrentArticlesAreRepairedToOneCurrent() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)

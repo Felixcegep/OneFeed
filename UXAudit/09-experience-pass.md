@@ -227,6 +227,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a saved article copied its body on the main thread | Reader | High | The page read `contentHTML` before it could sanitize off the main thread | A saved article is read on a separate store context when that store has no unsaved edits. An unsaved edit still uses the body already in memory | `ReaderFocusTests.savedReaderPageDoesNotCopyTheBodyOnTheMainThread` |
 | Refresh unpacked every video memory on the main thread | Today, Feed | High | The opt-in video pass fetched every YouTube story and every vector, then classified them on the main thread | That pass runs on the ingest actor. Article bodies stay unread. Turning the setting off leaves the memories alone | `RetentionAndExtractionTests.videoEnrichmentLeavesAPreliminaryMemoryWhenTheSettingIsOff` |
 | Closing the Today filter loaded every candidate’s body | Today | High | Rebuilding the deck fetched up to 80 full articles, including HTML, just to choose the next stories | That fetch reads identity, state, and the source. The stored body stays on disk and is still there after the deck is saved | `DailyDeckTests.todayFilterStoresTheSwitchAndRebuildsTheDeckOnce` |
+| Finishing a story loaded every queued article body | Today, Feed, Queue | High | Choosing the next current story fetched the whole queue, including HTML | That fetch reads the fields needed to pick and update the next story. A body that was not chosen stays stored | `ArticleStateTests.choosingTheNextStoryKeepsBodiesOnDisk` |
 
 ## Still open
 

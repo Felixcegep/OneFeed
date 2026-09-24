@@ -8,6 +8,8 @@ struct ArticleQueueService {
         let currentValue = ArticleState.current.rawValue
         var currentDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == currentValue })
         currentDescriptor.sortBy = [SortDescriptor(\.firstDisplayedAt, order: .forward)]
+        currentDescriptor.propertiesToFetch = Self.selectionFields
+        currentDescriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let currents = try context.fetch(currentDescriptor)
         if let current = currents.first {
             for duplicate in currents.dropFirst() {
@@ -25,6 +27,8 @@ struct ArticleQueueService {
             $0.stateRawValue == queuedValue && ($0.feed?.isEnabled ?? false)
         })
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
+        descriptor.propertiesToFetch = Self.selectionFields
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let candidates = try context.fetch(descriptor)
         let selected = candidates.first(where: { $0.feed?.id != lastDisplayedFeedID }) ?? candidates.first
         selected?.state = .current
@@ -36,6 +40,19 @@ struct ArticleQueueService {
         WidgetSnapshotStore.write(article: selected)
         return selected
     }
+
+    /// Enough to choose the next story and update its state. Article bodies stay on disk.
+    private static let selectionFields: [PartialKeyPath<Article>] = [
+        \Article.id,
+        \Article.guid,
+        \Article.title,
+        \Article.publishedAt,
+        \Article.stateRawValue,
+        \Article.firstDisplayedAt,
+        \Article.libraryUpdatedAt,
+        \Article.estimatedReadingMinutes,
+        \Article.contentKind,
+    ]
 
     @discardableResult
     func transition(
