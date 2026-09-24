@@ -251,17 +251,18 @@ private struct FolderFeedsView: View {
     var onAddInFolder: () -> Void
 
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Feed.title) private var storedFeeds: [Feed]
     @State private var appliedSearch = ""
 
     private var otherFolders: [String] {
-        viewModel.folderNames.filter { name in
+        FolderStore.allNames(from: storedFeeds).filter { name in
             guard case .named(let current) = folderID else { return true }
             return name.caseInsensitiveCompare(current) != .orderedSame
         }
     }
 
     private var visibleFeeds: [Feed] {
-        let feeds = viewModel.feeds(in: folderID)
+        let feeds = viewModel.feeds(in: folderID, from: storedFeeds)
         let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return feeds }
         return feeds.filter {

@@ -307,6 +307,16 @@ struct FeedAndFreshRSSDomainTests {
         #expect(model.feeds.isEmpty)
     }
 
+    @Test func aFolderListsSourcesBeforeTheSourceFetch() {
+        let model = SourcesViewModel()
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)
+        let loaded = [development, loose]
+        #expect(model.feeds(in: .named("Development"), from: loaded).map(\.title) == ["Swift"])
+        #expect(model.feeds(in: .unfiled, from: loaded).map(\.title) == ["Loose"])
+        #expect(model.feeds.isEmpty)
+    }
+
     private func folderStorySnap(_ article: Article) -> FolderStorySnap {
         FolderStorySnap(
             feedID: article.feed?.id,

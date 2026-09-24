@@ -62,7 +62,12 @@ final class SourcesViewModel {
     var folderNames: [String] { FolderStore.allNames(from: feeds) }
 
     func feeds(in folderID: FeedFolderID) -> [Feed] {
-        folders.first(where: { $0.folderID == folderID })?.feeds ?? []
+        feeds(in: folderID, from: feeds)
+    }
+
+    /// Sources in one folder from the feeds already loaded, before `reload()` fetches again.
+    func feeds(in folderID: FeedFolderID, from feeds: [Feed]) -> [Feed] {
+        folders(matching: feeds).first { $0.folderID == folderID }?.feeds ?? []
     }
 
     func createFolder() {
