@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.readerTextSize) private var readerTextSize = ReaderTextSize.standard.rawValue
     @AppStorage(AppPreferenceKey.readerFocusMode) private var readerFocusMode = ReaderFocusMode.smart.rawValue
     @AppStorage(AppPreferenceKey.articleRetentionDays) private var retentionDays = ArticleRetentionService.defaultRetentionDays
+    @AppStorage(AppPreferenceKey.semanticVideoEnrichment) private var semanticVideoEnrichment = false
     @State private var viewModel = SettingsViewModel()
     @State private var geminiKey = ""
     @State private var library = LibrarySyncService.shared
@@ -178,13 +179,14 @@ struct SettingsView: View {
                     GeminiAPIKeyStore.delete()
                 }
             }
+            Toggle("Tell similar videos apart", isOn: $semanticVideoEnrichment)
             NavigationLink("Librarian") {
                 ExperimentalLibrarianView()
             }
         } header: {
             GallerySectionHeader(text: "Gemini")
         } footer: {
-            Text("When you open a YouTube video, OneFeed asks before sending the link to Google AI Studio for a short summary.")
+            Text("When you open a YouTube video, OneFeed asks before sending the link to Google AI Studio for a short summary. Tell similar videos apart sends YouTube links to Gemini in the background so OneFeed can group the same story.")
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)

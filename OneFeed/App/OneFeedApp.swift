@@ -20,6 +20,7 @@ struct OneFeedApp: App {
             DailyDeck.self,
             DailyDeckItem.self,
             NotInterestedEntry.self,
+            ContentMemory.self,
         ])
         URLCache.shared = URLCache(
             memoryCapacity: 32 * 1024 * 1024,

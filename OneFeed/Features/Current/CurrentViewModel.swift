@@ -107,6 +107,7 @@ final class CurrentViewModel {
             }
             apply(item: next, totalCount: item.deck?.items.count ?? totalCount)
             Task { await ArticleExtractionService().enrichUpcoming(in: context, from: next) }
+            Task(priority: .utility) { await SemanticEnrichment.enrichUpcoming(in: context) }
         } catch {
             presentedError = RefreshFailure.message(for: error)
         }
@@ -172,6 +173,7 @@ final class CurrentViewModel {
         Task(priority: .utility) {
             let current = try? self.deckService.currentItem(in: context)
             await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
+            await SemanticEnrichment.enrichUpcoming(in: context)
         }
     }
 

@@ -106,6 +106,88 @@ struct GeminiInteractionReply: Equatable, Sendable {
     var text: String
 }
 
+/// Short structured reading of a video, kept separate from the reader's essay summary.
+nonisolated struct SemanticVideoSummary: Sendable, Equatable {
+    var mainSubject: String
+    var summary: [String]
+    var topics: [String]
+    var contentType: String
+
+    var compactText: String {
+        let lines = summary.joined(separator: "\n")
+        let topicsLine = topics.joined(separator: ", ")
+        return "TITLE:\n\(mainSubject)\n\nSUMMARY:\n\(lines)\n\nKEY TOPICS:\n\(topicsLine)"
+    }
+
+    static func parse(from text: String) throws -> SemanticVideoSummary {
+        let payload = jsonObjectText(from: text)
+        guard let data = payload.data(using: .utf8) else {
+            throw GeminiClientError.api("Gemini returned an unreadable semantic summary.")
+        }
+        let object: [String: Any]
+        do {
+            guard let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw GeminiClientError.api("Gemini returned an unreadable semantic summary.")
+            }
+            object = parsed
+        } catch let error as GeminiClientError {
+            throw error
+        } catch {
+            throw GeminiClientError.api("Gemini returned an unreadable semantic summary.")
+        }
+        guard let mainSubject = trimmedString(object["main_subject"]),
+              let summary = stringArray(object["summary"]),
+              let topics = stringArray(object["topics"]),
+              let contentType = trimmedString(object["content_type"]) else {
+            throw GeminiClientError.api("Gemini returned an unreadable semantic summary.")
+        }
+        return SemanticVideoSummary(
+            mainSubject: mainSubject,
+            summary: summary,
+            topics: topics,
+            contentType: contentType
+        )
+    }
+
+    private static func jsonObjectText(from text: String) -> String {
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("```") {
+            if let newline = value.firstIndex(of: "\n") {
+                value = String(value[value.index(after: newline)...])
+            } else {
+                value = ""
+            }
+            if let range = value.range(of: "```", options: .backwards) {
+                value = String(value[..<range.lowerBound])
+            }
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let start = value.firstIndex(of: "{"),
+              let end = value.lastIndex(of: "}"),
+              start <= end else {
+            return value
+        }
+        return String(value[start...end])
+    }
+
+    private static func trimmedString(_ value: Any?) -> String? {
+        guard let string = value as? String else { return nil }
+        return string.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func stringArray(_ value: Any?) -> [String]? {
+        guard let values = value as? [Any] else { return nil }
+        var lines: [String] = []
+        lines.reserveCapacity(values.count)
+        for value in values {
+            guard let string = value as? String else { return nil }
+            let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { lines.append(trimmed) }
+        }
+        return lines
+    }
+}
+
 protocol GeminiConversing: Sendable {
     func generateLibrarian(contentsJSON: Data, systemInstruction: String) async throws -> GeminiGenerateResult
 }
@@ -135,6 +217,16 @@ nonisolated struct GeminiClient: Sendable {
     Do not add anything that is not in the video.
     """
 
+    static let semanticSummaryPrompt = """
+    Return only JSON. Do not write a markdown essay. Timestamps are not required.
+    Use the same language as the video for the values. The JSON keys stay English:
+    main_subject (string), summary (array of short strings), topics (array of strings), content_type (string).
+    main_subject is the one thing the video is about.
+    summary is a few short lines, not a transcript.
+    topics are the specific subjects that tell this video apart from another on a similar title.
+    content_type is a short label such as news, tutorial, interview, or opinion.
+    """
+
     private let session: URLSession
     private let apiKey: @Sendable () -> String?
 
@@ -155,6 +247,28 @@ nonisolated struct GeminiClient: Sendable {
                     previousInteractionIDSent: false,
                     emptyError: .emptySummary
                 )
+            } catch {
+                lastError = error
+                if case GeminiClientError.missingAPIKey = error { throw error }
+                guard Self.failureIsModelUnavailable(error) else { throw error }
+            }
+        }
+        throw lastError
+    }
+
+    func semanticSummary(for url: URL) async throws -> SemanticVideoSummary {
+        guard let key = apiKey(), !key.isEmpty else { throw GeminiClientError.missingAPIKey }
+        var lastError: Error = GeminiClientError.api("Gemini could not summarize this video.")
+        for model in Self.models {
+            do {
+                let body = Self.semanticSummaryBody(model: model, videoURL: url)
+                let reply = try await postInteraction(
+                    body: body,
+                    apiKey: key,
+                    previousInteractionIDSent: false,
+                    emptyError: .emptySummary
+                )
+                return try SemanticVideoSummary.parse(from: reply.text)
             } catch {
                 lastError = error
                 if case GeminiClientError.missingAPIKey = error { throw error }
@@ -247,6 +361,13 @@ nonisolated struct GeminiClient: Sendable {
             textPart(summaryPrompt),
             videoPart(videoURL)
         ], maxOutputTokens: 2048)
+    }
+
+    static func semanticSummaryBody(model: String, videoURL: URL) -> [String: Any] {
+        videoBody(model: model, input: [
+            textPart(semanticSummaryPrompt),
+            videoPart(videoURL)
+        ])
     }
 
     static func askYouTubeFollowUpBody(

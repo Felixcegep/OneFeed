@@ -61,6 +61,7 @@ enum BackgroundRefreshCoordinator {
         }
         let current = try? DailyDeckService().currentItem(in: context)
         await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: 0)
+        Task(priority: .utility) { await SemanticEnrichment.enrichUpcoming(in: context) }
         await LibrarySyncService.shared.flush()
     }
 

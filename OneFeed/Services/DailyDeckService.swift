@@ -15,7 +15,13 @@ struct DailyDeckService {
         let deck = DailyDeck(dayStart: dayStart(for: .now), createdAt: .now)
         context.insert(deck)
 
-        let selected = selectCandidates(from: try fetchCandidates(in: context), maxItems: maxItems, alreadySelected: [])
+        let placements = try storyPlacements(in: context)
+        let selected = selectCandidates(
+            from: try fetchCandidates(in: context),
+            maxItems: maxItems,
+            alreadySelected: [],
+            placements: placements
+        )
         for (index, article) in selected.enumerated() {
             let status: ArticleState = index == 0 ? .current : .queued
             let item = DailyDeckItem(position: index + 1, status: status, article: article, deck: deck)
@@ -164,11 +170,13 @@ struct DailyDeckService {
         let room = max(0, maxItems - live.count)
         if room > 0 {
             let taken = Set(live.compactMap { $0.article?.id })
+            let placements = try storyPlacements(in: context)
             let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
             let selected = selectCandidates(
                 from: pool,
                 maxItems: room,
-                alreadySelected: live.compactMap(\.article)
+                alreadySelected: live.compactMap(\.article),
+                placements: placements
             )
             var placedCurrent = live.contains { $0.status == .current }
             var position = live.map(\.position).max() ?? 0
@@ -229,17 +237,41 @@ struct DailyDeckService {
         }
     }
 
+    nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
+        let memories = try context.fetch(FetchDescriptor<ContentMemory>())
+        var lookup: [String: StoryPlacement] = [:]
+        lookup.reserveCapacity(memories.count)
+        for memory in memories {
+            lookup[memory.identityKey] = StoryPlacement(
+                relationshipRaw: memory.relationshipRaw,
+                storyClusterID: memory.storyClusterID
+            )
+        }
+        return lookup
+    }
+
     nonisolated private static func selectCandidates(
         from candidates: [Article],
         maxItems: Int,
-        alreadySelected: [Article]
+        alreadySelected: [Article],
+        placements: [String: StoryPlacement] = [:]
     ) -> [Article] {
+        let collapsed: Set<String> = [
+            ContentRelationship.exactDuplicate.rawValue,
+            ContentRelationship.nearDuplicate.rawValue,
+        ]
+        let eligible = candidates.filter { article in
+            guard let placement = placements[ArticleIdentity.identityKey(for: article)] else { return true }
+            return !collapsed.contains(placement.relationshipRaw)
+        }
+
         var selected: [Article] = []
         var feedCounts: [UUID: Int] = [:]
         var lastTwoFeedIDs: [UUID] = []
+        var usedClusters = Set<UUID>()
 
-        for article in alreadySelected {
-            guard let feedID = article.feed?.id else { continue }
+        func noteFeed(_ article: Article) {
+            guard let feedID = article.feed?.id else { return }
             feedCounts[feedID, default: 0] += 1
             lastTwoFeedIDs.append(feedID)
             if lastTwoFeedIDs.count > 2 {
@@ -247,21 +279,37 @@ struct DailyDeckService {
             }
         }
 
-        for article in candidates {
+        func noteCluster(_ article: Article) {
+            guard let clusterID = placements[ArticleIdentity.identityKey(for: article)]?.storyClusterID else { return }
+            usedClusters.insert(clusterID)
+        }
+
+        for article in alreadySelected {
+            noteFeed(article)
+            noteCluster(article)
+        }
+
+        for article in eligible {
             guard selected.count < maxItems, let feedID = article.feed?.id else { continue }
             guard (feedCounts[feedID] ?? 0) < 2 else { continue }
             if lastTwoFeedIDs.count == 2, lastTwoFeedIDs[0] == feedID, lastTwoFeedIDs[1] == feedID {
                 continue
             }
+            if let clusterID = placements[ArticleIdentity.identityKey(for: article)]?.storyClusterID,
+               usedClusters.contains(clusterID) {
+                continue
+            }
 
             selected.append(article)
-            feedCounts[feedID, default: 0] += 1
-            lastTwoFeedIDs.append(feedID)
-            if lastTwoFeedIDs.count > 2 {
-                lastTwoFeedIDs.removeFirst()
-            }
+            noteFeed(article)
+            noteCluster(article)
         }
 
         return selected
     }
+}
+
+nonisolated struct StoryPlacement: Sendable {
+    var relationshipRaw: String
+    var storyClusterID: UUID?
 }

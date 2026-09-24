@@ -585,9 +585,11 @@ private struct FeedRootDirectory {
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
+    @Query private var memories: [ContentMemory]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
     @State private var searchText = ""
+    @State private var expandedClusterIDs: Set<UUID> = []
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
@@ -615,6 +617,14 @@ struct ArticleCollectionView: View {
         }
     }
 
+    private var storyRows: [FeedStoryRow] {
+        StoryGrouping.rows(
+            from: items.filter(\.isStored),
+            memories: memories,
+            expandedClusterIDs: expandedClusterIDs
+        )
+    }
+
     var body: some View {
         OneFeedReadingSplit(article: $selectedArticle) {
             collectionColumn
@@ -634,7 +644,7 @@ struct ArticleCollectionView: View {
 
     private var collectionColumn: some View {
         Group {
-            if items.isEmpty {
+            if storyRows.isEmpty {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
@@ -642,13 +652,13 @@ struct ArticleCollectionView: View {
                 )
             } else {
                 List {
-                    ForEach(items.filter(\.isStored)) { article in
-                        Button { selectedArticle = article } label: {
-                            ArticleRow(article: article)
+                    ForEach(storyRows) { row in
+                        switch row.kind {
+                        case .article(let article, let caption):
+                            articleButton(article, caption: caption)
+                        case .moreSources(let clusterID, let count):
+                            moreSourcesButton(clusterID: clusterID, count: count)
                         }
-                        .buttonStyle(DirectoryRowButtonStyle())
-                        .articleListRow(isCurrent: article.isCurrentReading, isSelected: selectedArticle?.id == article.id)
-                        .articleActions(for: article, in: modelContext)
                     }
                 }
                 .oneFeedGroupedListStyle()
@@ -659,6 +669,35 @@ struct ArticleCollectionView: View {
         .oneFeedPaperToolbar()
         .background(OneFeedTheme.plaster)
         .searchable(text: $searchText, prompt: "Search articles")
+    }
+
+    private func articleButton(_ article: Article, caption: String?) -> some View {
+        Button { selectedArticle = article } label: {
+            ArticleRow(article: article, status: caption)
+        }
+        .buttonStyle(DirectoryRowButtonStyle())
+        .articleListRow(isCurrent: article.isCurrentReading, isSelected: selectedArticle?.id == article.id)
+        .articleActions(for: article, in: modelContext)
+    }
+
+    private func moreSourcesButton(clusterID: UUID, count: Int) -> some View {
+        let title = StoryGrouping.moreSourcesTitle(count: count)
+        return Button {
+            if expandedClusterIDs.contains(clusterID) {
+                expandedClusterIDs.remove(clusterID)
+            } else {
+                expandedClusterIDs.insert(clusterID)
+            }
+        } label: {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(OneFeedTheme.graphite)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+        }
+        .buttonStyle(DirectoryRowButtonStyle())
+        .articleListRow()
+        .accessibilityLabel(title)
     }
 
     private var emptyTitle: String {

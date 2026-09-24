@@ -29,6 +29,49 @@ struct GeminiVideoInteractionTests {
         #expect(!reply.text.contains("Planning"))
     }
 
+    @Test func semanticSummaryPromptIsNotTheEssay() throws {
+        let url = URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
+        let essay = try promptText(in: GeminiClient.summarizeYouTubeBody(model: "gemini-3.8-flash", videoURL: url))
+        let semantic = try promptText(in: GeminiClient.semanticSummaryBody(model: "gemini-3.8-flash", videoURL: url))
+
+        #expect(semantic == GeminiClient.semanticSummaryPrompt)
+        #expect(semantic != essay)
+        #expect(semantic.contains("main_subject"))
+        #expect(semantic.contains("content_type"))
+        #expect(!semantic.contains("Not an outline, and not a transcript."))
+        #expect(!essay.contains("main_subject"))
+    }
+
+    @Test func semanticSummaryParsesJSONIntoCompactText() throws {
+        let raw = """
+        ```json
+        {"main_subject":"Battery wear","summary":["Cells dry out.","Heat speeds it up."],"topics":["lithium","heat"],"content_type":"explainer"}
+        ```
+        """
+        let parsed = try SemanticVideoSummary.parse(from: raw)
+        #expect(parsed.mainSubject == "Battery wear")
+        #expect(parsed.summary == ["Cells dry out.", "Heat speeds it up."])
+        #expect(parsed.topics == ["lithium", "heat"])
+        #expect(parsed.contentType == "explainer")
+        #expect(parsed.compactText == """
+        TITLE:
+        Battery wear
+
+        SUMMARY:
+        Cells dry out.
+        Heat speeds it up.
+
+        KEY TOPICS:
+        lithium, heat
+        """)
+    }
+
+    @Test func semanticSummaryParseRejectsProse() {
+        #expect(throws: GeminiClientError.api("Gemini returned an unreadable semantic summary.")) {
+            try SemanticVideoSummary.parse(from: "Here is an essay about the video.")
+        }
+    }
+
     @Test func summarizeBodySendsVideoAndSectionPrompt() throws {
         let url = URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!
         let body = GeminiClient.summarizeYouTubeBody(model: "gemini-3.8-flash", videoURL: url)
@@ -111,6 +154,12 @@ struct GeminiVideoInteractionTests {
         #expect(texts.contains("User: Who ran the experiment?"))
         #expect(texts.contains("What was the result?"))
         #expect(object["previous_interaction_id"] == nil)
+    }
+
+    private func promptText(in body: [String: Any]) throws -> String {
+        let object = try jsonObject(body)
+        let input = try #require(object["input"] as? [[String: Any]])
+        return input.compactMap { $0["text"] as? String }.joined(separator: "\n")
     }
 
     private func jsonObject(_ body: [String: Any]) throws -> [String: Any] {

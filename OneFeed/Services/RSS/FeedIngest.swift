@@ -213,7 +213,13 @@ extension LibraryIngestActor {
             if offset > 0, offset.isMultiple(of: 24) {
                 await Task.yield()
             }
-            if let existing = index.existing(url: parsed.url, guid: parsed.guid, feedID: feed.id) {
+            if let existing = index.existing(
+                url: parsed.url,
+                guid: parsed.guid,
+                feedID: feed.id,
+                videoID: YouTubeProcessor.parseVideoID(from: parsed.url)
+                    ?? YouTubeProcessor.parseVideoID(fromGUID: parsed.guid)
+            ) {
                 if existing.feed == nil { existing.feed = feed }
                 continue
             }

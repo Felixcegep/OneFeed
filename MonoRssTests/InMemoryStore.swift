@@ -7,6 +7,7 @@ enum InMemoryStore {
         let schema = Schema([
             Feed.self, Article.self, SyncAccount.self, PendingSyncMutation.self,
             DailyDeck.self, DailyDeckItem.self, NotInterestedEntry.self,
+            ContentMemory.self,
         ])
         let configuration = ModelConfiguration(
             UUID().uuidString,

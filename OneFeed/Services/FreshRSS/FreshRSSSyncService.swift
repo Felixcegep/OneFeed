@@ -301,7 +301,9 @@ extension LibraryIngestActor {
             url: snapshot.url,
             guid: snapshot.guid,
             feedID: feed.id,
-            remoteID: snapshot.remoteID
+            remoteID: snapshot.remoteID,
+            videoID: YouTubeProcessor.parseVideoID(from: snapshot.url)
+                ?? YouTubeProcessor.parseVideoID(fromGUID: snapshot.guid)
         )
         let article = existing ?? Article(guid: snapshot.guid, title: snapshot.title, feed: feed)
         let isNew = existing == nil

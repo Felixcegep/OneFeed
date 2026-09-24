@@ -55,7 +55,10 @@ nonisolated enum ArticleIdentity {
     }
 
     static func identityKey(for article: Article) -> String {
-        libraryKey(url: article.url, guid: article.guid, id: article.id)
+        if let videoID = article.videoID, !videoID.isEmpty {
+            return "video:\(videoID)"
+        }
+        return libraryKey(url: article.url, guid: article.guid, id: article.id)
     }
 
     static func libraryKey(url: URL?, guid: String, id: UUID) -> String {
@@ -105,24 +108,38 @@ nonisolated enum ArticleIdentity {
 
     private static func mergeDuplicateArticles(in context: ModelContext) throws -> Int {
         let articles = try context.fetch(FetchDescriptor<Article>())
-        var groups: [String: [Article]] = [:]
+        var videoGroups: [String: [Article]] = [:]
+        var urlGroups: [String: [Article]] = [:]
         for article in articles {
-            guard let url = normalizedURLString(article.url) else { continue }
-            groups[url, default: []].append(article)
-        }
-        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
-        var removed = 0
-        for group in groups.values where group.count > 1 {
-            let keeper = preferred(in: group)
-            for duplicate in group where duplicate.id != keeper.id {
-                absorb(duplicate, into: keeper)
-                for item in deckItems where item.article?.id == duplicate.id {
-                    item.article = keeper
-                }
-                context.delete(duplicate)
-                removed += 1
+            if let videoID = article.videoID, !videoID.isEmpty {
+                videoGroups[videoID, default: []].append(article)
+            } else if let url = normalizedURLString(article.url) {
+                urlGroups[url, default: []].append(article)
             }
         }
+        let deckItems = (try? context.fetch(FetchDescriptor<DailyDeckItem>())) ?? []
+        var removedIDs = Set<UUID>()
+        var removed = 0
+
+        func merge(_ groups: [String: [Article]]) {
+            for group in groups.values where group.count > 1 {
+                let alive = group.filter { !removedIDs.contains($0.id) }
+                guard alive.count > 1 else { continue }
+                let keeper = preferred(in: alive)
+                for duplicate in alive where duplicate.id != keeper.id {
+                    absorb(duplicate, into: keeper)
+                    for item in deckItems where item.article?.id == duplicate.id {
+                        item.article = keeper
+                    }
+                    context.delete(duplicate)
+                    removedIDs.insert(duplicate.id)
+                    removed += 1
+                }
+            }
+        }
+
+        merge(videoGroups)
+        merge(urlGroups)
         return removed
     }
 
@@ -161,6 +178,7 @@ nonisolated struct ArticleIdentityIndex {
     private var byNormalizedURL: [String: Article] = [:]
     private var byFeedAndGUID: [String: Article] = [:]
     private var byRemoteID: [String: Article] = [:]
+    private var byVideoID: [String: Article] = [:]
 
     init(articles: [Article] = []) {
         for article in articles { register(article) }
@@ -182,10 +200,26 @@ nonisolated struct ArticleIdentityIndex {
                 byRemoteID[remoteID] = article
             }
         }
+        if let videoID = article.videoID, !videoID.isEmpty {
+            if let existing = byVideoID[videoID] {
+                byVideoID[videoID] = ArticleIdentity.preferred(in: [existing, article])
+            } else {
+                byVideoID[videoID] = article
+            }
+        }
     }
 
-    func existing(url: URL?, guid: String, feedID: UUID, remoteID: String? = nil) -> Article? {
+    func existing(
+        url: URL?,
+        guid: String,
+        feedID: UUID,
+        remoteID: String? = nil,
+        videoID: String? = nil
+    ) -> Article? {
         if let remoteID, let found = byRemoteID[remoteID] {
+            return found
+        }
+        if let videoID, !videoID.isEmpty, let found = byVideoID[videoID] {
             return found
         }
         if let key = ArticleIdentity.normalizedURLString(url), let found = byNormalizedURL[key] {

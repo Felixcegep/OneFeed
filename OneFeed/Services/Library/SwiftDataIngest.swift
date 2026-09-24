@@ -11,8 +11,9 @@ actor LibraryIngestActor {
         }
     }
 
-    func finishToday() throws {
+    func finishToday() async throws {
         modelContext.autosaveEnabled = false
+        try await SemanticMemoryPass.prepare(in: modelContext)
         _ = try DailyDeckService.generateIfNeeded(in: modelContext, persist: false)
         _ = try ArticleRetentionService.purge(in: modelContext, persist: false)
         try persistIfNeeded()

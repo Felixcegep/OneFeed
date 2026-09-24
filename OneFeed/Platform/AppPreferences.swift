@@ -76,6 +76,7 @@ enum AppPreferenceKey {
     static let libraryTombstones = "libraryTombstones"
     static let libraryDisplayName = "libraryDisplayName"
     static let cloudFileLinkRecord = "cloudFileLinkRecord"
+    static let semanticVideoEnrichment = "semanticVideoEnrichment"
 }
 
 /// Folder names the user created (even before any feed is filed there).
