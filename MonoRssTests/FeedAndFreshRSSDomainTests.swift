@@ -342,6 +342,37 @@ struct FeedAndFreshRSSDomainTests {
         )
     }
 
+    @Test func feedSearchMatchesTheSummarySample() {
+        let feed = Feed(title: "Aeon", feedURL: URL(string: "https://aeon.co/feed")!)
+        let article = Article(
+            guid: "glacier",
+            title: "A quiet title",
+            summary: "<p>A unique glacier note sits in the feed blurb.</p>",
+            state: .queued,
+            feed: feed
+        )
+        var sampled = storyListSnap(article)
+        sampled.summary = ContentClassifier.cardExcerptSample(article.summary)
+        let hits = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [sampled],
+            placements: [:],
+            expanded: [],
+            query: "glacier"
+        )
+        #expect(hits.count == 1)
+        let open = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [sampled],
+            placements: [:],
+            expanded: [],
+            query: ""
+        )
+        #expect(open.count == 1)
+    }
+
     @Test func parserReadsEnclosureAndYouTubeItem() throws {
         let xml = """
         <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Media</title>

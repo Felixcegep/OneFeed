@@ -210,6 +210,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The featured card stripped its summary while the screen was drawing | Today, Queue | High | The first paint ran the HTML excerpt on the main thread | The preview is built off the main thread and arrives with the card. Today draws the title first, then fills the preview in with the captions | `FeedAndFreshRSSDomainTests.displayExcerptPrefersAISummary` |
 | Opening a video copied its whole summary to choose the reader | Reader | Medium | The mode check trimmed the summary before the page could appear | The check stops at the first visible character. A blank summary still opens the website | `ReaderFocusTests.youtubeWithVisibleSummaryOpensInTheReader` |
 | The reader trimmed the video summary on every redraw | Reader | Medium | The summary offer checked emptiness by copying the whole summary | The offer stops at the first visible character. A blank summary still asks to summarize | `ReaderFocusTests.youtubeWithVisibleSummaryOpensInTheReader` |
+| Opening Feed copied every story summary | Feed | High | The row plan copied each summary and video summary even when search was empty | An empty search leaves those fields unread. A search copies only the preview sample, and that sample still matches the blurb | `FeedAndFreshRSSDomainTests.feedSearchMatchesTheSummarySample` |
 
 ## Still open
 

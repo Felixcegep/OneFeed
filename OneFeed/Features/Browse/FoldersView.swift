@@ -784,6 +784,7 @@ struct ArticleCollectionView: View {
         let edge = storyEdge
         let destination = destination
         let feedsByID = Dictionary(feeds.map { ($0.id, FolderFeedSnap(id: $0.id, memberships: $0.memberships)) }, uniquingKeysWith: { first, _ in first })
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         let snaps = articles.map { article in
             StoryListSnap(
                 id: article.id,
@@ -791,8 +792,8 @@ struct ArticleCollectionView: View {
                 feedTitle: article.feed?.title,
                 publishedAt: article.publishedAt,
                 title: article.title,
-                aiSummary: article.aiSummary,
-                summary: article.summary,
+                aiSummary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.aiSummary),
+                summary: query.isEmpty ? nil : ContentClassifier.cardExcerptSample(article.summary),
                 videoID: article.videoID,
                 url: article.url,
                 guid: article.guid,
@@ -803,7 +804,6 @@ struct ArticleCollectionView: View {
         }
         let placements = storyPlacements
         let expanded = expandedClusterIDs
-        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         let now = Date()
         let plans = await Task.detached(priority: .userInitiated) {
             StoryListPlan.rows(
