@@ -167,6 +167,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Caught up played a second success haptic when the burst ended | Today | Medium | The haptic followed `celebrateClear` in both directions, and the timer was not cancelled with the screen | The haptic plays only when the burst starts. Leaving Today cancels the timer | Code review |
 | Add Source played a second haptic and could dismiss again after the sheet was already closed | Add Source | Medium | The success flag changed both ways, and the wait lived in a task the sheet did not own | The haptic plays when the added mark appears. Closing the sheet cancels the wait | Code review |
 | Add to Queue could close the next screen after the sheet was already gone | Queue | Medium | The import finished in a task the sheet did not own, then called dismiss | The import still finishes and refreshes Queue. It dismisses only while the sheet is still up | Code review |
+| Close stayed available while Done, Skip, or Queue was already finishing | Reader | Medium | The other actions locked during the decision, and Close did not | Close is unavailable until that finish completes or fails | Code review |
+| Connect could dismiss Settings after the FreshRSS sheet was already closed | Settings | Medium | A successful connect always called dismiss | The account still saves. The sheet dismisses only while it is still up | Code review |
 
 ## Still open
 

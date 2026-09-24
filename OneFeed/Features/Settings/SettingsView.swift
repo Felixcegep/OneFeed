@@ -392,6 +392,7 @@ private struct FreshRSSConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: FreshRSSConnectViewModel
+    @State private var stillPresented = true
     var onConnected: () -> Void = {}
 
     init(existingAccount: SyncAccount?, onConnected: @escaping () -> Void = {}) {
@@ -440,6 +441,7 @@ private struct FreshRSSConnectView: View {
                             Task {
                                 if await viewModel.connect(in: modelContext) {
                                     onConnected()
+                                    guard stillPresented else { return }
                                     dismiss()
                                 }
                             }
@@ -448,6 +450,7 @@ private struct FreshRSSConnectView: View {
                 }
             }
         }
+        .onDisappear { stillPresented = false }
         .oneFeedMacFormSheet()
     }
 }

@@ -121,6 +121,7 @@ struct ReaderView: View {
             .toolbar {
                 ToolbarItem(placement: .oneFeedLeading) {
                     Button("Close", systemImage: "xmark") { closeReader() }
+                        .disabled(decision != nil)
                         .accessibilityHint("Closes the reader without changing this article")
                 }
                 ToolbarItem(placement: .principal) {
@@ -538,6 +539,7 @@ struct ReaderView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(decision != nil)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
             .keyboardShortcut(.cancelAction)
