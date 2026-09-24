@@ -67,6 +67,8 @@ enum ReaderFocus {
     static let defaultIntensity = 0.55
     static let minimumZoneY = 0.28
     static let maximumZoneY = 0.52
+    /// How often an open reader asks the page where you are. Leaving and backgrounding still save immediately.
+    static let trailSnapshotInterval: Duration = .seconds(12)
 
     static func clampZone(_ value: Double) -> Double {
         min(maximumZoneY, max(minimumZoneY, value))
@@ -74,6 +76,13 @@ enum ReaderFocus {
 
     static func clampIntensity(_ value: Double) -> Double {
         min(1, max(0, value))
+    }
+
+    /// The first pause lets a ready page settle. Later pauses grow so a slow page does not wake the reader on a tight loop.
+    static func pageSettlePause(after poll: Int) -> Duration {
+        if poll <= 0 { return .milliseconds(80) }
+        let shift = min(max(poll - 1, 0), 3)
+        return .milliseconds(min(1_000, 160 << shift))
     }
 
     /// Gap between the “You stopped here” cue and the restored block.

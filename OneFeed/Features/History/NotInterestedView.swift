@@ -36,7 +36,7 @@ struct NotInterestedView: View {
                 EmptyLibraryState(
                     title: "Nothing set aside",
                     systemImage: "hand.thumbsdown",
-                    description: "Articles you mark not interested stay here, grouped by source."
+                    description: "Skip a story, then choose Not interested. Those articles stay here, grouped by source."
                 )
             } else {
                 List {

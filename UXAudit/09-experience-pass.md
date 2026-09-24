@@ -161,6 +161,9 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A FreshRSS change was stored before the story save finished | Today, Queue, Feed | High | The pending sync row was saved on its own, so a failed story write could still sync | The sync row stays with the story until that save succeeds. A rollback drops it | `SwiftDataFreshRSSSyncTests.aRolledBackSaveDropsTheQueuedMutation` |
 | Folder editing rebuilt the source list on every keystroke | Feed | Medium | The suggestion rows used the live field | Suggestions wait 180ms. A pasted address still shows Add immediately, and clearing the field clears the suggestions at once | Code review |
 | Done, Skip, Queue, or Not interested on a row failed with no explanation | Today, Feed, Queue | High | The swipe and menu discarded the save error | The row stays, and an alert explains the failure | Code review |
+| The reader asked the page where you were every few seconds | Reader | Medium | A 2.5s loop ran JavaScript while you were scrolling | The open reader checks every 12s. Leaving the story or backgrounding the app still saves the place immediately | `ReaderFocusTests.pageSettleWaitsGrowThenLevelOff` |
+| A slow page woke the reader on a tight loop | Reader | Medium | Loading polled every 160ms until an 8s cap | The first pause stays 80ms. Later pauses grow to one second | `ReaderFocusTests.pageSettleWaitsGrowThenLevelOff` |
+| An empty Not interested list did not say what to do | Not interested | Low | The empty state described the list and stopped | It says to skip a story, then choose Not interested | Code review |
 
 ## Still open
 

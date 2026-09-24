@@ -864,11 +864,12 @@ private struct ReaderBarGlyph: View {
 private func waitForPageSettled(_ page: WebPage) async {
     let clock = ContinuousClock()
     let start = clock.now
-    try? await Task.sleep(for: .milliseconds(80))
+    var poll = 0
     while !Task.isCancelled {
+        try? await Task.sleep(for: ReaderFocus.pageSettlePause(after: poll))
         if !page.isLoading { return }
         if clock.now - start > .seconds(8) { return }
-        try? await Task.sleep(for: .milliseconds(160))
+        poll += 1
     }
 }
 
@@ -1029,7 +1030,7 @@ private struct ReaderWebContent: View {
             .task(id: scenePhase) {
                 guard scenePhase == .active else { return }
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(2.5))
+                    try? await Task.sleep(for: ReaderFocus.trailSnapshotInterval)
                     if Task.isCancelled { return }
                     scheduleTrailPersist()
                 }

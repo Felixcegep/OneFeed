@@ -44,6 +44,16 @@ struct ReaderFocusTests {
         #expect(!script.contains("Math.max(12, box.top - 26)"))
     }
 
+    @Test func pageSettleWaitsGrowThenLevelOff() {
+        #expect(ReaderFocus.pageSettlePause(after: 0) == .milliseconds(80))
+        #expect(ReaderFocus.pageSettlePause(after: 1) == .milliseconds(160))
+        #expect(ReaderFocus.pageSettlePause(after: 2) == .milliseconds(320))
+        #expect(ReaderFocus.pageSettlePause(after: 3) == .milliseconds(640))
+        #expect(ReaderFocus.pageSettlePause(after: 4) == .milliseconds(1_000))
+        #expect(ReaderFocus.pageSettlePause(after: 12) == .milliseconds(1_000))
+        #expect(ReaderFocus.trailSnapshotInterval >= .seconds(8))
+    }
+
     @Test func defaultZoneSitsBetweenTopAndMiddle() {
         #expect(ReaderFocus.defaultZoneY == 0.37)
         #expect(ReaderFocus.clampZone(0) == ReaderFocus.minimumZoneY)
