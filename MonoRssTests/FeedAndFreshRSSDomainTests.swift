@@ -288,7 +288,18 @@ struct FeedAndFreshRSSDomainTests {
             ArticleIdentity.identityKey(for: similar): StoryPlacement(relationshipRaw: ContentRelationship.related.rawValue, matchedConsumedAt: readAt),
         ]
 
-        let rows = StoryGrouping.rows(from: [newest, copy, similar], placements: placements, expandedClusterIDs: [])
+        let now = Date()
+        let rows = StoryGrouping.rows(from: [newest, copy, similar], placements: placements, expandedClusterIDs: [], now: now)
+        let plans = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: feed.memberships)],
+            stories: [newest, copy, similar].map(storyListSnap),
+            placements: placements,
+            expanded: [],
+            query: "",
+            now: now
+        )
+        #expect(plans.map(\.id) == rows.map(\.id))
         #expect(rows.count == 3)
         guard case .article(let primary, _) = rows[0].kind else {
             Issue.record("Expected the newest story first")
@@ -306,6 +317,29 @@ struct FeedAndFreshRSSDomainTests {
         }
         #expect(related.title == "Related")
         #expect(caption?.hasPrefix("Similar to something you read") == true)
+        guard case .article(_, let planCaption) = plans[2].kind else {
+            Issue.record("Expected the planned related story")
+            return
+        }
+        #expect(planCaption == caption)
+    }
+
+    private func storyListSnap(_ article: Article) -> StoryListSnap {
+        StoryListSnap(
+            id: article.id,
+            feedID: article.feed?.id,
+            feedTitle: article.feed?.title,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            aiSummary: article.aiSummary,
+            summary: article.summary,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
     }
 
     @Test func parserReadsEnclosureAndYouTubeItem() throws {

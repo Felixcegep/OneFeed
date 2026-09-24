@@ -200,3 +200,161 @@ enum StoryGrouping {
         return rows
     }
 }
+
+struct StoryListSnap: Sendable {
+    var id: UUID
+    var feedID: UUID?
+    var feedTitle: String?
+    var publishedAt: Date
+    var title: String
+    var aiSummary: String?
+    var summary: String?
+    var videoID: String?
+    var url: URL?
+    var guid: String
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+}
+
+struct StoryRowPlan: Sendable, Identifiable {
+    enum Kind: Sendable {
+        case article(id: UUID, caption: String?)
+        case moreSources(clusterID: UUID, count: Int)
+    }
+
+    var id: String
+    var kind: Kind
+}
+
+/// Same row order as `StoryGrouping.rows`, from copied fields.
+nonisolated enum StoryListPlan {
+    static func rows(
+        destination: FeedBrowseDestination,
+        feeds: [UUID: FolderFeedSnap],
+        stories: [StoryListSnap],
+        placements: [String: StoryPlacement],
+        expanded: Set<UUID>,
+        query: String,
+        now: Date = .now
+    ) -> [StoryRowPlan] {
+        let open = collapsed(stories.filter { $0.stateRaw == "queued" || $0.stateRaw == "current" }.sorted { $0.publishedAt > $1.publishedAt })
+        let inFolder = open.filter { belongs($0, to: destination, feeds: feeds) }
+        let visibleStories = query.isEmpty ? inFolder : inFolder.filter { matches($0, query: query) }
+        return rowPlans(from: visibleStories, placements: placements, expanded: expanded, now: now)
+    }
+
+    private static func belongs(_ story: StoryListSnap, to destination: FeedBrowseDestination, feeds: [UUID: FolderFeedSnap]) -> Bool {
+        switch destination {
+        case .unread:
+            return true
+        case .folder(let folderID):
+            guard let feedID = story.feedID, let feed = feeds[feedID] else { return folderID == .unfiled }
+            switch folderID {
+            case .unfiled:
+                return feed.memberships.isEmpty
+            case .named(let name):
+                return feed.memberships.contains(name)
+            }
+        }
+    }
+
+    private static func matches(_ story: StoryListSnap, query: String) -> Bool {
+        if story.title.localizedStandardContains(query) { return true }
+        if story.feedTitle?.localizedStandardContains(query) == true { return true }
+        return excerpt(story)?.localizedStandardContains(query) == true
+    }
+
+    private static func excerpt(_ story: StoryListSnap) -> String? {
+        if let aiSummary = story.aiSummary, !aiSummary.isEmpty {
+            return ContentClassifier.proseExcerpt(aiSummary, maxCharacters: 280)
+        }
+        if let summary = story.summary, !summary.isEmpty {
+            return ContentClassifier.proseExcerpt(summary, maxCharacters: 220)
+        }
+        return nil
+    }
+
+    private static func rowPlans(
+        from stories: [StoryListSnap],
+        placements: [String: StoryPlacement],
+        expanded: Set<UUID>,
+        now: Date
+    ) -> [StoryRowPlan] {
+        let exact = ContentRelationship.exactDuplicate.rawValue
+        let near = ContentRelationship.nearDuplicate.rawValue
+        let sameStory = ContentRelationship.sameStory.rawValue
+        let visible = stories.filter { story in
+            let raw = placements[identityKey(story)]?.relationshipRaw
+            return raw != exact && raw != near
+        }
+        var members: [UUID: [StoryListSnap]] = [:]
+        var sameStoryClusters = Set<UUID>()
+        for story in visible {
+            guard let mark = placements[identityKey(story)], let clusterID = mark.storyClusterID else { continue }
+            members[clusterID, default: []].append(story)
+            if mark.relationshipRaw == sameStory {
+                sameStoryClusters.insert(clusterID)
+            }
+        }
+        var emitted = Set<UUID>()
+        var rows: [StoryRowPlan] = []
+        for story in visible {
+            let key = identityKey(story)
+            let mark = placements[key]
+            if let clusterID = mark?.storyClusterID, sameStoryClusters.contains(clusterID) {
+                guard emitted.insert(clusterID).inserted else { continue }
+                let ordered = (members[clusterID] ?? [story]).sorted { $0.publishedAt > $1.publishedAt }
+                let primary = ordered[0]
+                let others = Array(ordered.dropFirst())
+                let primaryMark = placements[identityKey(primary)]
+                rows.append(StoryRowPlan(
+                    id: primary.id.uuidString,
+                    kind: .article(id: primary.id, caption: StoryGrouping.similarCaption(matchedConsumedAt: primaryMark?.matchedConsumedAt, now: now))
+                ))
+                if !others.isEmpty {
+                    rows.append(StoryRowPlan(id: "more-\(clusterID.uuidString)", kind: .moreSources(clusterID: clusterID, count: others.count)))
+                    if expanded.contains(clusterID) {
+                        for other in others {
+                            rows.append(StoryRowPlan(id: other.id.uuidString, kind: .article(id: other.id, caption: nil)))
+                        }
+                    }
+                }
+                continue
+            }
+            rows.append(StoryRowPlan(
+                id: story.id.uuidString,
+                kind: .article(id: story.id, caption: StoryGrouping.similarCaption(matchedConsumedAt: mark?.matchedConsumedAt, now: now))
+            ))
+        }
+        return rows
+    }
+
+    private static func collapsed(_ stories: [StoryListSnap]) -> [StoryListSnap] {
+        var order: [String] = []
+        var groups: [String: [StoryListSnap]] = [:]
+        for story in stories {
+            let key = identityKey(story)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(story)
+        }
+        return order.map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) }) ?? items[0]
+        }
+    }
+
+    private static func identityKey(_ story: StoryListSnap) -> String {
+        if let videoID = story.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: story.url, guid: story.guid, id: story.id)
+    }
+
+    private static func score(_ story: StoryListSnap) -> Int {
+        var value = 0
+        if story.feedID != nil { value += 8 }
+        if story.hasRemoteID { value += 4 }
+        if story.stateRaw == "saved" || story.isRemoteStarred { value += 3 }
+        if story.stateRaw == "current" { value += 2 }
+        return value
+    }
+}

@@ -11,7 +11,7 @@ private func refreshedStoryPlacements(
     return placements
 }
 
-enum FeedBrowseDestination: Hashable {
+enum FeedBrowseDestination: Hashable, Sendable {
     case unread
     case folder(FeedFolderID)
 
@@ -677,11 +677,6 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
     var id: Self { self }
 }
 
-private final class StoryRowCache {
-    var edge = Int.min
-    var rows: [FeedStoryRow] = []
-}
-
 /// Progress ticks stay on this chrome. The folder list does not read the progress line, so a refresh does not rebuild the rows.
 private struct FeedListRefreshChrome: ViewModifier {
     var refresh: BrowseRefresh
@@ -742,8 +737,9 @@ struct ArticleCollectionView: View {
     @State private var expandedClusterIDs: Set<UUID> = []
     @State private var storyPlacements: [String: StoryPlacement] = [:]
     @State private var placementTick = 0
-    /// Story rows stay grouped while the open article changes. Rebuilt when the query, stories, or clusters change.
-    @State private var storyRowCache = StoryRowCache()
+    /// Story rows stay grouped while the open article changes. Rebuilt off the main thread when the query, stories, or clusters change.
+    @State private var displayedStoryRows: [FeedStoryRow] = []
+    @State private var storyListReady = false
     @State private var refresh = BrowseRefresh()
 
     init(destination: FeedBrowseDestination) {
@@ -755,36 +751,54 @@ struct ArticleCollectionView: View {
         )
     }
 
-    private var items: [Article] {
-        let candidates: [Article] = switch destination {
-        case .unread: FeedFolderGrouping.openArticles(from: articles)
-        case .folder(let folderID):
-            FeedFolderGrouping.folderArticleGroups(from: articles)
-                .first(where: { $0.folderID == folderID })?
-                .articles ?? []
-        }
-        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return candidates }
-        return candidates.filter {
-            $0.title.localizedStandardContains(query)
-                || ($0.feed?.title.localizedStandardContains(query) ?? false)
-                || ($0.displayExcerpt?.localizedStandardContains(query) ?? false)
-        }
-    }
-
-    private var storyRows: [FeedStoryRow] {
+    private func reloadStoryList() async {
         let edge = storyEdge
-        if storyRowCache.edge == edge {
-            return storyRowCache.rows
+        let destination = destination
+        let feedsByID = Dictionary(feeds.map { ($0.id, FolderFeedSnap(id: $0.id, memberships: $0.memberships)) }, uniquingKeysWith: { first, _ in first })
+        let snaps = articles.map { article in
+            StoryListSnap(
+                id: article.id,
+                feedID: article.feed?.id,
+                feedTitle: article.feed?.title,
+                publishedAt: article.publishedAt,
+                title: article.title,
+                aiSummary: article.aiSummary,
+                summary: article.summary,
+                videoID: article.videoID,
+                url: article.url,
+                guid: article.guid,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
         }
-        let rows = StoryGrouping.rows(
-            from: items.filter(\.isStored),
-            placements: storyPlacements,
-            expandedClusterIDs: expandedClusterIDs
-        )
-        storyRowCache.edge = edge
-        storyRowCache.rows = rows
-        return rows
+        let placements = storyPlacements
+        let expanded = expandedClusterIDs
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let now = Date()
+        let plans = await Task.detached(priority: .userInitiated) {
+            StoryListPlan.rows(
+                destination: destination,
+                feeds: feedsByID,
+                stories: snaps,
+                placements: placements,
+                expanded: expanded,
+                query: query,
+                now: now
+            )
+        }.value
+        guard !Task.isCancelled, edge == storyEdge else { return }
+        let byID = Dictionary(articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        displayedStoryRows = plans.compactMap { plan in
+            switch plan.kind {
+            case .article(let id, let caption):
+                guard let article = byID[id], article.isStored else { return nil }
+                return FeedStoryRow(id: plan.id, kind: .article(article, caption: caption))
+            case .moreSources(let clusterID, let count):
+                return FeedStoryRow(id: plan.id, kind: .moreSources(clusterID: clusterID, count: count))
+            }
+        }
+        storyListReady = true
     }
 
     /// Search, expansion, and every story id. Opening a story does not regroup the rows.
@@ -854,9 +868,12 @@ struct ArticleCollectionView: View {
     }
 
     private var collectionColumn: some View {
-        let rows = storyRows
-        return Group {
-            if rows.isEmpty {
+        Group {
+            if !storyListReady {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+            } else if displayedStoryRows.isEmpty {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
@@ -868,7 +885,7 @@ struct ArticleCollectionView: View {
                 )
             } else {
                 List {
-                    ForEach(rows) { row in
+                    ForEach(displayedStoryRows) { row in
                         switch row.kind {
                         case .article(let article, let caption):
                             articleButton(article, caption: caption)
@@ -898,6 +915,9 @@ struct ArticleCollectionView: View {
         }
         .task(id: articleEdge) {
             await reloadStoryPlacements()
+        }
+        .task(id: storyEdge) {
+            await reloadStoryList()
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             Task { await reloadStoryPlacements() }
