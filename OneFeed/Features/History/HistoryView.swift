@@ -40,13 +40,11 @@ struct HistoryView: View {
         return days
     }
 
-    /// Search, count, and ends. Opening a story does not regroup the days.
+    /// Search and every story id. Opening a story does not regroup the days.
     private var historyEdge: Int {
-        var token = appliedSearch.hashValue
-        token = token &* 31 &+ history.count
+        var token = ListIdentity.token(ids: history.lazy.map(\.id))
+        token = token &* 31 &+ appliedSearch.hashValue
         token = token &* 31 &+ notInterested.count
-        token = token &* 31 &+ (history.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (history.last?.id.hashValue ?? 0)
         return token
     }
 

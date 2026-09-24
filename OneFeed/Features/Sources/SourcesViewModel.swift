@@ -332,7 +332,7 @@ final class SourceDetailViewModel {
         }
     }
 
-    /// The twenty newest stories. Scrolling reuses them while the count and the ends stay put.
+    /// The twenty newest stories. Scrolling reuses them until an id or a date changes.
     var recentArticles: [Article] {
         let articles = feed.articles
         let edge = recentEdge(of: articles)
@@ -345,9 +345,10 @@ final class SourceDetailViewModel {
     }
 
     private func recentEdge(of articles: [Article]) -> Int {
-        var token = articles.count
-        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
+        var token = ListIdentity.token(ids: articles.lazy.map(\.id))
+        for article in articles {
+            token = token &* 31 &+ article.publishedAt.hashValue
+        }
         return token
     }
 }

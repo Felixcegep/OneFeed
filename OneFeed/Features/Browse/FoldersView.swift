@@ -694,12 +694,10 @@ struct ArticleCollectionView: View {
         return rows
     }
 
-    /// Search, expansion, and the ends of the list. Opening a story does not walk every row.
+    /// Search, expansion, and every story id. Opening a story does not regroup the rows.
     private var storyEdge: Int {
         var token = appliedSearch.hashValue
-        token = token &* 31 &+ articles.count
-        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
+        token = token &* 31 &+ articleEdge
         token = token &* 31 &+ placementTick
         token = token &* 31 &+ expandedClusterIDs.count
         switch destination {
@@ -717,10 +715,7 @@ struct ArticleCollectionView: View {
     }
 
     private var articleEdge: Int {
-        var token = articles.count
-        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
-        return token
+        ListIdentity.token(ids: articles.lazy.map(\.id))
     }
 
     var body: some View {

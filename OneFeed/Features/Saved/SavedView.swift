@@ -28,12 +28,9 @@ struct SavedView: View {
         return articles
     }
 
-    /// Count and ends. Opening a story does not collapse the queue again.
+    /// Every waiting id. Opening a story does not collapse the queue again.
     private var queueEdge: Int {
-        var token = savedQuery.count
-        token = token &* 31 &+ (savedQuery.first?.id.hashValue ?? 0)
-        token = token &* 31 &+ (savedQuery.last?.id.hashValue ?? 0)
-        return token
+        ListIdentity.token(ids: savedQuery.lazy.map(\.id))
     }
 
     private var searchQuery: String {

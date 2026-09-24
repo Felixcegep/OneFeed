@@ -9,6 +9,16 @@ struct SourceDetailTests {
         try InMemoryStore.makeContext()
     }
 
+    @Test func middleIdentityChangesTheListToken() {
+        let first = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let middle = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let last = UUID(uuidString: "00000000-0000-0000-0000-000000000003")!
+        let replacement = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
+        let original = ListIdentity.token(ids: [first, middle, last])
+        #expect(ListIdentity.token(ids: [first, middle, last]) == original)
+        #expect(ListIdentity.token(ids: [first, replacement, last]) != original)
+    }
+
     @Test func recentStoriesAreTheNewestTwenty() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)

@@ -243,3 +243,16 @@ nonisolated struct ArticleIdentityIndex {
         "\(feedID?.uuidString ?? "none")|\(guid)"
     }
 }
+
+/// Order-sensitive identity for a list cache. A middle replacement changes the token.
+nonisolated enum ListIdentity {
+    static func token(ids: some Sequence<UUID>) -> Int {
+        var count = 0
+        var mixed = 0
+        for id in ids {
+            count += 1
+            mixed = mixed &* 31 &+ id.hashValue
+        }
+        return count &* 31 &+ mixed
+    }
+}
