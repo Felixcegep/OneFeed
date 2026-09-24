@@ -10,6 +10,18 @@ struct FeedStoryRow: Identifiable {
     let kind: Kind
 }
 
+struct StoryCaptionSubject: Sendable {
+    var id: UUID
+    var identityKey: String
+}
+
+struct StoryMemoryMark: Sendable {
+    var identityKey: String
+    var matchedConsumedAt: Date?
+    var storyClusterID: UUID?
+    var relationshipRaw: String
+}
+
 enum StoryGrouping {
     static func moreSourcesTitle(count: Int) -> String {
         if count == 1 {
@@ -29,25 +41,46 @@ enum StoryGrouping {
         openArticles: [Article] = [],
         now: Date = .now
     ) -> [UUID: String] {
-        var byKey: [String: ContentMemory] = [:]
+        captions(
+            for: articles.map { StoryCaptionSubject(id: $0.id, identityKey: ArticleIdentity.identityKey(for: $0)) },
+            openKeys: openArticles.map { ArticleIdentity.identityKey(for: $0) },
+            memories: memories.map {
+                StoryMemoryMark(
+                    identityKey: $0.identityKey,
+                    matchedConsumedAt: $0.matchedConsumedAt,
+                    storyClusterID: $0.storyClusterID,
+                    relationshipRaw: $0.relationshipRaw
+                )
+            },
+            now: now
+        )
+    }
+
+    /// Cluster captions from already-copied fields. Safe to run off the main actor.
+    static func captions(
+        for subjects: [StoryCaptionSubject],
+        openKeys: [String],
+        memories: [StoryMemoryMark],
+        now: Date = .now
+    ) -> [UUID: String] {
+        var byKey: [String: StoryMemoryMark] = [:]
         byKey.reserveCapacity(memories.count)
         for memory in memories {
             byKey[memory.identityKey] = memory
         }
-        let pool = openArticles.isEmpty ? articles : openArticles
+        let pool = openKeys.isEmpty ? subjects.map(\.identityKey) : openKeys
         var clusterCounts: [UUID: Int] = [:]
         var sameStoryClusters = Set<UUID>()
-        for article in pool {
-            guard let memory = byKey[ArticleIdentity.identityKey(for: article)],
-                  let clusterID = memory.storyClusterID else { continue }
+        for key in pool {
+            guard let memory = byKey[key], let clusterID = memory.storyClusterID else { continue }
             clusterCounts[clusterID, default: 0] += 1
             if memory.relationshipRaw == ContentRelationship.sameStory.rawValue {
                 sameStoryClusters.insert(clusterID)
             }
         }
         var captions: [UUID: String] = [:]
-        for article in articles {
-            let memory = byKey[ArticleIdentity.identityKey(for: article)]
+        for subject in subjects {
+            let memory = byKey[subject.identityKey]
             var lines: [String] = []
             if let similar = similarCaption(matchedConsumedAt: memory?.matchedConsumedAt, now: now) {
                 lines.append(similar)
@@ -59,10 +92,42 @@ enum StoryGrouping {
                 }
             }
             if !lines.isEmpty {
-                captions[article.id] = lines.joined(separator: "\n")
+                captions[subject.id] = lines.joined(separator: "\n")
             }
         }
         return captions
+    }
+
+    /// Reads open stories and memories off the main actor, then builds Today’s captions.
+    static func captions(for subjects: [StoryCaptionSubject], in container: ModelContainer, now: Date = .now) async -> [UUID: String] {
+        let sources = await Task.detached(priority: .utility) {
+            captionSources(in: ModelContext(container))
+        }.value
+        return captions(for: subjects, openKeys: sources.openKeys, memories: sources.memories, now: now)
+    }
+
+    private static func captionSources(in context: ModelContext) -> (openKeys: [String], memories: [StoryMemoryMark]) {
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var openDescriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
+            article.stateRawValue == queued || article.stateRawValue == current
+        })
+        openDescriptor.propertiesToFetch = [\.guid, \.url, \.videoID]
+        let openArticles = (try? context.fetch(openDescriptor)) ?? []
+        var descriptor = FetchDescriptor<ContentMemory>()
+        descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt, \.storyClusterID, \.relationshipRaw]
+        let memories = (try? context.fetch(descriptor)) ?? []
+        return (
+            openArticles.map { ArticleIdentity.identityKey(for: $0) },
+            memories.map {
+                StoryMemoryMark(
+                    identityKey: $0.identityKey,
+                    matchedConsumedAt: $0.matchedConsumedAt,
+                    storyClusterID: $0.storyClusterID,
+                    relationshipRaw: $0.relationshipRaw
+                )
+            }
+        )
     }
 
     /// Search is already applied. Exact and near copies drop out; same-story clusters collapse to the newest source.

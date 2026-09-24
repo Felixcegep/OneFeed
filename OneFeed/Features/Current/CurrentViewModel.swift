@@ -20,8 +20,9 @@ final class CurrentViewModel {
     private(set) var position = 0
     private(set) var totalCount = 0
     private(set) var isRefreshing = false
-    private var captionStamp = 0
+    private var captionStamp = Int.min
     private var captionGeneration = 0
+    private var captionTask: Task<Void, Never>?
     private var cachedCaptions: [UUID: String] = [:]
     private(set) var storyCaptions: [UUID: String] = [:]
     let progress = RefreshProgress()
@@ -238,52 +239,55 @@ final class CurrentViewModel {
         self.totalCount = totalCount
         if let context {
             remainingArticles = (try? deckService.remainingArticles(in: context)) ?? []
-            storyCaptions = captions(for: remainingArticles, in: context)
+            scheduleCaptions()
         } else {
             remainingArticles = []
-            storyCaptions = [:]
+            scheduleCaptions()
         }
     }
 
     /// The story index can land after the deck is already on screen. Reload the captions without rebuilding the deck.
     func noteStoryIndexChanged() {
         captionGeneration &+= 1
-        guard let context else { return }
-        storyCaptions = captions(for: remainingArticles, in: context)
+        scheduleCaptions()
     }
 
     /// Same deck within the hour reuses captions. A finished story, a new hour, or a new story index loads them again.
-    private func captions(for articles: [Article], in context: ModelContext) -> [UUID: String] {
-        guard !articles.isEmpty else {
-            captionStamp = 0
+    /// The lookup itself runs off the main actor, so Today can draw the deck first.
+    private func scheduleCaptions() {
+        let articles = remainingArticles
+        guard !articles.isEmpty, let context else {
+            captionTask?.cancel()
+            captionStamp = Int.min
             cachedCaptions = [:]
-            return [:]
+            storyCaptions = [:]
+            return
         }
+        let stamp = Self.captionStamp(for: articles, generation: captionGeneration)
+        if stamp == captionStamp { return }
+        let subjects = articles.map {
+            StoryCaptionSubject(id: $0.id, identityKey: ArticleIdentity.identityKey(for: $0))
+        }
+        let container = context.container
+        let generation = captionGeneration
+        captionTask?.cancel()
+        captionTask = Task {
+            let built = await StoryGrouping.captions(for: subjects, in: container)
+            guard !Task.isCancelled, generation == captionGeneration else { return }
+            captionStamp = stamp
+            cachedCaptions = built
+            storyCaptions = built
+        }
+    }
+
+    private static func captionStamp(for articles: [Article], generation: Int, now: Date = .now) -> Int {
         var stamp = articles.count
-        stamp ^= captionGeneration
-        stamp ^= Int(Date().timeIntervalSince1970 / 3600)
+        stamp ^= generation
+        stamp ^= Int(now.timeIntervalSince1970 / 3600)
         for article in articles {
             stamp ^= article.id.hashValue
             stamp ^= article.stateRawValue.hashValue
         }
-        if stamp == captionStamp { return cachedCaptions }
-        let queued = ArticleState.queued.rawValue
-        let current = ArticleState.current.rawValue
-        var openDescriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
-            article.stateRawValue == queued || article.stateRawValue == current
-        })
-        openDescriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID]
-        let openArticles = (try? context.fetch(openDescriptor)) ?? []
-        var descriptor = FetchDescriptor<ContentMemory>()
-        descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt, \.storyClusterID, \.relationshipRaw]
-        let memories = (try? context.fetch(descriptor)) ?? []
-        let built = StoryGrouping.captions(
-            for: articles,
-            memories: memories,
-            openArticles: openArticles
-        )
-        captionStamp = stamp
-        cachedCaptions = built
-        return built
+        return stamp
     }
 }

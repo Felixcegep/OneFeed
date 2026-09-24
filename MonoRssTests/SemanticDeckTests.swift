@@ -75,4 +75,18 @@ struct SemanticDeckTests {
         )[shown.id]
         #expect(caption == "3 more sources about this story")
     }
+
+    @Test func todayCaptionsCanBeBuiltFromCopiedFields() {
+        let cluster = UUID()
+        let shown = UUID()
+        let caption = StoryGrouping.captions(
+            for: [StoryCaptionSubject(id: shown, identityKey: "url:https://example.com/a")],
+            openKeys: ["url:https://example.com/a", "url:https://example.com/b"],
+            memories: [
+                StoryMemoryMark(identityKey: "url:https://example.com/a", matchedConsumedAt: nil, storyClusterID: cluster, relationshipRaw: ContentRelationship.sameStory.rawValue),
+                StoryMemoryMark(identityKey: "url:https://example.com/b", matchedConsumedAt: nil, storyClusterID: cluster, relationshipRaw: ContentRelationship.sameStory.rawValue)
+            ]
+        )[shown]
+        #expect(caption == "1 more source about this story")
+    }
 }
