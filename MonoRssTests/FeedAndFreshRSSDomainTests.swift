@@ -661,6 +661,23 @@ struct FeedAndFreshRSSDomainTests {
         #expect(OneFeedDateLabel.monthAndDay(morning).isEmpty == false)
     }
 
+    @Test func aPassingHourDoesNotRewriteASameDaySimilarCaption() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let read = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 8))!
+        let later = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 10))!
+        let first = StoryGrouping.similarCaption(matchedConsumedAt: read, now: read.addingTimeInterval(90), calendar: calendar)
+        let second = StoryGrouping.similarCaption(matchedConsumedAt: read, now: later, calendar: calendar)
+        #expect(first == "Similar to something you read earlier today")
+        #expect(first == second)
+        let yesterday = StoryGrouping.similarCaption(matchedConsumedAt: read, now: later.addingTimeInterval(86_400), calendar: calendar)
+        #expect(yesterday == "Similar to something you read yesterday")
+        let stamp = OneFeedDateLabel.syncStamp(read, now: read.addingTimeInterval(90), calendar: calendar)
+        let stampLater = OneFeedDateLabel.syncStamp(read, now: later, calendar: calendar)
+        #expect(stamp == stampLater)
+        #expect(stamp.contains("minute") == false)
+    }
+
     @Test func stripHTMLTurnsMarkupAndEntitiesIntoPlainPreviewText() {
         let aeon = #"<p><img src="https://images.aeonmedia.co/images/essay.jpg" alt="">More nothing now &amp; then</p>"#
         #expect(ContentClassifier.stripHTML(aeon) == "More nothing now & then")

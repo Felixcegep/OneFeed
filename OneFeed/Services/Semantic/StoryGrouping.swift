@@ -11,13 +11,6 @@ struct FeedStoryRow: Identifiable {
 }
 
 enum StoryGrouping {
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .numeric
-        formatter.unitsStyle = .full
-        return formatter
-    }()
-
     static func moreSourcesTitle(count: Int) -> String {
         if count == 1 {
             return "1 more source about this story"
@@ -25,10 +18,9 @@ enum StoryGrouping {
         return "\(count) more sources about this story"
     }
 
-    static func similarCaption(matchedConsumedAt: Date?, now: Date = .now) -> String? {
+    static func similarCaption(matchedConsumedAt: Date?, now: Date = .now, calendar: Calendar = .current) -> String? {
         guard let matchedConsumedAt else { return nil }
-        let relative = relativeFormatter.localizedString(for: matchedConsumedAt, relativeTo: now)
-        return "Similar to something you read \(relative)"
+        return "Similar to something you read \(OneFeedDateLabel.readWhen(matchedConsumedAt, now: now, calendar: calendar))"
     }
 
     static func captions(

@@ -865,6 +865,28 @@ enum OneFeedDateLabel {
         label(for: date, in: &longDate) { $0.formatted(date: .long, time: .omitted) }
     }
 
+    /// Same-day reads stay one phrase, so a caption does not grow from “1 minute ago” to “2 hours ago”.
+    static func readWhen(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "earlier today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "yesterday"
+        }
+        return monthAndDay(date)
+    }
+
+    /// A clock time on the same day. The string does not get longer as minutes pass.
+    static func syncStamp(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday"
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
     private static func label(for date: Date, in store: inout [Date: String], make: (Date) -> String) -> String {
         let day = Calendar.current.startOfDay(for: date)
         if let cached = store[day] { return cached }
