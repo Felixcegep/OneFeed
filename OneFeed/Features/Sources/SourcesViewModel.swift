@@ -263,6 +263,7 @@ final class SourceDetailViewModel {
         isRefreshing = true
         progress.begin(phase: .sources, total: 1)
         defer {
+            recentArticlesCache.count = -1
             progress.finish()
             isRefreshing = false
         }
@@ -418,28 +419,19 @@ final class SourceDetailViewModel {
         }
     }
 
-    /// The twenty newest stories. Scrolling reuses them until an id or a date changes.
+    /// The twenty newest stories. A redraw reuses them until the count changes or a refresh finishes.
     var recentArticles: [Article] {
-        let articles = feed.articles
-        let edge = recentEdge(of: articles)
-        if recentArticlesCache.edge == edge { return recentArticlesCache.articles }
-        recentArticlesCache.edge = edge
+        let count = feed.articles.count
+        if recentArticlesCache.count == count { return recentArticlesCache.articles }
+        recentArticlesCache.count = count
         recentArticlesCache.articles = Array(
-            articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(20)
+            feed.articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(20)
         )
         return recentArticlesCache.articles
-    }
-
-    private func recentEdge(of articles: [Article]) -> Int {
-        var token = ListIdentity.token(ids: articles.lazy.map(\.id))
-        for article in articles {
-            token = token &* 31 &+ article.publishedAt.hashValue
-        }
-        return token
     }
 }
 
 private final class RecentArticleCache {
-    var edge = Int.min
+    var count = -1
     var articles: [Article] = []
 }

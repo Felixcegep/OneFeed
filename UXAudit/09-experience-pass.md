@@ -186,6 +186,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A similar-read line and the Drive status grew while the screen was open | Today, Feed, Settings | Medium | Both used a relative clock, so “1 minute ago” became a longer phrase and the row or status shifted | A same-day read stays “earlier today”. A sync on the same day stays a clock time | `FeedAndFreshRSSDomainTests.aPassingHourDoesNotRewriteASameDaySimilarCaption` |
 | VoiceOver repeated the refresh line as each source started | Today, Feed, Settings, Source | Medium | The spoken label included the source name and the countdown, which change on every item | The announcement stays on the phase and the count | `RefreshProgressTests.finishItemCountsSourcesArticlesAndETA` |
 | Opening Add to Queue read every open story | Queue | High | The sheet queried the whole Feed, including article bodies, to show eight rows | It fetches a short list and leaves the bodies on disk | `ImportBatchResultTests.queueSuggestionsStopAtEight` |
+| A source form sorted every story on each redraw | Source | High | The newest-twenty list hashed and sorted the whole feed whenever the form refreshed | The list stays until the count changes. A refresh builds it again, including when the count stays the same | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 
 ## Still open
 
