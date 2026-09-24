@@ -42,7 +42,6 @@ nonisolated struct ArticleExtractionPolicy: Sendable {
 final class ArticleExtractionService {
     private let session: URLSession
     private let extractor: any ArticleExtracting
-    private let maxBytes = 1_048_576
 
     init(session: URLSession = .shared, extractor: any ArticleExtracting = SwiftReadabilityExtractor()) {
         self.session = session
@@ -71,21 +70,32 @@ final class ArticleExtractionService {
         }
         let existing = article.contentHTML ?? article.summary
         guard let url = article.url else { return existing }
+        let session = self.session
+        let extractor = self.extractor
+        let downloaded = await Self.downloadedArticle(url: url, session: session, extractor: extractor)
+        return downloaded ?? existing
+    }
+
+    /// Downloads and extracts a page. Returns nil when the page cannot replace the stored body.
+    nonisolated static func downloadedArticle(
+        url: URL,
+        session: URLSession,
+        extractor: any ArticleExtracting
+    ) async -> String? {
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return existing }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
             let pageURL = http.url ?? url
-            let slice = Data(data.prefix(maxBytes))
-            let extractor = self.extractor
+            let slice = Data(data.prefix(1_048_576))
+            let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
             return await Task.detached(priority: .utility) {
-                let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
-                return extractor.extract(fromHTML: html, pageURL: pageURL) ?? existing
+                extractor.extract(fromHTML: html, pageURL: pageURL)
             }.value
         } catch {
-            return existing
+            return nil
         }
     }
 

@@ -384,6 +384,66 @@ struct RetentionAndExtractionTests {
         #expect(article.contentHTML == "<p>\(long)</p>")
     }
 
+    @Test func refreshExtractionStoresThePageWithoutAssigningItOnTheCaller() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        var articles: [Article] = []
+        for index in 1...4 {
+            let article = Article(
+                guid: "refresh-\(index)",
+                title: "Story \(index)",
+                url: URL(string: "https://source.test/\(index)")!,
+                publishedAt: .now.addingTimeInterval(Double(-index * 60)),
+                summary: "Short",
+                contentHTML: "<p>Short</p>",
+                feed: feed
+            )
+            context.insert(article)
+            articles.append(article)
+        }
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        for (index, article) in articles.enumerated() {
+            context.insert(DailyDeckItem(
+                position: index + 1,
+                status: index == 0 ? .current : .queued,
+                article: article,
+                deck: deck
+            ))
+        }
+        try context.save()
+        let currentID = deck.items.first { $0.position == 1 }?.id
+
+        let extractor = RecordingExtractor()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubExtractURLProtocol.self]
+        StubExtractURLProtocol.body = "<html><body><p>Downloaded page with enough words to keep.</p></body></html>"
+        let session = URLSession(configuration: config)
+        let actor = LibraryIngestActor(modelContainer: container)
+        await actor.enrichUpcomingArticles(currentItemID: currentID, extraQueued: 2, session: session, extractor: extractor)
+
+        #expect(extractor.urls == [
+            URL(string: "https://source.test/1")!,
+            URL(string: "https://source.test/2")!,
+            URL(string: "https://source.test/3")!,
+        ])
+        let stored = ModelContext(container)
+        let firstGUID = "refresh-1"
+        let lastGUID = "refresh-4"
+        var firstDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == firstGUID })
+        firstDescriptor.fetchLimit = 1
+        var lastDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == lastGUID })
+        lastDescriptor.fetchLimit = 1
+        let first = try #require(try stored.fetch(firstDescriptor).first)
+        let last = try #require(try stored.fetch(lastDescriptor).first)
+        #expect(first.contentHTML?.contains("Extracted https://source.test/1") == true)
+        #expect(first.estimatedReadingMinutes == 3)
+        #expect(last.contentHTML == "<p>Short</p>")
+        #expect(articles[0].contentHTML == "<p>Short</p>")
+    }
+
     @Test func readingMinutesForAFetchedBodyAreCountedOffTheMainActor() async {
         let html = "<p>" + String(repeating: "word ", count: 440) + "</p>"
         let minutes = await Task.detached {

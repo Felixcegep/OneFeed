@@ -102,13 +102,19 @@ enum BackgroundRefreshCoordinator {
         }
         enrichGeneration += 1
         pendingEnrich = nil
-        let task = Task(priority: .utility) {
+        if context.hasChanges {
+            try? context.save()
+        }
+        let container = context.container
+        let currentItemID = item?.id
+        let queued = extraQueued
+        let task = Task { @MainActor in
             defer { enrichTask = nil }
-            let current = item ?? (try? DailyDeckService().currentItem(in: context))
-            await ArticleExtractionService().enrichUpcoming(in: context, from: current, extraQueued: extraQueued)
-            if let ingest = try? SwiftDataIngest.actor(from: context) {
+            await Task.detached(priority: .utility) {
+                let ingest = LibraryIngestActor(modelContainer: container)
+                await ingest.enrichUpcomingArticles(currentItemID: currentItemID, extraQueued: queued)
                 await ingest.enrichSemanticVideos()
-            }
+            }.value
         }
         enrichTask = task
         await task.value
