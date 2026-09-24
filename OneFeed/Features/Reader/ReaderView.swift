@@ -42,9 +42,6 @@ struct ReaderView: View {
     @State private var takeawayError: String?
     @State private var filingError: String?
     @State private var pendingReadFinish = false
-    @State private var savePulse = 0
-    @State private var donePulse = 0
-    @State private var skipPulse = 0
     @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
     @State private var didOfferSummary = false
@@ -141,9 +138,6 @@ struct ReaderView: View {
             }
             .oneFeedInlineTitle()
             #endif
-            .sensoryFeedback(.success, trigger: savePulse)
-            .sensoryFeedback(.success, trigger: donePulse)
-            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.55), trigger: skipPulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -413,16 +407,11 @@ struct ReaderView: View {
         decision = state
         Task { @MainActor in
             await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
-            switch state {
-            case .saved: savePulse += 1
-            case .read: donePulse += 1
-            case .skipped: skipPulse += 1
-            default: break
-            }
             guard onFinish(state) else {
                 decision = nil
                 return
             }
+            OneFeedMotion.acknowledge(state)
         }
     }
 

@@ -156,6 +156,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A fetched article or imported file looked kept when the save failed | Reader | High | Extraction wrote the page onto the story and ignored the save | The page stays on screen for this visit, and an alert says it was not kept | Code review |
 | Not interested looked filed when the save failed | Reader, Undo bar | High | The mark was set and the save was ignored, then the bar said Not interested | The mark is dropped, the bar stays on Skipped, and an alert explains the failure. Not now on a video summary is forgotten the same way | Code review |
 | “You stopped here” covered the first lines of a restored block | Reader | Medium | The cue always used `max(12, blockTop - 26)`, so a block near the top put the label on the glyphs | The cue sits above the block when that clears the top edge, below it when that still fits, and stays hidden otherwise. A paper chip keeps the label off the text | `ReaderFocusTests.resumeCueSitsAboveWhenTheBlockHasRoom` |
+| Done, Skip, or Queue played a success haptic when the save failed | Reader | High | The pulse ran before `onFinish` returned | The haptic plays only after the write succeeds, including when the reader is already leaving | Code review |
+| A failed video enrichment still told Today and Feed the index changed | Today, Feed | Medium | The save was discarded and the notification was posted anyway | The index notification waits until the summary is stored | Code review |
 
 ## Still open
 

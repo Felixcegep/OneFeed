@@ -46,6 +46,27 @@ enum OneFeedMotion {
         }
         try? await Task.sleep(for: .milliseconds(milliseconds))
     }
+
+    /// Plays only after the story write succeeds. A failed finish stays silent.
+    static func acknowledge(_ state: ArticleState) {
+        #if os(iOS)
+        switch state {
+        case .saved, .read:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .skipped:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.55)
+        default:
+            break
+        }
+        #elseif os(macOS)
+        switch state {
+        case .saved, .read, .skipped:
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        default:
+            break
+        }
+        #endif
+    }
 }
 
 /// The OneFeed RSS mark, recast in attention on plaster.
