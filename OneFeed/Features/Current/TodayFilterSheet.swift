@@ -11,6 +11,7 @@ struct TodayFilterSheet: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var appliedSearch = ""
     @State private var presentedError: String?
+    @State private var folderCache = TodayFolderCache()
 
     var onUpdated: () -> Void
 
@@ -145,7 +146,7 @@ struct TodayFilterSheet: View {
     }
 
     private var visibleFolders: [TodayFolderFilter] {
-        let groups = FeedFolderGrouping.groups(from: feeds)
+        let groups = folderCache.groups(from: feeds)
         let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             return groups.map {
@@ -164,6 +165,32 @@ struct TodayFilterSheet: View {
                 offersAllSources: folderMatches && group.feeds.count > 1
             )
         }
+    }
+}
+
+/// Folder rows stay grouped until a source is added, renamed, or moved.
+/// Turning a source on or off for Today does not rebuild them.
+final class TodayFolderCache {
+    private var edge = Int.min
+    private var cached: [FeedFolderGroup] = []
+    private(set) var loads = 0
+
+    func groups(from feeds: [Feed]) -> [FeedFolderGroup] {
+        let next = Self.edge(of: feeds)
+        if next == edge { return cached }
+        loads += 1
+        cached = FeedFolderGrouping.groups(from: feeds)
+        edge = next
+        return cached
+    }
+
+    private static func edge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+        }
+        return token
     }
 }
 

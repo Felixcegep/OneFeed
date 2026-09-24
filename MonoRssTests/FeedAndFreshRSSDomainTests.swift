@@ -162,6 +162,24 @@ struct FeedAndFreshRSSDomainTests {
         #expect(groups[2].feeds.map(\.title) == ["Ars"])
     }
 
+    @Test func todayFilterKeepsFolderGroupsWhenASourceJoinsToday() {
+        let philosophy = Feed(title: "Acephale", feedURL: URL(string: "https://a.test/rss")!, folderName: "Philosophy")
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let cache = TodayFolderCache()
+        let first = cache.groups(from: [philosophy, development])
+        let loads = cache.loads
+        philosophy.includeInToday = false
+        let second = cache.groups(from: [philosophy, development])
+        #expect(cache.loads == loads)
+        #expect(second.map(\.name) == first.map(\.name))
+        development.folderNames = ["Philosophy"]
+        development.folderName = "Philosophy"
+        let moved = cache.groups(from: [philosophy, development])
+        #expect(cache.loads == loads + 1)
+        #expect(moved.map(\.name) == ["Philosophy"])
+        #expect(moved[0].feeds.map(\.title) == ["Acephale", "Swift"])
+    }
+
     @Test func folderArticleGroupsKeepNewestUnreadCardsPerFolder() {
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
         let philosophy = Feed(title: "Acephale", feedURL: URL(string: "https://a.test/rss")!, folderName: "Philosophy")
