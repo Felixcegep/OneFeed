@@ -119,7 +119,7 @@ struct ReaderView: View {
             #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .oneFeedLeading) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
+                    Button("Close", systemImage: "xmark") { closeReader() }
                         .accessibilityHint("Closes the reader without changing this article")
                 }
                 ToolbarItem(placement: .principal) {
