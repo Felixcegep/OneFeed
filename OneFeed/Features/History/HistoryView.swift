@@ -123,7 +123,11 @@ struct HistoryView: View {
     private var historyColumn: some View {
         Group {
             if LibraryHold.showsExplanation(
-                hasStoredRows: history.contains(where: \.isStored) || !notInterested.isEmpty,
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: historyReady,
+                    provisionalHasRows: history.contains(where: \.isStored) || !notInterested.isEmpty,
+                    plannedHasRows: !historyDays.isEmpty || !notInterested.isEmpty
+                ),
                 ready: historyReady,
                 hasPlannedRows: !historyDays.isEmpty || !notInterested.isEmpty
             ) {

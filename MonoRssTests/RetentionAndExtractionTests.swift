@@ -161,7 +161,12 @@ struct RetentionAndExtractionTests {
         #expect(plan.articles == [saved.id])
         #expect(plan.subtitle == "2 in queue · 1 video")
         #expect(QueueNavigationSubtitle.text(planned: "", storedCount: 3) == "3 in queue")
-        #expect(QueueNavigationSubtitle.text(planned: plan.subtitle, storedCount: 3) == plan.subtitle)
+        var counted = false
+        #expect(QueueNavigationSubtitle.text(planned: plan.subtitle, storedCount: {
+            counted = true
+            return 3
+        }()) == plan.subtitle)
+        #expect(counted == false)
         #expect(QueueNavigationSubtitle.text(planned: "", storedCount: 0) == "")
         let datesOnly = [video, saved, copy].map { article in
             var snap = queueSnap(article)

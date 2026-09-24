@@ -148,7 +148,11 @@ struct SavedView: View {
         let layout = queueLayout
         return Group {
             if LibraryHold.showsExplanation(
-                hasStoredRows: savedQuery.contains(where: \.isStored),
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: queueReady,
+                    provisionalHasRows: savedQuery.contains(where: \.isStored),
+                    plannedHasRows: layout.hasQueue
+                ),
                 ready: queueReady,
                 hasPlannedRows: layout.hasQueue
             ) {
@@ -584,8 +588,9 @@ struct QueueSectionPlan: Sendable {
 
 /// The Queue title bar. A stored queue shows a count before the section plan arrives, so the bar does not grow.
 enum QueueNavigationSubtitle {
-    static func text(planned: String, storedCount: Int) -> String {
+    static func text(planned: String, storedCount: @autoclosure () -> Int) -> String {
         if !planned.isEmpty { return planned }
+        let storedCount = storedCount()
         guard storedCount > 0 else { return "" }
         return "\(storedCount) in queue"
     }
