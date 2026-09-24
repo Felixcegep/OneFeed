@@ -83,6 +83,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Not interested fetched an article for every row on every redraw | Not interested | Medium | Each row queried SwiftData while the list was built, and formatted a new date | Groups and article lookups are reused until the log changes. Dates use the shared day label | Code review |
 | The reader trimmed the full article on every redraw | Reader | High | `readableHTML` scanned the stored body each time the page was asked for | The same stored body is reused. A new body is trimmed once | Code review |
 | Returning to Today reloaded every story caption | Today | High | Each deck reread fetched open articles and every memory | The same deck reuses captions for the hour. A finished story loads them again | Code review |
+| VoiceOver heard “Queue” from the bar icon after the story was saved | Reader | Medium | The bar label spoke its own title and hid the button’s “In Queue” label | The bar speaks the button’s label and hint, including “In Queue” and “Already in Queue” | Code review |
 
 ## Still open
 
