@@ -190,7 +190,7 @@ final class ReaderViewModel {
     /// Date and length under the title. Kept off the document cache key so a late duration does not reload the page.
     var readerMetaLine: String {
         [
-            article.publishedAt.formatted(date: .long, time: .omitted),
+            OneFeedDateLabel.longDate(article.publishedAt),
             article.durationPhrase,
         ]
         .filter { !$0.isEmpty }

@@ -657,6 +657,7 @@ struct FeedAndFreshRSSDomainTests {
         let later = morning.addingTimeInterval(3 * 60 * 60)
         #expect(OneFeedDateLabel.monthAndDay(morning) == OneFeedDateLabel.monthAndDay(later))
         #expect(OneFeedDateLabel.monthDayAndYear(morning) == OneFeedDateLabel.monthDayAndYear(later))
+        #expect(OneFeedDateLabel.longDate(morning) == OneFeedDateLabel.longDate(later))
         #expect(OneFeedDateLabel.monthAndDay(morning).isEmpty == false)
     }
 

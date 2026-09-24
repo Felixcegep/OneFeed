@@ -815,6 +815,7 @@ extension View {
 enum OneFeedDateLabel {
     private static var monthDay: [Date: String] = [:]
     private static var monthDayYear: [Date: String] = [:]
+    private static var longDate: [Date: String] = [:]
 
     static func monthAndDay(_ date: Date) -> String {
         label(for: date, in: &monthDay) { $0.formatted(.dateTime.month(.abbreviated).day()) }
@@ -822,6 +823,10 @@ enum OneFeedDateLabel {
 
     static func monthDayAndYear(_ date: Date) -> String {
         label(for: date, in: &monthDayYear) { $0.formatted(.dateTime.month(.abbreviated).day().year()) }
+    }
+
+    static func longDate(_ date: Date) -> String {
+        label(for: date, in: &longDate) { $0.formatted(date: .long, time: .omitted) }
     }
 
     private static func label(for date: Date, in store: inout [Date: String], make: (Date) -> String) -> String {

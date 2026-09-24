@@ -107,6 +107,10 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a source sorted every story on each redraw | Source | High | Recent stories sorted the whole feed while the form scrolled | The twenty newest stay cached until the count or the ends change | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 | Typing blocked words saved the library on every character | Source | High | The field wrote and noted a library change for each keystroke | The words save after a short pause, and immediately when the source is left | `SourceDetailTests.blockedWordsWaitUntilTypingPauses` |
 | Removing a source could unsubscribe twice | Source, Not interested | High | Confirm started another removal before the first finished | A removal already running ignores the next one | `SourceDetailTests.aSecondRemoveIsIgnoredWhileTheFirstIsRunning` |
+| The reader polled the page every 40ms while it loaded | Reader | Medium | Focus waited in a tight loop for up to eight seconds | The first check waits 80ms. Later checks wait 160ms, and still stop at eight seconds | Code review |
+| A late video length could paint the previous byline | Reader | Medium | Each byline change started its own script, and an older one could finish last | One update runs at a time, and the latest line runs after it | Code review |
+| Reading position could be snapshotted twice at once | Reader | Medium | The timer and leaving the app each called the page | One snapshot runs at a time. A second request runs when the first finishes | Code review |
+| The reader formatted a new long date on every redraw | Reader | Low | The byline called `formatted` whenever the page was asked for | The same calendar day reuses one long date | `FeedAndFreshRSSDomainTests.listDateLabelReusesTheSameCalendarDay` |
 
 ## Still open
 

@@ -822,14 +822,16 @@ private struct ReaderBarGlyph: View {
 #endif
 
 /// Returns when the page stops loading, or after the opening-cover timeout.
+/// The first pause is 80ms so a page that is already ready does not apply focus on the same frame.
+/// Later pauses are 160ms so a slow page does not wake the reader on every frame.
 private func waitForPageSettled(_ page: WebPage) async {
     let clock = ContinuousClock()
     let start = clock.now
+    try? await Task.sleep(for: .milliseconds(80))
     while !Task.isCancelled {
-        let elapsed = clock.now - start
-        if !page.isLoading, elapsed > .milliseconds(80) { return }
-        if elapsed > .seconds(8) { return }
-        try? await Task.sleep(for: .milliseconds(40))
+        if !page.isLoading { return }
+        if clock.now - start > .seconds(8) { return }
+        try? await Task.sleep(for: .milliseconds(160))
     }
 }
 
@@ -913,6 +915,12 @@ private struct ReaderWebContent: View {
     @State private var ignoreNextZoneApply = false
     /// Latest focus change wins. A drag does not stack a configure for every step.
     @State private var focusApply: Task<Void, Never>?
+    /// One byline update at a time. A later length replaces one already waiting.
+    @State private var metaTask: Task<Void, Never>?
+    @State private var pendingMeta: String?
+    /// One reading-position snapshot at a time. A second request runs after the first.
+    @State private var trailTask: Task<Void, Never>?
+    @State private var trailAgain = false
 
     private var showCover: Bool { !hasCommitted && allowCover }
     private var resolvedMode: ReaderFocusMode {
@@ -950,16 +958,18 @@ private struct ReaderWebContent: View {
                 scheduleFocusApply()
             }
             .onChange(of: metaLine) { _, line in
-                Task { await updateMeta(line) }
+                scheduleMeta(line)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
-                    Task { await persistTrail() }
+                    scheduleTrailPersist()
                 }
             }
             .onDisappear {
                 focusApply?.cancel()
-                Task { await persistTrail() }
+                metaTask?.cancel()
+                pendingMeta = nil
+                scheduleTrailPersist()
             }
             .task(id: html) {
                 if hasCommitted, didRestoreTrail {
@@ -982,7 +992,7 @@ private struct ReaderWebContent: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(2.5))
                     if Task.isCancelled { return }
-                    await persistTrail()
+                    scheduleTrailPersist()
                 }
             }
     }
@@ -991,6 +1001,36 @@ private struct ReaderWebContent: View {
         try? await Task.sleep(for: .milliseconds(160))
         guard !Task.isCancelled, !hasCommitted else { return }
         allowCover = true
+    }
+
+    private func scheduleMeta(_ line: String) {
+        pendingMeta = line
+        guard metaTask == nil else { return }
+        metaTask = Task {
+            while !Task.isCancelled, let line = pendingMeta {
+                pendingMeta = nil
+                await updateMeta(line)
+            }
+            metaTask = nil
+            if let line = pendingMeta, !Task.isCancelled {
+                scheduleMeta(line)
+            }
+        }
+    }
+
+    private func scheduleTrailPersist() {
+        if trailTask != nil {
+            trailAgain = true
+            return
+        }
+        trailTask = Task {
+            await persistTrail()
+            trailTask = nil
+            if trailAgain, !Task.isCancelled {
+                trailAgain = false
+                scheduleTrailPersist()
+            }
+        }
     }
 
     @MainActor
