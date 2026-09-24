@@ -55,6 +55,13 @@ struct FolderStorySnap: Sendable {
 
 /// Same folder counts as `FeedFolderGrouping.folderSummaries`, without the model objects.
 nonisolated enum FolderDirectoryCount {
+    /// A modest library can be counted on the open screen. A long one waits for the off-screen plan.
+    static let synchronousCountLimit = 200
+
+    static func countsOnTheOpenScreen(storyCount: Int) -> Bool {
+        storyCount <= synchronousCountLimit
+    }
+
     static func summaries(
         feeds: [FolderFeedSnap],
         stories: [FolderStorySnap],

@@ -254,6 +254,14 @@ struct FoldersView: View {
         }
         let placements = storyPlacements
         let order = FolderStore.knownNames()
+        if FolderDirectoryCount.countsOnTheOpenScreen(storyCount: storySnaps.count) {
+            publishFolderSummaries(FolderDirectoryCount.summaries(
+                feeds: feedSnaps,
+                stories: storySnaps,
+                placements: placements,
+                folderOrder: order
+            ))
+        }
         let summaries = await Task.detached(priority: .userInitiated) {
             FolderDirectoryCount.summaries(
                 feeds: feedSnaps,
@@ -263,8 +271,22 @@ struct FoldersView: View {
             )
         }.value
         guard !Task.isCancelled, edge == directoryEdge else { return }
+        publishFolderSummaries(summaries)
+    }
+
+    private func publishFolderSummaries(_ summaries: [FolderSummary]) {
+        guard !showsSameFolderSummaries(summaries, as: folderSummaries) else {
+            folderDirectoryReady = true
+            return
+        }
         folderSummaries = summaries
         folderDirectoryReady = true
+    }
+
+    private func showsSameFolderSummaries(_ next: [FolderSummary], as current: [FolderSummary]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { lhs, rhs in
+            lhs.folderID == rhs.folderID && lhs.unreadCount == rhs.unreadCount && lhs.feedCount == rhs.feedCount
+        }
     }
 
     /// Every open story, plus each source. A refresh tick does not regroup the folders.

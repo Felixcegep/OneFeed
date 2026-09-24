@@ -286,6 +286,9 @@ struct FeedAndFreshRSSDomainTests {
         let names = FolderDirectoryCount.names(feeds: snaps, folderOrder: ["Development"])
         #expect(names.map(\.name) == ["Development", "Unfiled"])
         #expect(names.map(\.unreadCount) == [0, 0])
+        #expect(FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 0))
+        #expect(FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 200))
+        #expect(!FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 201))
         #expect(names.map(\.folderID) == FolderDirectoryCount.summaries(
             feeds: snaps,
             stories: [],

@@ -277,6 +277,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Add to Queue picked its suggestions on the open sheet | Queue | Medium | Opening the sheet fetched and collapsed the newest open stories on the main thread | Those ids are chosen away from the sheet. The sheet then fetches only the eight rows it shows | `ImportBatchResultTests.queueSuggestionsStopAtEight` |
 | Adding a folder on a source fetched every feed | Sources | Medium | The checklist was already on screen, and creating a folder fetched every source to rebuild it | The new name is added to the checklist already showing. The folder list is not fetched again | `SourceDetailTests.checkingAFolderDoesNotReloadTheFolderList` |
 | Moving a source fetched every feed | Sources | Medium | The folder list already came from the feeds on screen, and a move fetched them again | The move saves the source. The list updates from the feeds already shown | `FeedAndFreshRSSDomainTests.movingASourceDoesNotFetchEveryFeed` |
+| Feed folder badges popped in after the names | Feed | Medium | Unread counts waited off screen, so each folder first drew without its badge | A modest library counts unread stories on the open screen. A long library still waits. The same counts are not published again | `FeedAndFreshRSSDomainTests.folderNamesMatchTheCountedFoldersBeforeUnreadBadges` |
 
 ## Still open
 
