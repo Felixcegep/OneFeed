@@ -30,6 +30,16 @@ struct LibrarySyncServiceDriveTests {
         #expect(harness.service.linkedRecord?.lastSyncedHash != harness.fake.md5Checksum)
     }
 
+    @Test func ingestActorWritesTheSameLibraryFileAsTheOpenScreen() async throws {
+        let harness = try DriveSyncHarness()
+        defer { harness.tearDown() }
+        let onScreen = try LibrarySyncService.encodedLibraryFile(from: harness.context)
+        let onActor = try await SwiftDataIngest.actor(from: harness.context).encodedLibraryFile(
+            extraTombstones: LibraryFolderStore.loadTombstones()
+        )
+        #expect(onActor == onScreen)
+    }
+
     @Test func openExistingWithDifferentRemoteBytesConflictsInsteadOfPulling() async throws {
         let harness = try DriveSyncHarness()
         defer { harness.tearDown() }

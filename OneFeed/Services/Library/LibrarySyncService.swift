@@ -461,7 +461,7 @@ final class LibrarySyncService {
             if hasActiveReadingSession, request == .automatic || request == .manual {
                 return .skippedActiveSession
             }
-            return try pullDrive(
+            return try await pullDrive(
                 remoteData,
                 hash: CloudFileContentHash.sha256Hex(remoteData),
                 into: context,
@@ -511,9 +511,9 @@ final class LibrarySyncService {
         hash: String,
         into context: ModelContext,
         record: CloudFileLinkRecord
-    ) throws -> Outcome {
+    ) async throws -> Outcome {
         let document = try LibraryDocument.decode(remoteData)
-        writeRecoveryCopy(of: context)
+        await writeRecoveryCopy(of: context)
         isApplyingRemote = true
         defer { isApplyingRemote = false }
         _ = try LibraryMerge.apply(document, to: context, options: .all)
@@ -532,9 +532,11 @@ final class LibrarySyncService {
         return .pulled
     }
 
-    private func writeRecoveryCopy(of context: ModelContext) {
+    private func writeRecoveryCopy(of context: ModelContext) async {
         do {
-            let data = try Self.encodedLibraryFile(from: context)
+            let data = try await SwiftDataIngest.actor(from: context).encodedLibraryFile(
+                extraTombstones: LibraryFolderStore.loadTombstones()
+            )
             let directory = try recoveryDirectory()
             try data.write(
                 to: directory.appendingPathComponent("OneFeed.library-before-pull.json"),

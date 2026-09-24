@@ -164,7 +164,9 @@ final class SettingsViewModel {
                         guard let context = self?.context else {
                             throw GoogleDriveLinkError.libraryUnavailable
                         }
-                        return try LibrarySyncService.encodedLibraryFile(from: context)
+                        return try await SwiftDataIngest.actor(from: context).encodedLibraryFile(
+                            extraTombstones: LibraryFolderStore.loadTombstones()
+                        )
                     }
                 )
             } catch {
@@ -179,7 +181,7 @@ final class SettingsViewModel {
         signIn: () async throws -> GoogleDriveCredentials = {
             try await GoogleDriveOAuthClient.shared.signIn(from: nil)
         },
-        snapshot: () throws -> Data,
+        snapshot: () async throws -> Data,
         library: any GoogleDriveLibraryLinking = LibrarySyncService.shared
     ) async throws {
         let credentials = try await signIn()
@@ -201,7 +203,7 @@ final class SettingsViewModel {
             )
             _ = await library.sync(request: .manual)
         } else {
-            let data = try snapshot()
+            let data = try await snapshot()
             let created = try await drive.createBackupFile(
                 data: data,
                 name: GoogleDriveOAuthConfig.backupFileName
