@@ -111,7 +111,7 @@ struct NotInterestedLogTests {
             FolderEmoji.resetStored()
         }
 
-        NotInterestedLog.archive(feed, in: context)
+        try NotInterestedLog.archive(feed, in: context)
         #expect(feed.folderName == "Archive")
         #expect(feed.includeInToday == false)
         #expect(feed.isEnabled)

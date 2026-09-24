@@ -440,10 +440,15 @@ final class GeminiLibrarian {
             try await freshRSSService.removeSubscription(feed, in: context)
             return .init(ok: true, message: "Removed \(title).")
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
-            try? context.save()
-            return .init(ok: true, message: "Removed \(title).")
+            do {
+                try context.save()
+                LibraryChange.noteRemovedFeed(feed)
+                return .init(ok: true, message: "Removed \(title).")
+            } catch {
+                context.rollback()
+                return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source."))
+            }
         }
     }
 
@@ -459,7 +464,11 @@ final class GeminiLibrarian {
         if alreadyArchived {
             return .init(ok: true, message: "\(feed.title) is already in Archive and out of Today.")
         }
-        NotInterestedLog.archive(feed, in: context)
+        do {
+            try NotInterestedLog.archive(feed, in: context)
+        } catch {
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t update that source."))
+        }
         return .init(ok: true, message: "Moved \(feed.title) to Archive and took it out of Today.")
     }
 
@@ -471,7 +480,9 @@ final class GeminiLibrarian {
         let folder = call.string("folder").map { canonicalFolder($0, on: feed, in: context) }
         feed.replaceFolders(with: folder)
         LibraryChange.note(feed)
-        try? context.save()
+        if let failure = commit(context) {
+            return .init(ok: false, message: failure)
+        }
         if let folder {
             return .init(ok: true, message: "Moved \(feed.title) to \(folder).")
         }
@@ -489,7 +500,9 @@ final class GeminiLibrarian {
         let folder = canonicalFolder(requested, on: feed, in: context)
         if feed.addFolder(folder) {
             LibraryChange.note(feed)
-            try? context.save()
+            if let failure = commit(context) {
+                return .init(ok: false, message: failure)
+            }
             return .init(ok: true, message: "Added \(feed.title) to \(folder).")
         }
         if feed.containsFolder(folder) {
@@ -511,7 +524,9 @@ final class GeminiLibrarian {
             return .init(ok: true, message: "\(feed.title) is not in \(folder).")
         }
         LibraryChange.note(feed)
-        try? context.save()
+        if let failure = commit(context) {
+            return .init(ok: false, message: failure)
+        }
         if feed.memberships.isEmpty {
             return .init(ok: true, message: "Removed \(feed.title) from \(folder). It is now Unfiled.")
         }
@@ -563,7 +578,12 @@ final class GeminiLibrarian {
         FolderStore.remove(from)
         FolderEmoji.set(emoji, for: to)
         LibraryChange.noteStructureChanged()
-        try? context.save()
+        if let failure = commit(context) {
+            FolderStore.remember(from)
+            FolderStore.remove(to)
+            FolderEmoji.set(emoji, for: from)
+            return .init(ok: false, message: failure)
+        }
         return .init(ok: true, message: "Renamed \(from) to \(to).")
     }
 
@@ -610,12 +630,27 @@ final class GeminiLibrarian {
             return .init(ok: false, message: "No source settings to change.")
         }
         LibraryChange.note(feed)
-        if call.bool("enabled") != nil || call.bool("include_in_today") != nil {
-            try? DailyDeckService.reconcileMembership(in: context)
-        } else {
-            try? context.save()
+        do {
+            if call.bool("enabled") != nil || call.bool("include_in_today") != nil {
+                try DailyDeckService.reconcileMembership(in: context)
+            } else {
+                try context.save()
+            }
+        } catch {
+            context.rollback()
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t update that source."))
         }
         return .init(ok: true, message: "Updated \(feed.title): \(changes.joined(separator: ", ")).")
+    }
+
+    private func commit(_ context: ModelContext) -> String? {
+        do {
+            try context.save()
+            return nil
+        } catch {
+            context.rollback()
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     private func canonicalFolder(_ requested: String, on feed: Feed, in context: ModelContext) -> String {

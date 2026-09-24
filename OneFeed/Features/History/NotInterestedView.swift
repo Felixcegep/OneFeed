@@ -13,6 +13,7 @@ struct NotInterestedView: View {
     @State private var queueError: String?
     @State private var storyError: String?
     @State private var removeError: String?
+    @State private var sourceError: String?
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -121,6 +122,14 @@ struct NotInterestedView: View {
         } message: {
             Text(removeError ?? "")
         }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { sourceError != nil },
+            set: { if !$0 { sourceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { sourceError = nil }
+        } message: {
+            Text(sourceError ?? "")
+        }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
             isPresented: Binding(
@@ -159,11 +168,19 @@ struct NotInterestedView: View {
             if let feed {
                 Menu {
                     Button("Move to Archive", systemImage: "archivebox") {
-                        NotInterestedLog.archive(feed, in: modelContext)
+                        do {
+                            try NotInterestedLog.archive(feed, in: modelContext)
+                        } catch {
+                            sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+                        }
                     }
                     if feed.includeInToday {
                         Button("Take out of Today", systemImage: "sun.min") {
-                            NotInterestedLog.takeOutOfToday(feed, in: modelContext)
+                            do {
+                                try NotInterestedLog.takeOutOfToday(feed, in: modelContext)
+                            } catch {
+                                sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+                            }
                         }
                     }
                     Button("Ask Gemini about this source", systemImage: "text.bubble") {

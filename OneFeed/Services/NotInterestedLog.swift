@@ -126,18 +126,34 @@ enum NotInterestedLog {
         """
     }
 
-    static func archive(_ feed: Feed, in context: ModelContext) {
+    static func archive(_ feed: Feed, in context: ModelContext) throws {
+        let memberships = feed.memberships
+        let included = feed.includeInToday
         feed.setMemberships([Self.archiveFolderName])
         feed.includeInToday = false
         FolderStore.remember(archiveFolderName)
         LibraryChange.note(feed)
-        try? DailyDeckService.reconcileMembership(in: context)
+        do {
+            try DailyDeckService.reconcileMembership(in: context)
+        } catch {
+            context.rollback()
+            feed.setMemberships(memberships)
+            feed.includeInToday = included
+            throw error
+        }
     }
 
-    static func takeOutOfToday(_ feed: Feed, in context: ModelContext) {
+    static func takeOutOfToday(_ feed: Feed, in context: ModelContext) throws {
+        let included = feed.includeInToday
         feed.includeInToday = false
         LibraryChange.note(feed)
-        try? DailyDeckService.reconcileMembership(in: context)
+        do {
+            try DailyDeckService.reconcileMembership(in: context)
+        } catch {
+            context.rollback()
+            feed.includeInToday = included
+            throw error
+        }
     }
 
     static func delete(_ entry: NotInterestedEntry, in context: ModelContext) {
