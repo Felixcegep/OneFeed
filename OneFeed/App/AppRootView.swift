@@ -174,11 +174,12 @@ struct AppRootView: View {
                 QueueHandoff.pendingArticleID = last.id
                 NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
             }
-            if failed > 0 {
-                importError = failed == batch.count
-                    ? (firstFailure ?? "Couldn’t import that file.")
-                    : "Imported \(batch.count - failed). \(failed) could not be imported."
-            }
+            importError = ImportBatchResult.message(
+                succeeded: batch.count - failed,
+                failed: failed,
+                firstFailure: firstFailure,
+                emptyFallback: "Couldn’t import that file."
+            )
         }
     }
 }

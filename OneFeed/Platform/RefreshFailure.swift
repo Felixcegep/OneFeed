@@ -29,6 +29,15 @@ enum UserFacingFailure {
     }
 }
 
+enum ImportBatchResult {
+    /// One failure keeps its sentence. A mixed batch says how many landed and how many did not.
+    nonisolated static func message(succeeded: Int, failed: Int, firstFailure: String?, emptyFallback: String) -> String? {
+        guard failed > 0 else { return nil }
+        if succeeded == 0 { return firstFailure ?? emptyFallback }
+        return "Imported \(succeeded). \(failed) could not be imported."
+    }
+}
+
 enum ReaderFailure {
     /// Calm copy for Gemini and network failures. Raw API text stays out of the reader.
     nonisolated static func message(for error: Error) -> String {

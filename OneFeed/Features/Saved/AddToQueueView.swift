@@ -193,6 +193,9 @@ struct AddToQueueView: View {
 
     private func completeAdd() async {
         let service = ImportedDocumentService()
+        var succeeded = 0
+        var failed = 0
+        var firstFailure: String?
         while !pendingFileURLs.isEmpty || !pendingDropProviders.isEmpty {
             let urls = pendingFileURLs
             pendingFileURLs.removeAll()
@@ -201,8 +204,12 @@ struct AddToQueueView: View {
             for url in urls {
                 do {
                     _ = try await service.importFile(at: url, in: modelContext)
+                    succeeded += 1
                 } catch {
-                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    }
                 }
             }
             for provider in drops {
@@ -210,17 +217,27 @@ struct AddToQueueView: View {
                     let url = try await Self.fileURLForDrop(from: provider)
                     _ = try await service.importFile(at: url, in: modelContext)
                     try? FileManager.default.removeItem(at: url)
+                    succeeded += 1
                 } catch {
-                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    }
                 }
             }
         }
-        if !pendingFileURLs.isEmpty || !pendingDropProviders.isEmpty {
-            await completeAdd()
-            return
+        if let batchError = ImportBatchResult.message(
+            succeeded: succeeded,
+            failed: failed,
+            firstFailure: firstFailure,
+            emptyFallback: "Couldn’t add that to Queue."
+        ) {
+            presentedError = batchError
+        }
+        if presentedError == nil || succeeded > 0 {
+            onAdded()
         }
         if presentedError == nil {
-            onAdded()
             guard stillPresented else { return }
             dismiss()
         } else {
