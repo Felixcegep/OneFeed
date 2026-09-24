@@ -155,12 +155,11 @@ final class RefreshProgress {
         return parts.joined(separator: " · ")
     }
 
-    func accessibilityText(now: Date = .now) -> String {
+    /// Count and phase only. Source names and the countdown change every item and would keep interrupting VoiceOver.
+    func accessibilityText() -> String {
         var parts = [primaryText]
         if total > 0 { parts.append("\(completed) of \(total) sources") }
         if articlesFound > 0 { parts.append("\(articlesFound) new articles") }
-        if let currentTitle { parts.append("fetching \(currentTitle)") }
-        if let eta = Self.remainingPhrase(until: estimatedFinish, now: now) { parts.append(eta) }
         return parts.joined(separator: ", ")
     }
 

@@ -20,6 +20,8 @@ struct RefreshProgressTests {
         progress.startItem(title: "Aeon")
         #expect(progress.coverStatus == "0 of 4")
         #expect(progress.coverStatus.contains("Aeon") == false)
+        #expect(progress.accessibilityText() == "Updating sources, 0 of 4 sources")
+        #expect(progress.accessibilityText().contains("Aeon") == false)
         progress.finishItem(newArticles: 3, now: start.addingTimeInterval(2))
         #expect(progress.completed == 1)
         #expect(progress.remainingCount == 3)
