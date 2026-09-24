@@ -25,8 +25,7 @@ final class ReaderViewModel {
     }
 
     var hasAISummary: Bool {
-        guard let aiSummary = article.aiSummary else { return false }
-        return !aiSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ContentClassifier.hasVisibleText(article.aiSummary)
     }
 
     var shouldOfferYouTubeSummary: Bool {

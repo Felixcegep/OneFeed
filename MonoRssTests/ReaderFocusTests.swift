@@ -196,10 +196,15 @@ struct ReaderFocusTests {
         #expect(built == html)
     }
 
-    @Test func youtubeWithVisibleSummaryOpensInTheReader() {
+    @Test @MainActor func youtubeWithVisibleSummaryOpensInTheReader() {
         #expect(ReaderView.youtubeOpensInReader(summary: "  A real summary") == true)
         #expect(ReaderView.youtubeOpensInReader(summary: " \n\t") == false)
         #expect(ReaderView.youtubeOpensInReader(summary: nil) == false)
+        let article = Article(guid: "yt-blank", title: "Talk", contentKind: "youtube", aiSummary: " \n")
+        let model = ReaderViewModel(article: article)
+        #expect(model.hasAISummary == false)
+        article.aiSummary = "A point worth keeping"
+        #expect(model.hasAISummary == true)
     }
 
     @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {

@@ -161,7 +161,7 @@ final class Article {
         }
     }
 
-    /// The reader asks for this on redraws. Trimming the stored body once is enough.
+    /// The reader asks for this on redraws. The check stops at the first visible character.
     @Transient private var cachedReadableSource: String?
     @Transient private var cachedReadableHTML: String?
 
@@ -169,12 +169,7 @@ final class Article {
         let value = contentHTML ?? summary
         if cachedReadableSource == value { return cachedReadableHTML }
         cachedReadableSource = value
-        guard let value else {
-            cachedReadableHTML = nil
-            return nil
-        }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        cachedReadableHTML = trimmed.isEmpty ? nil : value
+        cachedReadableHTML = ContentClassifier.hasVisibleText(value) ? value : nil
         return cachedReadableHTML
     }
 

@@ -746,14 +746,12 @@ struct ReaderView: View {
 
     /// A video with any visible summary opens in the reader. Stops at the first character, so a long summary is not copied just to choose the mode.
     static func youtubeOpensInReader(summary: String?) -> Bool {
-        guard let summary else { return false }
-        return summary.contains { !$0.isWhitespace }
+        ContentClassifier.hasVisibleText(summary)
     }
 
     /// True when the stored body has visible text. Stops at the first character, so opening the reader does not copy the article.
     private static func hasReadableDocument(_ article: Article) -> Bool {
-        guard let value = article.contentHTML ?? article.summary else { return false }
-        return value.contains { !$0.isWhitespace }
+        ContentClassifier.hasVisibleText(article.contentHTML ?? article.summary)
     }
 
     private var playbackURL: URL? {

@@ -48,6 +48,12 @@ nonisolated enum ContentClassifier: Sendable {
         return String(plain[..<limit]) + "…"
     }
 
+    /// True when the text has a visible character. Stops there, so a long summary is not copied just to see that it exists.
+    static func hasVisibleText(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value.contains { !$0.isWhitespace }
+    }
+
     /// The featured-card preview. A summary is preferred, then the feed blurb. Markup stays out of the line.
     static func cardExcerpt(aiSummary: String?, summary: String?) -> String? {
         if let aiSummary, !aiSummary.isEmpty {

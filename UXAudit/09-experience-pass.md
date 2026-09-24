@@ -209,6 +209,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening a source loaded every stored article | Source | High | The recent list counted and sorted the whole feed relationship, which materializes every article body | The count is a fetch, and only the twenty newest stories are loaded. A refresh or a new story still rebuilds that short list | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 | The featured card stripped its summary while the screen was drawing | Today, Queue | High | The first paint ran the HTML excerpt on the main thread | The preview is built off the main thread and arrives with the card. Today draws the title first, then fills the preview in with the captions | `FeedAndFreshRSSDomainTests.displayExcerptPrefersAISummary` |
 | Opening a video copied its whole summary to choose the reader | Reader | Medium | The mode check trimmed the summary before the page could appear | The check stops at the first visible character. A blank summary still opens the website | `ReaderFocusTests.youtubeWithVisibleSummaryOpensInTheReader` |
+| The reader trimmed the video summary on every redraw | Reader | Medium | The summary offer checked emptiness by copying the whole summary | The offer stops at the first visible character. A blank summary still asks to summarize | `ReaderFocusTests.youtubeWithVisibleSummaryOpensInTheReader` |
 
 ## Still open
 
