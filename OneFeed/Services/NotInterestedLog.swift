@@ -192,9 +192,7 @@ enum NotInterestedLog {
     nonisolated static func articles(matchingGUIDs guids: [String], in context: ModelContext) -> [String: Article] {
         let keys = guids.filter { !$0.isEmpty }
         guard !keys.isEmpty else { return [:] }
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { keys.contains($0.guid) })
-        descriptor.propertiesToFetch = [\.guid]
-        let found = (try? context.fetch(descriptor)) ?? []
+        let found = (try? context.fetch(ArticleListFetch.rows(predicate: #Predicate { keys.contains($0.guid) }))) ?? []
         var byGUID: [String: Article] = [:]
         for article in found where !article.guid.isEmpty {
             byGUID[article.guid] = article
@@ -205,11 +203,11 @@ enum NotInterestedLog {
     static func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {
         let guid = entry.articleGUID
         if !guid.isEmpty {
-            var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == guid })
+            var descriptor = ArticleListFetch.rows(predicate: #Predicate { $0.guid == guid })
             descriptor.fetchLimit = 1
             if let match = try? context.fetch(descriptor).first { return match }
         }
-        guard let url = entry.articleURL, let parsed = URL(string: url) else { return nil }
+        guard let rawURL = entry.articleURL, let parsed = URL(string: rawURL) else { return nil }
         return ArticleIdentity.storedArticle(matching: parsed, in: context)
     }
 

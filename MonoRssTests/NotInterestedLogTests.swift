@@ -147,10 +147,18 @@ struct NotInterestedLogTests {
         context.insert(other)
         try context.save()
 
+        let html = "<p>\(String(repeating: "word ", count: 80))</p>"
+        kept.contentHTML = html
+        try context.save()
+
         let matches = NotInterestedLog.articles(matchingGUIDs: ["kept", "missing"], in: context)
         #expect(matches["kept"]?.title == "Kept")
+        #expect(matches["kept"]?.summary == nil)
         #expect(matches["other"] == nil)
         #expect(matches["missing"] == nil)
+        let keptID = kept.id
+        let stored = try #require(context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == keptID })).first)
+        #expect(stored.contentHTML == html)
     }
 
     @Test func archiveParksTheSourceOutOfToday() throws {

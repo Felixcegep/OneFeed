@@ -317,9 +317,8 @@ extension LibraryIngestActor {
 
     private func isEmptyFeed(_ feed: Feed) -> Bool {
         let feedID = feed.id
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
-        descriptor.fetchLimit = 1
-        return (try? modelContext.fetch(descriptor))?.isEmpty ?? true
+        let descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
+        return (try? modelContext.fetchCount(descriptor)) == 0
     }
 
     private func articlesMissingYouTubeDuration(limit: Int) -> [Article] {
