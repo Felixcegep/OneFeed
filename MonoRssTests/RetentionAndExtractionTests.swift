@@ -95,6 +95,12 @@ struct RetentionAndExtractionTests {
         #expect(ReaderFailure.message(for: FeedServiceError.http(500)) == "That did not finish. Try again.")
     }
 
+    @Test func queueErrorsUseAppSentences() {
+        #expect(UserFacingFailure.message(for: QueueLinkError.invalidAddress, fallback: "Couldn’t add that link.") == "That doesn’t look like a link.")
+        let system = NSError(domain: "SwiftData", code: 1)
+        #expect(UserFacingFailure.message(for: system, fallback: "Couldn’t update Queue.") == "Couldn’t update Queue.")
+    }
+
     @Test func automaticExtractSkipsSubstantialRSS() {
         let policy = ArticleExtractionPolicy()
         let long = Array(repeating: "word", count: 420).joined(separator: " ")

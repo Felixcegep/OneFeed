@@ -32,7 +32,7 @@ final class SavedViewModel {
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == saved })
         descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
         do { articles = ArticleIdentity.collapsingDuplicates(try context.fetch(descriptor)) }
-        catch { presentedError = error.localizedDescription }
+        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
     func openArticle(id: UUID) {
@@ -51,7 +51,7 @@ final class SavedViewModel {
         guard let context, article.isStored else { return }
         if article.remoteID != nil { freshRSSService.enqueueMutation(for: article, transition: .queued, in: context) }
         do { try queue.restoreSaved(article, in: context); reload() }
-        catch { presentedError = error.localizedDescription }
+        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
     func finishReading(_ article: Article, as state: ArticleState) {
@@ -72,7 +72,7 @@ final class SavedViewModel {
                     ReadingUndo.commit(article, in: context)
                 }
             } catch {
-                presentedError = error.localizedDescription
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.")
             }
         }
         selectedArticle = nil

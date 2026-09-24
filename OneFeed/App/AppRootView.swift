@@ -82,7 +82,7 @@ struct AppRootView: View {
                 case .success(let urls):
                     Task { await importIncomingDocuments(urls) }
                 case .failure(let error):
-                    importError = error.localizedDescription
+                    importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
                 }
             }
             .alert("Couldn’t import", isPresented: Binding(
@@ -128,7 +128,7 @@ struct AppRootView: View {
             QueueHandoff.pendingArticleID = article.id
             NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: article.id)
         } catch {
-            importError = error.localizedDescription
+            importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
         }
     }
 
@@ -144,7 +144,7 @@ struct AppRootView: View {
                 NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
             }
         } catch {
-            importError = error.localizedDescription
+            importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
         }
     }
 }

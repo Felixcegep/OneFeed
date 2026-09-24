@@ -263,7 +263,7 @@ struct SavedView: View {
                     viewModel.reload()
                     if let last { viewModel.selectedArticle = last }
                 } catch {
-                    viewModel.presentedError = error.localizedDescription
+                    viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
                 }
             }
             return true
@@ -285,7 +285,7 @@ struct SavedView: View {
                 viewModel.reload()
                 if let last { viewModel.selectedArticle = last }
             } catch {
-                viewModel.presentedError = error.localizedDescription
+                viewModel.presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that link.")
             }
         }
         return true

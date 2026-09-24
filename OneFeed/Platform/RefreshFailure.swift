@@ -8,6 +8,22 @@ enum RefreshFailure {
     }
 }
 
+enum UserFacingFailure {
+    /// Uses an error's own sentence when the app wrote one. Otherwise the fallback, never a raw system dump.
+    nonisolated static func message(for error: Error, fallback: String) -> String {
+        if error.isCancellation || error.isTransientNetwork {
+            return fallback
+        }
+        if !(error is NSError),
+           let described = error as? LocalizedError,
+           let text = described.errorDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty {
+            return text
+        }
+        return fallback
+    }
+}
+
 enum ReaderFailure {
     /// Calm copy for Gemini and network failures. Raw API text stays out of the reader.
     nonisolated static func message(for error: Error) -> String {

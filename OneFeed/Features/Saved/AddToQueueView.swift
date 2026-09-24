@@ -117,7 +117,7 @@ struct AddToQueueView: View {
                 case .success(let urls):
                     importFiles(urls)
                 case .failure(let error):
-                    presentedError = error.localizedDescription
+                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 }
             }
             .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
@@ -158,7 +158,7 @@ struct AddToQueueView: View {
                 onAdded()
                 dismiss()
             } catch {
-                presentedError = error.localizedDescription
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 isAdding = false
             }
         }
@@ -177,7 +177,7 @@ struct AddToQueueView: View {
                 onAdded()
                 dismiss()
             } catch {
-                presentedError = error.localizedDescription
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 isAdding = false
             }
         }
@@ -202,7 +202,7 @@ struct AddToQueueView: View {
                 onAdded()
                 dismiss()
             } catch {
-                presentedError = error.localizedDescription
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 isAdding = false
             }
         }
@@ -217,7 +217,7 @@ struct AddToQueueView: View {
             onAdded()
             dismiss()
         } catch {
-            presentedError = error.localizedDescription
+            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
             isAdding = false
         }
     }
