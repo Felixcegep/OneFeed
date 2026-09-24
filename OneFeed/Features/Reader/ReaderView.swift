@@ -128,15 +128,10 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItem(placement: .oneFeedTrailing) {
-                    HStack(spacing: 10) {
-                        if viewModel.isExtracting || viewModel.isSummarizing {
-                            OneFeedMarkPulse(isActive: true, size: 18)
-                                .frame(minWidth: 44, minHeight: 44)
-                                .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
-                        }
-                        if showsReadingOptions {
-                            readingOptionsMenu
-                        }
+                    if showsReadingOptions {
+                        readingOptionsControl
+                    } else if viewModel.isExtracting || viewModel.isSummarizing {
+                        readerActivityMark
                     }
                 }
             }
@@ -469,6 +464,30 @@ struct ReaderView: View {
                 #endif
         }
         .accessibilityLabel("Reading options")
+        .accessibilityValue(ReaderFocusMode(rawValue: focusMode)?.label ?? "Smart")
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        #endif
+    }
+
+    /// The loading mark covers this control instead of pushing it aside.
+    private var readingOptionsControl: some View {
+        readingOptionsMenu
+            .frame(minWidth: 44, minHeight: 44)
+            .overlay {
+                if viewModel.isExtracting || viewModel.isSummarizing {
+                    readerActivityMark
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : viewModel.isExtracting ? "Loading" : "Reading options")
+    }
+
+    private var readerActivityMark: some View {
+        OneFeedMarkPulse(isActive: true, size: 18)
+            .frame(minWidth: 44, minHeight: 44)
+            .allowsHitTesting(false)
+            .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
     }
 
     #if os(macOS)
@@ -500,15 +519,9 @@ struct ReaderView: View {
             Spacer(minLength: 8)
 
             if showsReadingOptions {
-                readingOptionsMenu
-                    .menuStyle(.borderlessButton)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-
-            if viewModel.isExtracting || viewModel.isSummarizing {
-                OneFeedMarkPulse(isActive: true, size: 18)
-                    .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
+                readingOptionsControl
+            } else if viewModel.isExtracting || viewModel.isSummarizing {
+                readerActivityMark
             }
         }
         .padding(.horizontal, 16)
@@ -624,8 +637,7 @@ struct ReaderView: View {
                 metaLine: viewModel.readerMetaLine,
                 title: article.title,
                 articleID: article.id,
-                baseURL: viewModel.documentBaseURL,
-                showingFocusSheet: $showingFocusSheet
+                baseURL: viewModel.documentBaseURL
             )
         }
     }
@@ -887,7 +899,6 @@ private struct ReaderWebContent: View {
     let title: String
     let articleID: UUID
     var baseURL: URL = ReaderWebWarmup.blankURL
-    @Binding var showingFocusSheet: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
@@ -919,11 +930,6 @@ private struct ReaderWebContent: View {
                     }
                 }
                 .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
-            }
-            .overlay(alignment: .bottom) {
-                if !showCover {
-                    focusDot
-                }
             }
             .onChange(of: page.isLoading) { _, loading in
                 if !loading { hasCommitted = true }
@@ -976,31 +982,6 @@ private struct ReaderWebContent: View {
                     await persistTrail()
                 }
             }
-    }
-
-    private var focusDot: some View {
-        Button {
-            showingFocusSheet = true
-        } label: {
-            Group {
-                if resolvedMode == .off {
-                    Circle()
-                        .strokeBorder(OneFeedTheme.ink.opacity(0.45), lineWidth: 1.5)
-                } else {
-                    Circle()
-                        .fill(OneFeedTheme.ink)
-                }
-            }
-            .frame(width: 7, height: 7)
-            .frame(minWidth: 44, minHeight: 44)
-            .padding(.top, 16)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Reading focus")
-        .accessibilityValue(resolvedMode.label)
-        .accessibilityHint("Opens focus options")
-        .padding(.bottom, 2)
     }
 
     private func revealCoverIfStillWaiting() async {

@@ -96,6 +96,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Today kept yesterday’s “already read” line after the story index updated | Today | Medium | Captions were reused for the hour and did not notice a new story index | A story-index update reloads captions. The same deck still reuses them until then | Code review |
 | Skip had no way to file Not interested without hunting the menu | Today, Feed, reader | Medium | The undo bar only put the story back | After Skip, the bar offers Not interested. Undo still restores the story from before the skip, including that filing | `NotInterestedLogTests.skipUndoCanFileNotInterestedAndStillRestore` |
 | The in-app browser shifted Back and Share when loading started | Reader browser | Medium | The loading mark was inserted as a toolbar item | The mark is a 2-point line in the top safe area. It still waits 160ms, and the toolbar stays still | Code review |
+| A focus dot covered the bottom line of the article | Reader | High | A 44-point control floated over the page, and the same action already lives in Reading options | The page is clear. Reading options still opens Focus and speaks the current mode | Code review |
+| Summarizing shifted the reading-options button | Reader | Medium | The loading mark was inserted beside the button | The mark draws on top of that button, so the button stays put | Code review |
 
 ## Still open
 
