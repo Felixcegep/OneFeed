@@ -144,6 +144,40 @@ struct LibrarySyncServiceDriveTests {
         #expect(feeds.isEmpty)
     }
 
+    @Test func skippedDrivePullRunsOnceAfterReadingEnds() async throws {
+        let harness = try DriveSyncHarness()
+        defer { harness.tearDown() }
+
+        let fileID = "drive-file-skip-later"
+        harness.service.linkGoogleDrive(
+            fileID: fileID,
+            displayName: "OneFeed.library.json",
+            accountEmail: nil
+        )
+        #expect(await harness.service.sync(request: .keepThisIPhone) == .pushed)
+        harness.fake.files[fileID] = try remoteLibraryBytes()
+        harness.fake.downloadCount = 0
+
+        harness.service.hasActiveReadingSession = true
+        #expect(await harness.service.sync(request: .automatic) == .skippedActiveSession)
+        #expect(await harness.service.sync(request: .manual) == .skippedActiveSession)
+        #expect(harness.fake.downloadCount == 2)
+
+        harness.service.hasActiveReadingSession = false
+        var titles: [String] = []
+        for _ in 0..<30 {
+            titles = try harness.context.fetch(FetchDescriptor<Feed>()).map(\.title)
+            if titles == ["Remote Source"] { break }
+            await Task.yield()
+        }
+        #expect(titles == ["Remote Source"])
+        let downloadsAfterPull = harness.fake.downloadCount
+        for _ in 0..<8 {
+            await Task.yield()
+        }
+        #expect(harness.fake.downloadCount == downloadsAfterPull)
+    }
+
     @Test func useCloudFileStillPullsDuringActiveReadingSession() async throws {
         let harness = try DriveSyncHarness()
         defer { harness.tearDown() }
@@ -273,6 +307,7 @@ private final class FakeGoogleDriveAPIClient: GoogleDriveAPIClienting, @unchecke
     var files: [String: Data] = [:]
     var email: String? = "reader@example.com"
     var md5Checksum: String? = "ignored-md5-checksum"
+    var downloadCount = 0
 
     func findBackupFile() async throws -> GoogleDriveFile? {
         guard let first = files.first else { return nil }
@@ -286,6 +321,7 @@ private final class FakeGoogleDriveAPIClient: GoogleDriveAPIClienting, @unchecke
     }
 
     func downloadFile(id: String) async throws -> Data {
+        downloadCount += 1
         guard let data = files[id] else {
             throw URLError(.fileDoesNotExist)
         }

@@ -143,6 +143,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Putting a story back in Queue could fail silently | History | Medium | The save error was discarded | The story stays in History and an alert explains what happened | Code review |
 | Done or Queue from Not interested only closed the reader | Not interested | High | The finish callback ignored the new state, and a story already in Queue kept its set-aside mark | Done and Skip update the story. Queue clears the set-aside mark, including when it was already saved | `ArticleStateTests.moveToQueueClearsNotInterestedWhenAlreadySaved` |
 | A cloud file could replace the library while a History story was open | History, library | High | History never marked an active reading session, and a folder sync pulled anyway | History counts as reading. A folder change waits until the story is closed, then pulls once | Code review |
+| A Google Drive pull during reading never arrived after the story closed | Library | High | The sync returned skipped and forgot the pull | Automatic and manual pulls wait, then one pull runs after the story closes. Choosing the cloud file still pulls immediately | `LibrarySyncServiceDriveTests.skippedDrivePullRunsOnceAfterReadingEnds` |
 
 ## Still open
 

@@ -48,11 +48,11 @@ final class LibrarySyncService {
     /// Reader presented. Automatic and manual pulls wait; `useCloudFile` still pulls.
     var hasActiveReadingSession = false {
         didSet {
-            guard oldValue, !hasActiveReadingSession, pullAgain else { return }
-            Task { await pullAndMerge() }
+            guard oldValue, !hasActiveReadingSession else { return }
+            resumeDeferredPullIfIdle()
         }
     }
-    /// A folder change arrived while a story was open. Pull once reading ends.
+    /// A cloud pull arrived while a story was open. Pull once reading ends.
     private var pullAgain = false
 
     private var context: ModelContext?
@@ -247,6 +247,21 @@ final class LibrarySyncService {
         schedulePush()
     }
 
+    /// Runs one deferred cloud pull after the open story closes.
+    private func resumeDeferredPullIfIdle() {
+        guard pullAgain, !hasActiveReadingSession, !isSyncing else { return }
+        pullAgain = false
+        Task { await resumeDeferredPull() }
+    }
+
+    private func resumeDeferredPull() async {
+        if usesGoogleDriveAPI {
+            _ = await sync(request: .automatic)
+        } else {
+            await pullAndMerge()
+        }
+    }
+
     func syncNow() async {
         guard isLinked, !isSyncing else { return }
         if usesGoogleDriveAPI {
@@ -257,6 +272,7 @@ final class LibrarySyncService {
         defer {
             isSyncing = false
             resumeDeferredPush()
+            resumeDeferredPullIfIdle()
         }
         await pullAndMerge()
         await pushNow()
@@ -278,6 +294,7 @@ final class LibrarySyncService {
         defer {
             isSyncing = false
             resumeDeferredPush()
+            resumeDeferredPullIfIdle()
         }
         await pushNow()
     }
@@ -298,10 +315,16 @@ final class LibrarySyncService {
         defer {
             isSyncing = false
             resumeDeferredPush()
+            resumeDeferredPullIfIdle()
         }
 
         do {
             let outcome = try await performDriveSync(request: request)
+            if outcome == .skippedActiveSession {
+                pullAgain = true
+            } else {
+                pullAgain = false
+            }
             lastOutcome = outcome
             lastError = nil
             lastErrorMessage = nil
