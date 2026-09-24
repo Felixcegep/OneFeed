@@ -413,6 +413,44 @@ struct RetentionAndExtractionTests {
         #expect(article.contentHTML == "<p>\(long)</p>")
     }
 
+    @Test func refreshExtractionUsesTheStoredDeckID() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "refresh-1",
+            title: "Story",
+            url: URL(string: "https://source.test/1")!,
+            summary: "Short",
+            contentHTML: "<p>Short</p>",
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        let extractor = RecordingExtractor()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubExtractURLProtocol.self]
+        StubExtractURLProtocol.body = "<html><body><p>Downloaded page with enough words to keep.</p></body></html>"
+        let session = URLSession(configuration: config)
+        await LibraryIngestActor(modelContainer: container).enrichUpcomingArticles(
+            currentItemID: item.id,
+            extraQueued: 0,
+            session: session,
+            extractor: extractor
+        )
+
+        #expect(extractor.urls == [URL(string: "https://source.test/1")!])
+        #expect(article.contentHTML == "<p>Short</p>")
+    }
+
     @Test func refreshExtractionStoresThePageWithoutAssigningItOnTheCaller() async throws {
         let container = try InMemoryStore.makeContainer()
         let context = ModelContext(container)

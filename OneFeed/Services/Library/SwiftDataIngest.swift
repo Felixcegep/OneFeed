@@ -41,10 +41,9 @@ actor LibraryIngestActor {
         let policy = ArticleExtractionPolicy()
         var bodies: [ExtractedBody] = []
         for item in items.filter({ $0.position >= start }).prefix(1 + extraQueued) {
-            guard let article = item.article else { continue }
-            let articleID = article.id
+            guard let articleID = item.resolvedArticleID() else { continue }
             guard ArticleExtractionService.shouldFetchStoredArticle(id: articleID, policy: policy, in: modelContext.container) else { continue }
-            guard let url = article.url else { continue }
+            guard let url = DailyDeckService.lightweightArticle(id: articleID, in: modelContext)?.url else { continue }
             guard let html = await ArticleExtractionService.downloadedArticle(
                 url: url,
                 session: session,

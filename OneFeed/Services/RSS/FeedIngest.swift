@@ -328,7 +328,8 @@ extension LibraryIngestActor {
         var targets: [Article] = []
         var seen = Set<UUID>()
         for item in deckItems {
-            guard let article = item.article, article.isStored else { continue }
+            guard let id = item.resolvedArticleID(),
+                  let article = DailyDeckService.lightweightArticle(id: id, in: modelContext) else { continue }
             guard article.contentKind == "youtube", article.durationSeconds <= 0 else { continue }
             if seen.insert(article.id).inserted {
                 targets.append(article)
@@ -343,6 +344,8 @@ extension LibraryIngestActor {
         )
         descriptor.fetchLimit = max(limit * 2, 16)
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
+        descriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID, \.contentKind, \.durationSeconds, \.estimatedReadingMinutes]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let extra = ((try? modelContext.fetch(descriptor)) ?? []).filter { article in
             article.isStored && !seen.contains(article.id)
         }

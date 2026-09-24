@@ -154,14 +154,18 @@ struct ArticleQueueService {
             .filter { $0.status == .queued && $0.resolvedArticleID() != article.id }
             .sorted { $0.position < $1.position }
             .first
+        var promoted: Article?
         if let nextItem {
             nextItem.status = .current
-            if let promoted = nextItem.article {
-                promoted.state = .current
-                promoted.firstDisplayedAt = .now
-                LibraryChange.note(promoted)
+            if let id = nextItem.resolvedArticleID() {
+                promoted = DailyDeckService.lightweightArticle(id: id, in: context)
+                if let promoted {
+                    promoted.state = .current
+                    promoted.firstDisplayedAt = .now
+                    LibraryChange.note(promoted)
+                }
             }
         }
-        WidgetSnapshotStore.write(article: nextItem?.article)
+        WidgetSnapshotStore.write(article: promoted)
     }
 }

@@ -246,6 +246,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A refresh opened every Today story to keep it | Today, Feed | High | Cleanup and deck updates read `article.id` on each deck row, which loads the stored page | The row stores that id. Cleanup, a duplicate merge, and deck updates use the stored id | `RetentionAndExtractionTests.purgeKeepsADeckStoryByTheStoredArticleID` |
 | Today loaded every open story to draw the deck | Today | High | The deck list and a filter rebuild followed each row’s article relationship, which loads the stored page | Those lookups use the stored id and read identity and state only. The page stays on disk until the story is opened | `DailyDeckTests.todayListUsesTheStoredArticleID` |
 | Opening Today or finishing a story followed the deck row into the page | Today | High | The current card and Done loaded `item.article`, which brings the stored page into memory | The card, Done, and the next story use the stored id and the fields the row shows. The page stays on disk | `DailyDeckTests.finishingTodayUpdatesTheStoryByItsStoredID` |
+| A follow-up fetch opened the Today story before deciding to download it | Today, Feed | High | Enrichment and the video-duration pass followed each deck row’s article, which loads the stored page | Those passes use the stored id. The download decision still reads the page on a separate context | `RetentionAndExtractionTests.refreshExtractionUsesTheStoredDeckID` |
 
 ## Still open
 
