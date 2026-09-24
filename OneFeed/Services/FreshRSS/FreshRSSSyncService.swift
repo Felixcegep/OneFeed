@@ -108,7 +108,6 @@ final class FreshRSSSyncService {
         })
         if let pending = try? context.fetch(descriptor), !pending.isEmpty { return }
         context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: kind))
-        try? context.save()
     }
 
     /// Drops mutations for `remoteID` that were not already pending. Rows in `ids` stay.
@@ -118,19 +117,15 @@ final class FreshRSSSyncService {
             predicate: #Predicate { $0.remoteArticleID == remoteID }
         )
         let rows = (try? context.fetch(descriptor)) ?? []
-        var removed = false
         for row in rows where !ids.contains(row.id) {
             context.delete(row)
-            removed = true
         }
-        if removed { try? context.save() }
     }
 
     /// Queues a local markUnread. No network call.
     func enqueueCompensatingUnread(for article: Article, in context: ModelContext) {
         guard let remoteID = article.remoteID else { return }
         context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: .markUnread))
-        try? context.save()
     }
 
     func addSubscription(from input: String, folderName: String? = nil, in context: ModelContext) async throws -> Feed {

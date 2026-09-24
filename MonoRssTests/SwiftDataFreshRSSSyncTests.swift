@@ -52,6 +52,17 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(mutations.first?.1 == .unstar)
     }
 
+    @Test func aRolledBackSaveDropsTheQueuedMutation() throws {
+        let context = try context()
+        let article = Article(guid: "one", title: "One", state: .read, remoteID: "remote-one")
+        context.insert(article)
+        try context.save()
+        FreshRSSSyncService().enqueueMutation(for: article, transition: .saved, in: context)
+        #expect(try context.fetchCount(FetchDescriptor<PendingSyncMutation>()) == 1)
+        context.rollback()
+        #expect(try context.fetchCount(FetchDescriptor<PendingSyncMutation>()) == 0)
+    }
+
     @Test func enqueueMutationIgnoresARepeatedStar() throws {
         let context = try context()
         let article = Article(guid: "one", title: "One", state: .read, remoteID: "remote-one")

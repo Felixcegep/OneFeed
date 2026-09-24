@@ -29,6 +29,7 @@ struct FoldersView: View {
     @State private var isEditingFolders = false
     @State private var openFolderID: FeedFolderID?
     @State private var folderQuery = ""
+    @State private var appliedFolderQuery = ""
     @State private var folderAddError: String?
     @State private var sourceSaveError: String?
     @State private var isAddingAddress = false
@@ -82,6 +83,7 @@ struct FoldersView: View {
             }
         }
         .oneFeedGroupedListStyle()
+        .debouncedSearch(folderQuery, into: $appliedFolderQuery)
         .overlay {
             ZStack {
                 if showsSourceRefreshCover {
@@ -307,7 +309,8 @@ struct FoldersView: View {
     /// Occupied folders, plus remembered empty ones, with the open folder's sources and add field.
     private var editingRows: [SourceEditRow] {
         var rows: [SourceEditRow] = []
-        let query = trimmedFolderQuery
+        let live = trimmedFolderQuery
+        let query = appliedFolderQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         for group in FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds) {
             rows.append(.folder(group))
             guard openFolderID == group.folderID else { continue }
@@ -318,8 +321,8 @@ struct FoldersView: View {
             for feed in folderSearchResults(in: folderName, query: query) {
                 rows.append(.suggestion(feed, folderName: folderName))
             }
-            if folderQueryIsAddress(query) {
-                rows.append(.addURL(query: query, folderName: folderName))
+            if folderQueryIsAddress(live) {
+                rows.append(.addURL(query: live, folderName: folderName))
             }
             rows.append(.field(folderName))
             if let folderAddError {
