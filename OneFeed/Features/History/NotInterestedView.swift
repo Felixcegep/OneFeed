@@ -14,6 +14,7 @@ struct NotInterestedView: View {
     @State private var storyError: String?
     @State private var removeError: String?
     @State private var sourceError: String?
+    @State private var logError: String?
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -130,6 +131,14 @@ struct NotInterestedView: View {
         } message: {
             Text(sourceError ?? "")
         }
+        .alert("Couldn’t remove that entry", isPresented: Binding(
+            get: { logError != nil },
+            set: { if !$0 { logError = nil } }
+        )) {
+            Button("OK", role: .cancel) { logError = nil }
+        } message: {
+            Text(logError ?? "")
+        }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
             isPresented: Binding(
@@ -226,15 +235,23 @@ struct NotInterestedView: View {
         .disabled(article == nil)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Remove", systemImage: "trash", role: .destructive) {
-                NotInterestedLog.delete(entry, in: modelContext)
+                removeLogEntry(entry)
             }
         }
         .contextMenu {
             Button("Remove from log", systemImage: "trash", role: .destructive) {
-                NotInterestedLog.delete(entry, in: modelContext)
+                removeLogEntry(entry)
             }
         }
         .accessibilityHint(article == nil ? "The article is no longer on this device" : "Opens this article")
+    }
+
+    private func removeLogEntry(_ entry: NotInterestedEntry) {
+        do {
+            try NotInterestedLog.delete(entry, in: modelContext)
+        } catch {
+            logError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that entry.")
+        }
     }
 
     private func sourceDetail(for group: NotInterestedSourceGroup, feed: Feed?) -> String {

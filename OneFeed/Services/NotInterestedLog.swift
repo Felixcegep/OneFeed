@@ -156,9 +156,14 @@ enum NotInterestedLog {
         }
     }
 
-    static func delete(_ entry: NotInterestedEntry, in context: ModelContext) {
+    static func delete(_ entry: NotInterestedEntry, in context: ModelContext) throws {
         context.delete(entry)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     static func feed(matching group: NotInterestedSourceGroup, in feeds: [Feed]) -> Feed? {
