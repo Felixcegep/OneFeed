@@ -154,6 +154,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Undo removed its bar before the story was restored | Today, Feed, reader | High | The bar dismissed, then the restore discarded a failed save | The bar stays, the story stays skipped, and an alert explains the failure | Code review |
 | Removing a Not interested entry vanished before the save | Not interested | Medium | The row deleted the log entry and ignored a failed save | The entry stays in the list, and an alert explains the failure | Code review |
 | A fetched article or imported file looked kept when the save failed | Reader | High | Extraction wrote the page onto the story and ignored the save | The page stays on screen for this visit, and an alert says it was not kept | Code review |
+| Not interested looked filed when the save failed | Reader, Undo bar | High | The mark was set and the save was ignored, then the bar said Not interested | The mark is dropped, the bar stays on Skipped, and an alert explains the failure. Not now on a video summary is forgotten the same way | Code review |
 
 ## Still open
 

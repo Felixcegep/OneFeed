@@ -40,6 +40,7 @@ struct ReaderView: View {
     @State private var showingFocusSheet = false
     @State private var showingTakeaway = false
     @State private var takeawayError: String?
+    @State private var filingError: String?
     @State private var pendingReadFinish = false
     @State private var savePulse = 0
     @State private var donePulse = 0
@@ -175,6 +176,14 @@ struct ReaderView: View {
                 Button("OK", role: .cancel) { viewModel.bodyError = nil }
             } message: {
                 Text(viewModel.bodyError ?? "")
+            }
+            .alert("Couldn’t file that", isPresented: Binding(
+                get: { filingError != nil },
+                set: { if !$0 { filingError = nil } }
+            )) {
+                Button("OK", role: .cancel) { filingError = nil }
+            } message: {
+                Text(filingError ?? "")
             }
             .sheet(isPresented: $showingFocusSheet) {
                 ReaderFocusSheet(mode: $focusMode, intensity: $focusIntensity)
@@ -383,7 +392,12 @@ struct ReaderView: View {
 
     private func finishNotInterested() {
         ReadingUndo.begin(article, in: modelContext)
-        NotInterestedLog.record(article, in: modelContext)
+        do {
+            try NotInterestedLog.record(article, in: modelContext)
+        } catch {
+            filingError = UserFacingFailure.message(for: error, fallback: "Couldn’t file that as not interested.")
+            return
+        }
         finish(.skipped)
     }
 

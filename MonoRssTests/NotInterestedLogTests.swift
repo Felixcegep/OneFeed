@@ -28,7 +28,7 @@ struct NotInterestedLogTests {
         context.insert(article)
         try context.save()
 
-        let entry = NotInterestedLog.record(article, in: context)
+        let entry = try NotInterestedLog.record(article, in: context)
         #expect(article.notInterested)
         #expect(entry.articleTitle == "Another gadget post")
         #expect(entry.sourceTitle == "The Verge")
@@ -48,9 +48,9 @@ struct NotInterestedLogTests {
         )
         context.insert(article)
 
-        NotInterestedLog.record(article, in: context, now: Date(timeIntervalSince1970: 10))
+        try NotInterestedLog.record(article, in: context, now: Date(timeIntervalSince1970: 10))
         article.title = "Edited title"
-        NotInterestedLog.record(article, in: context, now: Date(timeIntervalSince1970: 20))
+        try NotInterestedLog.record(article, in: context, now: Date(timeIntervalSince1970: 20))
 
         let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
         #expect(entries.count == 1)
@@ -67,11 +67,11 @@ struct NotInterestedLogTests {
         for index in 1...3 {
             let article = Article(guid: "v-\(index)", title: "Verge \(index)", feed: verge)
             context.insert(article)
-            NotInterestedLog.record(article, in: context)
+            try NotInterestedLog.record(article, in: context)
         }
         let kottkeArticle = Article(guid: "k-1", title: "One", feed: kottke)
         context.insert(kottkeArticle)
-        NotInterestedLog.record(kottkeArticle, in: context)
+        try NotInterestedLog.record(kottkeArticle, in: context)
 
         let groups = NotInterestedLog.groups(from: NotInterestedLog.entries(in: context))
         #expect(groups.map(\.sourceTitle) == ["The Verge", "kottke.org"])
@@ -88,7 +88,7 @@ struct NotInterestedLogTests {
         context.insert(feed)
         let article = Article(guid: "v-1", title: "AI glasses are here", feed: feed)
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
 
         let text = NotInterestedLog.snapshot(in: context)
         #expect(text.contains("The Verge"))
@@ -148,7 +148,7 @@ struct NotInterestedLogTests {
             feed: feed
         )
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
         _ = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
         #expect(try context.fetch(FetchDescriptor<Article>()).isEmpty)
         #expect(try context.fetch(FetchDescriptor<NotInterestedEntry>()).count == 1)
@@ -167,7 +167,7 @@ struct NotInterestedLibrarianTests {
         context.insert(feed)
         let article = Article(guid: "v-1", title: "Gadget roundup", feed: feed)
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
         defer {
             FolderStore.remove("Archive")
             FolderEmoji.resetStored()

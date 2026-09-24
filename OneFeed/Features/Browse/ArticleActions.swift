@@ -28,8 +28,8 @@ enum ArticleActions {
     @discardableResult
     static func markNotInterested(_ article: Article, in context: ModelContext) -> Bool {
         ReadingUndo.begin(article, in: context)
-        NotInterestedLog.record(article, in: context)
         do {
+            try NotInterestedLog.record(article, in: context)
             try apply(.skipped, to: article, in: context)
             return true
         } catch {

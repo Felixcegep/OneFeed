@@ -75,7 +75,10 @@ final class ReaderViewModel {
 
     func declineYouTubeSummary() {
         article.declinedVideoSummary = true
-        try? article.modelContext?.save()
+        if let failure = saveArticleChanges() {
+            article.declinedVideoSummary = false
+            bodyError = failure
+        }
     }
 
     func beginSummary() {

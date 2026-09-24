@@ -105,7 +105,7 @@ struct ArticleStateTests {
         )
         article.completedAt = finished
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
         let unrelated = NotInterestedEntry(
             articleTitle: "Something else",
             articleURL: "https://source.test/other",
@@ -138,7 +138,7 @@ struct ArticleStateTests {
             notInterested: true
         )
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
         try context.save()
 
         try ArticleQueueService().moveToQueue(article, in: context)

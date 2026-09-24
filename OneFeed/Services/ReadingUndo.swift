@@ -16,13 +16,13 @@ final class ReadingUndoCenter {
         var title: String
         var strongerTitle: String?
         let undo: () -> Bool
-        var stronger: (() -> Void)?
+        var stronger: (() -> Bool)?
     }
 
     func present(
         title: String,
         strongerTitle: String? = nil,
-        stronger: (() -> Void)? = nil,
+        stronger: (() -> Bool)? = nil,
         undo: @escaping () -> Bool
     ) {
         dismissTask?.cancel()
@@ -50,15 +50,21 @@ final class ReadingUndoCenter {
     }
 
     /// Skip can become Not interested. Undo still restores the story from before the skip.
-    func performStronger() {
-        guard let action = offer?.stronger else { return }
-        action()
-        guard var current = offer else { return }
-        current.stronger = nil
-        current.strongerTitle = nil
-        current.title = String(localized: "Not interested")
-        offer = current
-        scheduleDismiss(of: current.id)
+    @discardableResult
+    func performStronger() -> Bool {
+        guard let current = offer, let action = current.stronger else { return false }
+        guard action() else {
+            undoError = String(localized: "Couldn’t file that as not interested.")
+            scheduleDismiss(of: current.id)
+            return false
+        }
+        guard var updated = offer else { return true }
+        updated.stronger = nil
+        updated.strongerTitle = nil
+        updated.title = String(localized: "Not interested")
+        offer = updated
+        scheduleDismiss(of: updated.id)
+        return true
     }
 
     private func scheduleDismiss(of id: UUID) {
@@ -121,9 +127,14 @@ enum ReadingUndo {
         }
         let marked = article.notInterested && !snapshot.notInterested
         let articleID = article.id
-        let stronger: (() -> Void)? = marked ? nil : {
-            guard let article = storedArticle(id: articleID, in: context) else { return }
-            NotInterestedLog.record(article, in: context)
+        let stronger: (() -> Bool)? = marked ? nil : {
+            guard let article = storedArticle(id: articleID, in: context) else { return false }
+            do {
+                try NotInterestedLog.record(article, in: context)
+                return true
+            } catch {
+                return false
+            }
         }
         ReadingUndoCenter.shared.present(
             title: marked ? String(localized: "Not interested") : String(localized: "Skipped"),
@@ -317,7 +328,7 @@ struct ReadingUndoBanner: ViewModifier {
                 }
                 .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
             }
-            .alert("Couldn’t undo", isPresented: Binding(
+            .alert("Couldn’t update that story", isPresented: Binding(
                 get: { center.undoError != nil },
                 set: { if !$0 { center.undoError = nil } }
             )) {
@@ -336,8 +347,9 @@ struct ReadingUndoBanner: ViewModifier {
         let actions = HStack(spacing: 8) {
             if let strongerTitle = offer.strongerTitle {
                 Button(strongerTitle) {
-                    center.performStronger()
-                    onApplied()
+                    if center.performStronger() {
+                        onApplied()
+                    }
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(OneFeedTheme.ink)

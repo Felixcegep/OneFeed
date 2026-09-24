@@ -6,7 +6,8 @@ enum NotInterestedLog {
     static let keepLimit = 200
 
     @discardableResult
-    static func record(_ article: Article, in context: ModelContext, now: Date = .now) -> NotInterestedEntry {
+    static func record(_ article: Article, in context: ModelContext, now: Date = .now) throws -> NotInterestedEntry {
+        let wasMarked = article.notInterested
         article.notInterested = true
         let url = ArticleIdentity.normalizedURLString(article.url)
         let existing = entries(matching: article, in: context).first
@@ -35,7 +36,13 @@ enum NotInterestedLog {
             entry.feedID = feed.id
         }
         trim(in: context)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            context.rollback()
+            article.notInterested = wasMarked
+            throw error
+        }
         return entry
     }
 
