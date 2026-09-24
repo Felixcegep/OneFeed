@@ -34,6 +34,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | iPhone Close skipped the reader’s close callback | Reader | Medium | The toolbar called `dismiss()` while Mac called `onClose` | Both paths use `closeReader()`, so the list clears the open story | Code review |
 | Closing Add Source refreshed Today even when nothing was added | Today, Sources | High | The sheet’s `onDismiss` always started a full refresh or a sources reload | `onAdded` runs only after a source is saved. Cancel leaves the current deck and the sources list alone. A link-in add still refreshes the library | Code review |
 | Undo title and Mac reader labels stayed on one line at large type | Undo banner, Mac reader | Medium | `lineLimit(1)` clipped the action title | Accessibility sizes wrap. Smaller sizes stay on one line | Code review |
+| Folder unread counts were higher than the stories in the folder | Feed | High | The badge counted every open article, including copies the folder list collapses | The badge uses the same same-story collapse as the list. The lookup fetches cluster ids only, not embedding vectors | `FeedAndFreshRSSDomainTests.folderUnreadCountCollapsesSameStoryInsideOneFolder` |
 
 ## Still open
 

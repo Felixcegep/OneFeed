@@ -57,24 +57,66 @@ enum FeedFolderGrouping {
     }
 
     static func folderSummaries(feeds: [Feed], articles: [Article]) -> [FolderSummary] {
-        folderSummaries(feeds: feeds, openArticles: openArticles(from: articles))
+        folderSummaries(feeds: feeds, articles: articles, placements: [:])
+    }
+
+    static func folderSummaries(
+        feeds: [Feed],
+        articles: [Article],
+        placements: [String: StoryPlacement]
+    ) -> [FolderSummary] {
+        folderSummaries(feeds: feeds, openArticles: openArticles(from: articles), placements: placements)
     }
 
     static func folderSummaries(feeds: [Feed], openArticles open: [Article]) -> [FolderSummary] {
-        var counts: [UUID: Int] = [:]
-        var unfiledOrphans = 0
-        counts.reserveCapacity(open.count)
-        for article in open {
-            if let id = article.feed?.id {
-                counts[id, default: 0] += 1
-            } else {
-                unfiledOrphans += 1
-            }
+        folderSummaries(feeds: feeds, openArticles: open, placements: [:])
+    }
+
+    /// Counts the stories a folder list shows: exact and near copies drop out, and one same-story cluster counts once inside that folder.
+    static func folderSummaries(
+        feeds: [Feed],
+        openArticles open: [Article],
+        placements: [String: StoryPlacement]
+    ) -> [FolderSummary] {
+        groups(from: feeds).map { group in
+            let stories = collapsedPrimaries(articles(in: group, from: open), placements: placements)
+            return FolderSummary(folderID: group.folderID, unreadCount: stories.count, feedCount: group.feeds.count)
         }
-        return groups(from: feeds).map { group in
-            let fromFeeds = group.feeds.reduce(0) { $0 + (counts[$1.id] ?? 0) }
-            let unreadCount = group.folderID == .unfiled ? fromFeeds + unfiledOrphans : fromFeeds
-            return FolderSummary(folderID: group.folderID, unreadCount: unreadCount, feedCount: group.feeds.count)
+    }
+
+    static func collapsedPrimaries(_ articles: [Article], placements: [String: StoryPlacement]) -> [Article] {
+        let exact = ContentRelationship.exactDuplicate.rawValue
+        let near = ContentRelationship.nearDuplicate.rawValue
+        let sameStory = ContentRelationship.sameStory.rawValue
+        let visible = articles.filter { article in
+            let raw = placements[ArticleIdentity.identityKey(for: article)]?.relationshipRaw
+            return raw != exact && raw != near
+        }
+        var sameStoryClusters = Set<UUID>()
+        for article in visible {
+            guard let mark = placements[ArticleIdentity.identityKey(for: article)],
+                  mark.relationshipRaw == sameStory,
+                  let clusterID = mark.storyClusterID else { continue }
+            sameStoryClusters.insert(clusterID)
+        }
+        var emitted = Set<UUID>()
+        var primaries: [Article] = []
+        primaries.reserveCapacity(visible.count)
+        for article in visible {
+            let key = ArticleIdentity.identityKey(for: article)
+            if let clusterID = placements[key]?.storyClusterID, sameStoryClusters.contains(clusterID) {
+                guard emitted.insert(clusterID).inserted else { continue }
+            }
+            primaries.append(article)
+        }
+        return primaries
+    }
+
+    private static func articles(in group: FeedFolderGroup, from open: [Article]) -> [Article] {
+        let feedIDs = Set(group.feeds.map(\.id))
+        return open.filter { article in
+            guard let id = article.feed?.id else { return group.folderID == .unfiled }
+            return feedIDs.contains(id)
         }
     }
 

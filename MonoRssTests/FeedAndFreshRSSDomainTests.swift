@@ -237,6 +237,21 @@ struct FeedAndFreshRSSDomainTests {
         #expect(summaries[1].unreadCount == 0)
     }
 
+    @Test func folderUnreadCountCollapsesSameStoryInsideOneFolder() {
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let other = Feed(title: "News", feedURL: URL(string: "https://n.test/rss")!, folderName: "Development")
+        let newest = Article(guid: "1", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: development)
+        let copy = Article(guid: "2", title: "Copy", url: URL(string: "https://n.test/2"), publishedAt: .now.addingTimeInterval(-30), state: .queued, feed: other)
+        let cluster = UUID()
+        let placements = [
+            ArticleIdentity.identityKey(for: newest): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: copy): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+        ]
+
+        let summaries = FeedFolderGrouping.folderSummaries(feeds: [development, other], articles: [newest, copy], placements: placements)
+        #expect(summaries.map(\.unreadCount) == [1])
+    }
+
     @Test func parserReadsEnclosureAndYouTubeItem() throws {
         let xml = """
         <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Media</title>

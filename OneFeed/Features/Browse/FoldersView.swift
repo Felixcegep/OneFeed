@@ -34,6 +34,7 @@ struct FoldersView: View {
     @State private var showingNewFolder = false
     @State private var newFolderName = ""
     @State private var folderOrderTick = 0
+    @State private var storyPlacements: [String: StoryPlacement] = [:]
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -51,7 +52,7 @@ struct FoldersView: View {
     }
 
     var body: some View {
-        let directory = FeedRootDirectory(feeds: feeds, articles: openQuery)
+        let directory = FeedRootDirectory(feeds: feeds, articles: openQuery, placements: storyPlacements)
         let _ = iconTick
         let _ = folderOrderTick
         List {
@@ -128,6 +129,12 @@ struct FoldersView: View {
             if ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") {
                 toolbarDestination = .notInterested
             }
+        }
+        .task(id: openQuery.map(\.id)) {
+            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
+            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
         }
         .sheet(isPresented: $showingAddSource) { AddSourceView() }
         .sheet(item: $pickingFolder) { target in
@@ -580,9 +587,9 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
 private struct FeedRootDirectory {
     let summaries: [FolderSummary]
 
-    init(feeds: [Feed], articles: [Article]) {
+    init(feeds: [Feed], articles: [Article], placements: [String: StoryPlacement] = [:]) {
         let open = FeedFolderGrouping.openArticles(from: articles)
-        summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open)
+        summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open, placements: placements)
     }
 }
 

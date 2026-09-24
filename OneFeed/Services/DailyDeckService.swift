@@ -282,6 +282,10 @@ struct DailyDeckService {
         }
     }
 
+    static func loadStoryPlacements(in context: ModelContext) -> [String: StoryPlacement] {
+        (try? storyPlacements(in: context)) ?? [:]
+    }
+
     nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
         var descriptor = FetchDescriptor<ContentMemory>()
         descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID]

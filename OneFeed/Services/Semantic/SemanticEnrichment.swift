@@ -76,6 +76,7 @@ enum SemanticEnrichment {
             }
 
             try? context.save()
+            NotificationCenter.default.post(name: OneFeedNotify.storyIndexDidChange, object: nil)
         }
     }
 

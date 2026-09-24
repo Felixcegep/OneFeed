@@ -19,6 +19,7 @@ nonisolated enum SemanticMemoryPass {
         let outcome = await classify(jobs, against: known, packed: packedVectors(from: memories), embedder: embedder)
         try commit(outcome, consumed: consumed, memories: memories, in: context)
         try context.save()
+        NotificationCenter.default.post(name: OneFeedNotify.storyIndexDidChange, object: nil)
     }
 
     private struct Job: Sendable {
