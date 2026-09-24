@@ -86,6 +86,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | VoiceOver heard “Queue” from the bar icon after the story was saved | Reader | Medium | The bar label spoke its own title and hid the button’s “In Queue” label | The bar speaks the button’s label and hint, including “In Queue” and “Already in Queue” | Code review |
 | The Mac reader bar kept an empty Queue icon after the story was saved | Reader | Medium | The Mac slot always used `square.stack`, and Done was locked to 88 points | The icon fills when the story is in Queue, and Done can grow past 88 points | Code review |
 | Refresh walked every article id to keep folder rows in place | Feed | High | The list stamp and the placement task mapped every id on each progress tick | The list reuses rows while the count and the ends stay put. Placements reload from those ends | Code review |
+| Opening a Queue or History story hashed every row | Queue, History, Today | High | The list stamp walked every id, guid, and date before it could see that nothing had changed | The collapsed queue, the day groups, and the Mac reader check use the count and the ends | Code review |
 
 ## Still open
 

@@ -32,25 +32,22 @@ struct HistoryView: View {
     }
 
     private var days: [HistoryDay] {
-        let stamp = historyStamp
-        if dayCache.stamp == stamp { return dayCache.days }
+        let edge = historyEdge
+        if dayCache.edge == edge { return dayCache.days }
         let days = HistoryViewModel.days(from: visibleHistory)
-        dayCache.stamp = stamp
+        dayCache.edge = edge
         dayCache.days = days
         return days
     }
 
-    private var historyStamp: Int {
-        var hasher = Hasher()
-        hasher.combine(appliedSearch)
-        hasher.combine(history.count)
-        for article in history {
-            hasher.combine(article.id)
-            hasher.combine(article.stateRawValue)
-            hasher.combine(article.completedAt)
-            hasher.combine(article.publishedAt)
-        }
-        return hasher.finalize()
+    /// Search, count, and ends. Opening a story does not regroup the days.
+    private var historyEdge: Int {
+        var token = appliedSearch.hashValue
+        token = token &* 31 &+ history.count
+        token = token &* 31 &+ notInterested.count
+        token = token &* 31 &+ (history.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (history.last?.id.hashValue ?? 0)
+        return token
     }
 
     var body: some View {
@@ -153,6 +150,6 @@ struct HistoryView: View {
 }
 
 private final class HistoryDayCache {
-    var stamp = 0
+    var edge = Int.min
     var days: [HistoryDay] = []
 }

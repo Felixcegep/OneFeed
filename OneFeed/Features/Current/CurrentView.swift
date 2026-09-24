@@ -16,6 +16,13 @@ struct CurrentView: View {
         viewModel.remainingArticles.filter(\.isStored)
     }
 
+    private var storyEdge: Int {
+        var token = stories.count
+        token = token &* 31 &+ (stories.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (stories.last?.id.hashValue ?? 0)
+        return token
+    }
+
     var body: some View {
         OneFeedReadingSplit(article: $readerArticle) {
             todayColumn
@@ -110,9 +117,9 @@ struct CurrentView: View {
             guard url.scheme == "onefeed", url.host() == "reader", let article = viewModel.currentArticle else { return }
             open(article)
         }
-        .onChange(of: stories.map(\.id)) { _, ids in
+        .onChange(of: storyEdge) { _, _ in
             #if os(macOS)
-            if let current = readerArticle, !ids.contains(current.id) {
+            if let current = readerArticle, !stories.contains(where: { $0.id == current.id }) {
                 keepReadingPaneClear = false
                 readerArticle = stories.first
             } else if readerArticle == nil, !keepReadingPaneClear {

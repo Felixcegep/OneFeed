@@ -17,25 +17,20 @@ struct SavedView: View {
     @State private var queueCache = QueueListCache()
 
     private var waiting: [Article] {
-        let stamp = queueStamp
-        if queueCache.stamp == stamp { return queueCache.articles }
+        let edge = queueEdge
+        if queueCache.edge == edge { return queueCache.articles }
         let articles = ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
-        queueCache.stamp = stamp
+        queueCache.edge = edge
         queueCache.articles = articles
         return articles
     }
 
-    private var queueStamp: Int {
-        var hasher = Hasher()
-        hasher.combine(savedQuery.count)
-        for article in savedQuery {
-            hasher.combine(article.id)
-            hasher.combine(article.stateRawValue)
-            hasher.combine(article.guid)
-            hasher.combine(article.videoID)
-            hasher.combine(article.url?.absoluteString)
-        }
-        return hasher.finalize()
+    /// Count and ends. Opening a story does not collapse the queue again.
+    private var queueEdge: Int {
+        var token = savedQuery.count
+        token = token &* 31 &+ (savedQuery.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (savedQuery.last?.id.hashValue ?? 0)
+        return token
     }
 
     private var searchQuery: String {
@@ -442,7 +437,7 @@ private struct LaterQueueActions: ViewModifier {
 }
 
 private final class QueueListCache {
-    var stamp = 0
+    var edge = Int.min
     var articles: [Article] = []
 }
 
