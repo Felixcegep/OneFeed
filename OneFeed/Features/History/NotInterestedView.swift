@@ -10,6 +10,7 @@ struct NotInterestedView: View {
     @State private var librarianPrompt: LibrarianPrompt?
     @State private var listCache = NotInterestedListCache()
     @State private var isRemovingSource = false
+    @State private var queueError: String?
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -66,7 +67,27 @@ struct NotInterestedView: View {
             ExperimentalLibrarianView(initialPrompt: prompt.text)
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { _ in selectedArticle = nil }
+            ReaderView(article: article, onFinish: { state in
+                selectedArticle = nil
+                guard article.isStored else { return }
+                if state == .saved {
+                    returnToQueue(article)
+                } else {
+                    ArticleActions.apply(state, to: article, in: modelContext)
+                }
+            }, onClose: {
+                selectedArticle = nil
+            })
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .alert("Couldn’t put that in Queue", isPresented: Binding(
+            get: { queueError != nil },
+            set: { if !$0 { queueError = nil } }
+        )) {
+            Button("OK", role: .cancel) { queueError = nil }
+        } message: {
+            Text(queueError ?? "")
         }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
@@ -191,6 +212,15 @@ struct NotInterestedView: View {
 
         \(titles)\(extra)
         """
+    }
+
+    private func returnToQueue(_ article: Article) {
+        guard article.isStored else { return }
+        do {
+            try ArticleQueueService().moveToQueue(article, in: modelContext)
+        } catch {
+            queueError = UserFacingFailure.message(for: error, fallback: "Couldn’t put that in Queue.")
+        }
     }
 
     private func removeSource(_ group: NotInterestedSourceGroup) async {

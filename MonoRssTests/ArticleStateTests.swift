@@ -127,4 +127,25 @@ struct ArticleStateTests {
         let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
         #expect(entries.map(\.articleGUID) == ["other-guid"])
     }
+
+    @Test func moveToQueueClearsNotInterestedWhenAlreadySaved() throws {
+        let context = try context()
+        let article = Article(
+            guid: "saved-aside",
+            title: "Already queued",
+            url: URL(string: "https://source.test/saved-aside"),
+            state: .saved,
+            notInterested: true
+        )
+        context.insert(article)
+        NotInterestedLog.record(article, in: context)
+        try context.save()
+
+        try ArticleQueueService().moveToQueue(article, in: context)
+
+        #expect(article.state == .saved)
+        #expect(!article.notInterested)
+        let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
+        #expect(entries.isEmpty)
+    }
 }
