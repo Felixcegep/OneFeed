@@ -307,6 +307,17 @@ struct FeedAndFreshRSSDomainTests {
         #expect(model.feeds.isEmpty)
     }
 
+    @Test func openingSourcesDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        context.insert(Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!))
+        try context.save()
+        let model = SourcesViewModel()
+        model.configure(with: context)
+        #expect(model.feeds.isEmpty)
+        model.reload()
+        #expect(model.feeds.map(\.title) == ["Swift"])
+    }
+
     @Test func aFolderListsSourcesBeforeTheSourceFetch() {
         let model = SourcesViewModel()
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")

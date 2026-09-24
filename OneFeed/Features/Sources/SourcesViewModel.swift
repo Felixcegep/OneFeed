@@ -15,7 +15,10 @@ final class SourcesViewModel {
     var saveError: String?
     private(set) var isImportingPack = false
 
-    func configure(with context: ModelContext) { self.context = context; reload() }
+    /// Keeps the context for later edits. The folder list is grouped from the feeds already on screen.
+    func configure(with context: ModelContext) {
+        self.context = context
+    }
     func reload() {
         guard let context else { return }
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
