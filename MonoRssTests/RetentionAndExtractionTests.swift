@@ -55,6 +55,45 @@ struct RetentionAndExtractionTests {
         #expect(remaining.first { $0.guid == "saved" }?.state == .saved)
     }
 
+    @Test func purgeKeepsAStoredNoteWithoutReadingTheBody() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        setup.insert(feed)
+        let html = "<p>" + String(repeating: "word ", count: 400) + "</p>"
+        let noted = Article(
+            guid: "noted",
+            title: "Noted",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: html,
+            state: .read,
+            readingNote: "Keep this sentence.",
+            feed: feed
+        )
+        let old = Article(
+            guid: "old",
+            title: "Old",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: html,
+            state: .queued,
+            feed: feed
+        )
+        setup.insert(noted)
+        setup.insert(old)
+        try setup.save()
+
+        let context = ModelContext(container)
+        let removed = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
+        #expect(removed == 1)
+        let matchID = noted.id
+        let stored = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })).first
+        )
+        #expect(stored.readingNote == "Keep this sentence.")
+        #expect(stored.contentHTML == html)
+        #expect(stored.isStored)
+    }
+
     @Test func purgeKeepsTodayDeckItemsAndHonorsForever() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)

@@ -41,11 +41,15 @@ struct ArticleRetentionService {
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
         let saved = ArticleState.saved.rawValue
         let keptIDs = Set((try context.fetch(FetchDescriptor<DailyDeckItem>())).compactMap(\.article?.id))
-        let candidates = try context.fetch(
-            FetchDescriptor<Article>(predicate: #Predicate { article in
-                article.publishedAt < cutoff && article.stateRawValue != saved && article.isRemoteStarred == false
-            })
-        )
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
+            article.publishedAt < cutoff && article.stateRawValue != saved && article.isRemoteStarred == false
+        })
+        // A takeaway and an imported file are enough to decide. The article body stays on disk.
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.publishedAt, \.stateRawValue, \.isRemoteStarred,
+            \.readingNote, \.readingReactionRawValue, \.contentKind, \.enclosureURL,
+        ]
+        let candidates = try context.fetch(descriptor)
         var removed = 0
         for article in candidates {
             if keptIDs.contains(article.id) { continue }
