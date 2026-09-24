@@ -22,6 +22,7 @@ final class SavedViewModel {
         self.freshRSSService = freshRSSService
     }
 
+    /// Keeps the context for saves and for opening one imported story. The list itself comes from the screen query.
     func configure(with context: ModelContext) {
         self.context = context
     }

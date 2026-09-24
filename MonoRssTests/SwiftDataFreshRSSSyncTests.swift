@@ -156,6 +156,7 @@ struct SwiftDataFreshRSSSyncTests {
         context.insert(article)
         let viewModel = SavedViewModel(queue: ArticleQueueService(), freshRSSService: FreshRSSSyncService())
         viewModel.configure(with: context)
+        #expect(viewModel.articles.isEmpty)
         viewModel.finishReading(article, as: .read)
 
         #expect(article.state == .read)
