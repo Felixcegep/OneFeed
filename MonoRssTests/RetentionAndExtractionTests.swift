@@ -81,6 +81,39 @@ struct RetentionAndExtractionTests {
         #expect(first == now.addingTimeInterval(-7 * 86_400))
     }
 
+    @Test func queuePlanKeepsTheSavedStoryAndSplitsTheVideo() {
+        let saved = Article(guid: "saved", title: "Essay", url: URL(string: "https://example.com/essay"), state: .saved, contentKind: "article")
+        let copy = Article(guid: "copy", title: "Essay copy", url: URL(string: "https://example.com/essay"), state: .queued, contentKind: "article")
+        let video = Article(guid: "video", title: "Talk", url: URL(string: "https://example.com/talk"), state: .saved, contentKind: "youtube")
+        let collapsed = ArticleIdentity.collapsingDuplicates([video, saved, copy])
+        let plan = QueueListPlan.make(from: [video, saved, copy].map(queueSnap), query: "")
+        #expect(plan.collapsedIDs == collapsed.map(\.id))
+        #expect(plan.upNext == video.id)
+        #expect(plan.videos.isEmpty)
+        #expect(plan.articles == [saved.id])
+        #expect(plan.subtitle == "2 in queue · 1 video")
+    }
+
+    private func queueSnap(_ article: Article) -> QueueStorySnap {
+        QueueStorySnap(
+            id: article.id,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            readingNote: article.readingNote,
+            reactionRaw: article.readingReactionRawValue,
+            feedTitle: article.feed?.title,
+            hasFeed: article.feed != nil,
+            url: article.url,
+            author: article.author,
+            contentKind: article.contentKind,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
     @Test func historyDayKeepsNewestFirst() throws {
         let context = try InMemoryStore.makeContext()
         let day = Date(timeIntervalSince1970: 1_700_000_000)

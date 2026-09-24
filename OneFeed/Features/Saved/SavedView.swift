@@ -15,19 +15,9 @@ struct SavedView: View {
     @State private var isImportingDrop = false
     @State private var pendingDropProviders: [NSItemProvider] = []
     @State private var appliedSearch = ""
-    /// Collapsed queue stays put while the open story changes.
-    @State private var queueCache = QueueListCache()
-    /// Section splits stay put while the open story changes.
-    @State private var sectionCache = QueueSectionCache()
-
-    private var waiting: [Article] {
-        let edge = queueEdge
-        if queueCache.edge == edge { return queueCache.articles }
-        let articles = ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
-        queueCache.edge = edge
-        queueCache.articles = articles
-        return articles
-    }
+    /// Collapsed sections stay put while the open story changes. Rebuilt off the main thread when the queue or search changes.
+    @State private var queueLayout = QueueLayout()
+    @State private var queueReady = false
 
     /// Every waiting id and kind. Opening a story does not collapse the queue again.
     private var queueEdge: Int {
@@ -45,42 +35,53 @@ struct SavedView: View {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Sections for a queue already collapsed once this update. The subtitle counts the whole queue.
-    private func layout(of queue: [Article]) -> QueueLayout {
-        var edge = queueCache.edge
+    private var queuePlanEdge: Int {
+        var edge = queueEdge
         edge = edge &* 31 &+ appliedSearch.hashValue
-        if sectionCache.edge == edge { return sectionCache.layout }
-        let visible = filtered(queue)
-        let featured = visible.first
-        var layout = QueueLayout(upNext: featured, subtitle: waitingSubtitle(queue))
-        for article in visible where article.id != featured?.id {
-            switch article.contentKind {
-            case "youtube": layout.videos.append(article)
-            case "podcast", "music": layout.audio.append(article)
-            case "pdf", "epub": layout.files.append(article)
-            default:
-                if article.isImportedDocument {
-                    layout.files.append(article)
-                } else {
-                    layout.articles.append(article)
-                }
-            }
-        }
-        sectionCache.edge = edge
-        sectionCache.layout = layout
-        return layout
+        return edge
     }
 
-    /// In-memory filter. An empty query returns the queue unchanged.
-    private func filtered(_ queue: [Article]) -> [Article] {
+    private func reloadQueue() async {
+        let edge = queuePlanEdge
         let query = searchQuery
-        guard !query.isEmpty else { return queue }
-        return queue.filter { article in
-            article.title.localizedStandardContains(query)
-                || article.readingNote.localizedStandardContains(query)
-                || (article.readingTakeawayLine?.localizedStandardContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedStandardContains(query)
+        let snaps = savedQuery.compactMap { article -> QueueStorySnap? in
+            guard article.isStored else { return nil }
+            return QueueStorySnap(
+                id: article.id,
+                publishedAt: article.publishedAt,
+                title: article.title,
+                readingNote: article.readingNote,
+                reactionRaw: article.readingReactionRawValue,
+                feedTitle: article.feed?.title,
+                hasFeed: article.feed != nil,
+                url: article.url,
+                author: article.author,
+                contentKind: article.contentKind,
+                videoID: article.videoID,
+                guid: article.guid,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
         }
+        let plan = await Task.detached(priority: .userInitiated) {
+            QueueListPlan.make(from: snaps, query: query)
+        }.value
+        guard !Task.isCancelled, edge == queuePlanEdge else { return }
+        let byID = Dictionary(savedQuery.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        func articles(_ ids: [UUID]) -> [Article] {
+            ids.compactMap { byID[$0] }.filter(\.isStored)
+        }
+        queueLayout = QueueLayout(
+            upNext: plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil },
+            videos: articles(plan.videos),
+            audio: articles(plan.audio),
+            files: articles(plan.files),
+            articles: articles(plan.articles),
+            hasQueue: !plan.collapsedIDs.isEmpty,
+            subtitle: plan.subtitle
+        )
+        queueReady = true
     }
 
     var body: some View {
@@ -101,12 +102,15 @@ struct SavedView: View {
     }
 
     private var queueColumn: some View {
-        let queue = waiting
-        let layout = layout(of: queue)
+        let layout = queueLayout
         return Group {
-            if queue.isEmpty && searchQuery.isEmpty {
+            if !queueReady && !layout.hasQueue {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+            } else if queueReady && !layout.hasQueue && searchQuery.isEmpty {
                 empty
-            } else if layout.upNext == nil && searchQuery.isEmpty == false {
+            } else if queueReady && layout.upNext == nil && !searchQuery.isEmpty {
                 noMatches
             } else {
                 List {
@@ -142,7 +146,10 @@ struct SavedView: View {
         .navigationTitle("Queue")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
-        .navigationSubtitle(queue.isEmpty ? "" : layout.subtitle)
+        .navigationSubtitle(layout.hasQueue ? layout.subtitle : "")
+        .task(id: queuePlanEdge) {
+            await reloadQueue()
+        }
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
         .toolbar {
@@ -200,20 +207,6 @@ struct SavedView: View {
             systemImage: "magnifyingglass",
             description: "Try a title, reading note, or source name."
         )
-    }
-
-    private func waitingSubtitle(_ queue: [Article]) -> String {
-        let videos = queue.reduce(into: 0) { count, article in
-            if article.contentKind == "youtube" { count += 1 }
-        }
-        let rest = queue.count - videos
-        if videos > 0, rest > 0 {
-            return "\(queue.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
-        }
-        if videos > 0 {
-            return "\(videos) video\(videos == 1 ? "" : "s") in queue"
-        }
-        return "\(queue.count) in queue"
     }
 
     private func recentlySavedTitle(for article: Article) -> String {
@@ -483,9 +476,118 @@ private struct LaterQueueActions: ViewModifier {
     }
 }
 
-private final class QueueListCache {
-    var edge = Int.min
-    var articles: [Article] = []
+struct QueueStorySnap: Sendable {
+    var id: UUID
+    var publishedAt: Date
+    var title: String
+    var readingNote: String
+    var reactionRaw: String
+    var feedTitle: String?
+    var hasFeed: Bool
+    var url: URL?
+    var author: String?
+    var contentKind: String
+    var videoID: String?
+    var guid: String
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+}
+
+struct QueueSectionPlan: Sendable {
+    var collapsedIDs: [UUID] = []
+    var upNext: UUID?
+    var videos: [UUID] = []
+    var audio: [UUID] = []
+    var files: [UUID] = []
+    var articles: [UUID] = []
+    var subtitle = ""
+}
+
+/// Same collapse and sections as the Queue screen, from copied fields.
+nonisolated enum QueueListPlan {
+    static func make(from stories: [QueueStorySnap], query: String) -> QueueSectionPlan {
+        let collapsed = collapsedStories(stories)
+        let visible = query.isEmpty ? collapsed : collapsed.filter { matches($0, query: query) }
+        var plan = QueueSectionPlan(collapsedIDs: collapsed.map(\.id), subtitle: subtitle(for: collapsed))
+        guard let featured = visible.first else { return plan }
+        plan.upNext = featured.id
+        for story in visible.dropFirst() {
+            switch story.contentKind {
+            case "youtube": plan.videos.append(story.id)
+            case "podcast", "music": plan.audio.append(story.id)
+            case "pdf", "epub": plan.files.append(story.id)
+            default: plan.articles.append(story.id)
+            }
+        }
+        return plan
+    }
+
+    private static func subtitle(for queue: [QueueStorySnap]) -> String {
+        let videos = queue.reduce(into: 0) { count, story in
+            if story.contentKind == "youtube" { count += 1 }
+        }
+        let rest = queue.count - videos
+        if videos > 0, rest > 0 {
+            return "\(queue.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
+        }
+        if videos > 0 {
+            return "\(videos) video\(videos == 1 ? "" : "s") in queue"
+        }
+        return "\(queue.count) in queue"
+    }
+
+    private static func matches(_ story: QueueStorySnap, query: String) -> Bool {
+        if story.title.localizedStandardContains(query) { return true }
+        if story.readingNote.localizedStandardContains(query) { return true }
+        if takeaway(story)?.localizedStandardContains(query) == true { return true }
+        let source = ArticlePresentation.sourceName(
+            feedTitle: story.feedTitle,
+            url: story.url,
+            author: story.author,
+            contentKind: story.contentKind
+        )
+        return source.localizedStandardContains(query)
+    }
+
+    private static func takeaway(_ story: QueueStorySnap) -> String? {
+        let note = story.readingNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = ArticleReadingReaction(stored: story.reactionRaw)?.label
+        switch (label, note.isEmpty) {
+        case (nil, true): return nil
+        case let (label?, true): return label
+        case (nil, false): return note
+        case let (label?, false): return "\(label) \u{00B7} \(note)"
+        }
+    }
+
+    private static func collapsedStories(_ stories: [QueueStorySnap]) -> [QueueStorySnap] {
+        var order: [String] = []
+        var groups: [String: [QueueStorySnap]] = [:]
+        for story in stories {
+            let key = identityKey(story)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(story)
+        }
+        return order.map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) }) ?? items[0]
+        }
+    }
+
+    private static func identityKey(_ story: QueueStorySnap) -> String {
+        if let videoID = story.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: story.url, guid: story.guid, id: story.id)
+    }
+
+    private static func score(_ story: QueueStorySnap) -> Int {
+        var value = 0
+        if story.hasFeed { value += 8 }
+        if story.hasRemoteID { value += 4 }
+        if story.stateRaw == "saved" || story.isRemoteStarred { value += 3 }
+        if story.stateRaw == "current" { value += 2 }
+        return value
+    }
 }
 
 private struct QueueLayout {
@@ -494,12 +596,8 @@ private struct QueueLayout {
     var audio: [Article] = []
     var files: [Article] = []
     var articles: [Article] = []
+    var hasQueue = false
     var subtitle = ""
-}
-
-private final class QueueSectionCache {
-    var edge = Int.min
-    var layout = QueueLayout()
 }
 
 private extension View {
