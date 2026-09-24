@@ -25,19 +25,20 @@ struct HistoryView: View {
     private func reloadHistoryDays() async {
         let edge = historyEdge
         let query = trimmedQuery
+        let searching = !query.isEmpty
         let snaps = history.compactMap { article -> HistoryStorySnap? in
             guard article.isStored else { return nil }
             return HistoryStorySnap(
                 id: article.id,
                 completedAt: article.completedAt,
                 publishedAt: article.publishedAt,
-                title: article.title,
-                readingNote: article.readingNote,
-                reactionRaw: article.readingReactionRawValue,
-                feedTitle: article.feed?.title,
-                url: article.url,
-                author: article.author,
-                contentKind: article.contentKind
+                title: searching ? article.title : "",
+                readingNote: searching ? article.readingNote : "",
+                reactionRaw: searching ? article.readingReactionRawValue : "",
+                feedTitle: searching ? article.feed?.title : nil,
+                url: searching ? article.url : nil,
+                author: searching ? article.author : nil,
+                contentKind: searching ? article.contentKind : ""
             )
         }
         let plans = await Task.detached(priority: .userInitiated) {

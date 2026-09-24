@@ -131,6 +131,22 @@ struct RetentionAndExtractionTests {
         #expect(plans.count == 1)
         #expect(plans[0].articleIDs == [newer.id, older.id])
         #expect(plans[0].day == days[0].day)
+        let datesOnly = [older, newer].map { article in
+            HistoryStorySnap(
+                id: article.id,
+                completedAt: article.completedAt,
+                publishedAt: article.publishedAt,
+                title: "",
+                readingNote: "",
+                reactionRaw: "",
+                feedTitle: nil,
+                url: nil,
+                author: nil,
+                contentKind: ""
+            )
+        }
+        #expect(HistoryViewModel.dayPlans(from: datesOnly, query: "").map(\.articleIDs) == [newer.id, older.id])
+        #expect(HistoryViewModel.dayPlans(from: [older, newer].map(historySnap), query: "Newer").flatMap(\.articleIDs) == [newer.id])
     }
 
     private func historySnap(_ article: Article) -> HistoryStorySnap {
