@@ -586,7 +586,6 @@ final class SourceDetailViewModel {
             sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
         )
         descriptor.fetchLimit = limit
-        if let stories = try? context.fetch(descriptor) { return stories }
-        return Array(feed.articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(limit))
+        return (try? context.fetch(descriptor)) ?? []
     }
 }
