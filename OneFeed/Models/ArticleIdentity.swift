@@ -154,12 +154,18 @@ nonisolated enum ArticleIdentity {
         return removed
     }
 
+    /// Reads of `contentHTML` on the articles being merged. A saved body is measured
+    /// on a short-lived context and does not increment this.
+    static var liveHTMLReads = 0
+
     private static func absorb(_ duplicate: Article, into keeper: Article) {
+        let keeperCount = htmlCount(keeper)
+        let duplicateCount = htmlCount(duplicate)
         if keeper.feed == nil { keeper.feed = duplicate.feed }
         if keeper.remoteID == nil { keeper.remoteID = duplicate.remoteID }
         if keeper.url == nil { keeper.url = duplicate.url }
-        if (keeper.contentHTML ?? "").count < (duplicate.contentHTML ?? "").count {
-            keeper.contentHTML = duplicate.contentHTML
+        if keeperCount < duplicateCount {
+            keeper.contentHTML = html(duplicate)
             keeper.refreshEstimatedReadingMinutes()
         }
         if (keeper.summary ?? "").count < (duplicate.summary ?? "").count {
@@ -174,6 +180,58 @@ nonisolated enum ArticleIdentity {
             keeper.state = .current
             keeper.firstDisplayedAt = duplicate.firstDisplayedAt ?? keeper.firstDisplayedAt
         }
+    }
+
+    /// An unsaved insert or edit still holds its body in memory. A saved article is counted from the store.
+    private static func htmlCount(_ article: Article) -> Int {
+        if usesLiveHTML(article) {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        guard let container = article.modelContext?.container else {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        return storedHTMLCount(id: article.id, container: container)
+    }
+
+    private static func html(_ article: Article) -> String {
+        if usesLiveHTML(article) {
+            liveHTMLReads += 1
+            return article.contentHTML ?? ""
+        }
+        guard let container = article.modelContext?.container else {
+            liveHTMLReads += 1
+            return article.contentHTML ?? ""
+        }
+        return storedHTML(id: article.id, container: container) ?? ""
+    }
+
+    private static func usesLiveHTML(_ article: Article) -> Bool {
+        guard let context = article.modelContext else { return true }
+        let id = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == id }) { return true }
+        if context.changedModelsArray.contains(where: { $0.persistentModelID == id }) { return true }
+        return false
+    }
+
+    private static func storedHTMLCount(id: UUID, container: ModelContainer) -> Int {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return 0 }
+        return stored.contentHTML?.count ?? 0
+    }
+
+    private static func storedHTML(id: UUID, container: ModelContainer) -> String? {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first?.contentHTML
     }
 
     private static func preferredFeed(in feeds: [Feed]) -> Feed {

@@ -239,6 +239,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A cloud pull copied the whole library on the open screen | Settings | High | The recovery file and a new Drive link built the library document on the screen’s context before the network call | That file is built on the ingest actor. The bytes match the document the screen would have written | `LibrarySyncServiceDriveTests.ingestActorWritesTheSameLibraryFileAsTheOpenScreen` |
 | The first screen waited while the source catalog was inserted | Launch | High | Creating the store applied every seeded source before the window could appear | The catalog is applied after that store exists. A later launch only drops retired sources | `FeedSeedTests.aFreshInstallAppliesTheCatalogAfterTheFirstScreen` |
 | Choosing an OPML file parsed it on the open screen | Settings | Medium | The picked file was read and parsed before the import confirmation could appear | The parse runs off the main thread. A second pick waits until that parse finishes | `OPMLTests.opmlParseRunsOffTheMainActor` |
+| A refresh loaded both copies of a story to keep the longer one | Today, Feed | High | Merging duplicates read `contentHTML` on the articles already in the refresh, so both bodies stayed in memory | The lengths are read on a short-lived context. Only the longer body is copied, and a high reading time does not keep a short teaser | `ArticleIdentityVideoTests.mergeKeepsTheLongerBodyWithoutReadingItOnTheOpenArticles` |
 
 ## Still open
 
