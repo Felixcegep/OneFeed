@@ -19,7 +19,7 @@ struct SourceDetailTests {
         #expect(ListIdentity.token(ids: [first, replacement, last]) != original)
     }
 
-    @Test func recentStoriesAreTheNewestTwenty() throws {
+    @Test func recentStoriesAreTheNewestTwenty() async throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
         context.insert(feed)
@@ -35,7 +35,7 @@ struct SourceDetailTests {
         try context.save()
 
         let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
-        model.loadOpeningDetails()
+        await model.loadOpeningDetails()
         let recent = model.recentArticles
         let loads = model.recentStoryLoads
         #expect(recent.count == 20)
@@ -76,7 +76,7 @@ struct SourceDetailTests {
         #expect(feed.blockedWords == "AI, Sponsored")
     }
 
-    @Test func checkingAFolderDoesNotReloadTheFolderList() throws {
+    @Test func checkingAFolderDoesNotReloadTheFolderList() async throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!, folderName: "Philosophy")
         let other = Feed(title: "Other", feedURL: URL(string: "https://other.test/rss")!, folderName: "Development")
@@ -88,7 +88,7 @@ struct SourceDetailTests {
         #expect(model.recentStoryLoads == 0)
         #expect(model.availableFolders.contains("Philosophy"))
         #expect(SourceDetailViewModel.showsEmptyFolderList(ready: false, folderCount: 0) == false)
-        model.loadOpeningDetails()
+        await model.loadOpeningDetails()
         let loads = model.folderListLoads
         #expect(model.availableFolders.contains("Philosophy"))
         #expect(model.availableFolders.contains("Development"))
@@ -101,6 +101,18 @@ struct SourceDetailTests {
         model.toggleFolder("Development")
         #expect(model.folderListLoads == loads)
         #expect(!feed.containsFolder("Development"))
+    }
+
+    @Test func theFolderChecklistReadsNamesAwayFromTheOpenScreen() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!, folderName: "Philosophy")
+        let other = Feed(title: "Other", feedURL: URL(string: "https://other.test/rss")!, folderName: "Development")
+        context.insert(feed)
+        context.insert(other)
+        try context.save()
+        let names = SourceFolderNames.collected(in: context.container)
+        #expect(names.contains("Philosophy"))
+        #expect(names.contains("Development"))
     }
 
     @Test func typingDoesNotRebuildFolderMembership() throws {

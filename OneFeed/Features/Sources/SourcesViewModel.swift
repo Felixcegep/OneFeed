@@ -262,6 +262,18 @@ final class AddSourceViewModel {
 }
 
 @MainActor
+/// Folder names for the source checklist. Read on a short-lived context so the open form is not the one fetching every source.
+nonisolated enum SourceFolderNames {
+    static func collected(in container: ModelContainer) -> [String] {
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Feed>()
+        descriptor.propertiesToFetch = [\.folderNames, \.folderName]
+        let feeds = (try? lookup.fetch(descriptor)) ?? []
+        return FolderStore.allNames(from: feeds)
+    }
+}
+
 @Observable
 final class SourceDetailViewModel {
     let feed: Feed
@@ -317,10 +329,19 @@ final class SourceDetailViewModel {
         }
     }
 
-    func loadOpeningDetails() {
+    func loadOpeningDetails() async {
         guard !didLoadOpeningDetails else { return }
         didLoadOpeningDetails = true
-        reloadFolders()
+        let container = context.container
+        let names = await Task.detached(priority: .userInitiated) {
+            SourceFolderNames.collected(in: container)
+        }.value
+        guard !Task.isCancelled else {
+            didLoadOpeningDetails = false
+            return
+        }
+        folderListLoads += 1
+        availableFolders = names
         foldersReady = true
         reloadRecentStories()
     }

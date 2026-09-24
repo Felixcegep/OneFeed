@@ -527,7 +527,7 @@ private struct SourceDetailView: View {
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
-        .task { viewModel.loadOpeningDetails() }
+        .task { await viewModel.loadOpeningDetails() }
         .oneFeedScrollEdge()
         .oneFeedTabBarClearance()
         .modifier(SourceDetailRefreshChrome(viewModel: viewModel))
