@@ -67,27 +67,16 @@ enum NotInterestedLog {
     }
 
     nonisolated static func groups(from entries: [NotInterestedEntry]) -> [NotInterestedSourceGroup] {
-        var order: [String] = []
-        var buckets: [String: [NotInterestedEntry]] = [:]
-        for entry in entries {
-            let key = entry.sourceFeedURL.isEmpty ? entry.sourceTitle.lowercased() : entry.sourceFeedURL
-            if buckets[key] == nil { order.append(key) }
-            buckets[key, default: []].append(entry)
-        }
-        return order.map { key in
-            let items = (buckets[key] ?? []).sorted { $0.recordedAt > $1.recordedAt }
-            let first = items[0]
-            return NotInterestedSourceGroup(
-                sourceTitle: first.sourceTitle,
-                sourceFeedURL: first.sourceFeedURL,
-                sourceWebsiteURL: first.sourceWebsiteURL,
-                feedID: first.feedID,
-                entries: items
+        let plans = NotInterestedListPlan.groups(from: entries.map(NotInterestedEntrySnap.init))
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return plans.map { plan in
+            NotInterestedSourceGroup(
+                sourceTitle: plan.sourceTitle,
+                sourceFeedURL: plan.sourceFeedURL,
+                sourceWebsiteURL: plan.sourceWebsiteURL,
+                feedID: plan.feedID,
+                entries: plan.entryIDs.compactMap { byID[$0] }
             )
-        }
-        .sorted { lhs, rhs in
-            if lhs.count != rhs.count { return lhs.count > rhs.count }
-            return lhs.sourceTitle.localizedCaseInsensitiveCompare(rhs.sourceTitle) == .orderedAscending
         }
     }
 
@@ -231,6 +220,60 @@ enum NotInterestedLog {
         guard let all = try? context.fetch(descriptor), all.count > keepLimit else { return }
         for extra in all.dropFirst(keepLimit) {
             context.delete(extra)
+        }
+    }
+}
+
+struct NotInterestedEntrySnap: Sendable {
+    var id: UUID
+    var recordedAt: Date
+    var sourceTitle: String
+    var sourceFeedURL: String
+    var sourceWebsiteURL: String?
+    var feedID: UUID?
+
+    init(_ entry: NotInterestedEntry) {
+        id = entry.id
+        recordedAt = entry.recordedAt
+        sourceTitle = entry.sourceTitle
+        sourceFeedURL = entry.sourceFeedURL
+        sourceWebsiteURL = entry.sourceWebsiteURL
+        feedID = entry.feedID
+    }
+}
+
+struct NotInterestedGroupPlan: Sendable {
+    var sourceTitle: String
+    var sourceFeedURL: String
+    var sourceWebsiteURL: String?
+    var feedID: UUID?
+    var entryIDs: [UUID]
+}
+
+/// Same source groups as the Not interested log, from copied fields.
+nonisolated enum NotInterestedListPlan {
+    static func groups(from snaps: [NotInterestedEntrySnap]) -> [NotInterestedGroupPlan] {
+        var order: [String] = []
+        var buckets: [String: [NotInterestedEntrySnap]] = [:]
+        for snap in snaps {
+            let key = snap.sourceFeedURL.isEmpty ? snap.sourceTitle.lowercased() : snap.sourceFeedURL
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(snap)
+        }
+        return order.map { key in
+            let items = (buckets[key] ?? []).sorted { $0.recordedAt > $1.recordedAt }
+            let first = items[0]
+            return NotInterestedGroupPlan(
+                sourceTitle: first.sourceTitle,
+                sourceFeedURL: first.sourceFeedURL,
+                sourceWebsiteURL: first.sourceWebsiteURL,
+                feedID: first.feedID,
+                entryIDs: items.map(\.id)
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.entryIDs.count != rhs.entryIDs.count { return lhs.entryIDs.count > rhs.entryIDs.count }
+            return lhs.sourceTitle.localizedCaseInsensitiveCompare(rhs.sourceTitle) == .orderedAscending
         }
     }
 }

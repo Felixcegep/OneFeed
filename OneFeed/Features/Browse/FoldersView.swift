@@ -51,6 +51,7 @@ struct FoldersView: View {
     /// Folder rows stay put while refresh progress updates. Rebuilt off the main thread when sources, stories, or order change.
     @State private var folderSummaries: [FolderSummary] = []
     @State private var folderDirectoryReady = false
+    @State private var editingFolderCache = EditingFolderCache()
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -60,13 +61,14 @@ struct FoldersView: View {
         let _ = iconTick
         let _ = folderOrderTick
         let summaries = isEditingFolders ? [] : folderSummaries
+        let editingGroups = isEditingFolders ? editingFolderCache.groups(from: feeds) : []
         return List {
             Section {
                 if isEditingFolders {
-                    if FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds).isEmpty {
+                    if editingGroups.isEmpty {
                         emptySourceInvite
                     }
-                    ForEach(editingRows) { row in
+                    ForEach(editingRows(in: editingGroups)) { row in
                         editingRow(row)
                     }
                     newFolderRow
@@ -338,11 +340,11 @@ struct FoldersView: View {
     }
 
     /// Occupied folders, plus remembered empty ones, with the open folder's sources and add field.
-    private var editingRows: [SourceEditRow] {
+    private func editingRows(in groups: [FeedFolderGroup]) -> [SourceEditRow] {
         var rows: [SourceEditRow] = []
         let live = trimmedFolderQuery
         let query = appliedFolderQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        for group in FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds) {
+        for group in groups {
             rows.append(.folder(group))
             guard openFolderID == group.folderID else { continue }
             for feed in group.feeds {
@@ -636,6 +638,33 @@ struct FoldersView: View {
         } else {
             withAnimation(OneFeedMotion.list, updates)
         }
+    }
+}
+
+/// Editing rows reuse folder groups until a source or a remembered folder name changes.
+private final class EditingFolderCache {
+    private var edge = Int.min
+    private var cached: [FeedFolderGroup] = []
+
+    func groups(from feeds: [Feed]) -> [FeedFolderGroup] {
+        let next = Self.edge(of: feeds)
+        if next == edge { return cached }
+        cached = FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+        edge = next
+        return cached
+    }
+
+    private static func edge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+        }
+        for name in FolderStore.knownNames() {
+            token = token &* 31 &+ name.hashValue
+        }
+        return token
     }
 }
 

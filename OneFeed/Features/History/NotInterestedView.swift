@@ -9,16 +9,15 @@ struct NotInterestedView: View {
     @State private var pendingRemoval: NotInterestedSourceGroup?
     @State private var librarianPrompt: LibrarianPrompt?
     @State private var listCache = NotInterestedListCache()
+    /// Source groups stay put while a row redraws. Rebuilt off the main thread when a mark is added, removed, or recorded again.
+    @State private var grouped: [NotInterestedSourceGroup] = []
+    @State private var logReady = false
     @State private var isRemovingSource = false
     @State private var queueError: String?
     @State private var storyError: String?
     @State private var removeError: String?
     @State private var sourceError: String?
     @State private var logError: String?
-
-    private var groups: [NotInterestedSourceGroup] {
-        listCache.groups(from: entries, stamp: logStamp, in: modelContext)
-    }
 
     /// Changes when a mark is added, removed, or recorded again. A title edit shows on the row without regrouping.
     private var logStamp: Int {
@@ -30,10 +29,36 @@ struct NotInterestedView: View {
         return stamp
     }
 
+    private func reloadLog() async {
+        let edge = logStamp
+        let snaps = entries.map(NotInterestedEntrySnap.init)
+        let guids = entries.map(\.articleGUID)
+        let plans = await Task.detached(priority: .userInitiated) {
+            NotInterestedListPlan.groups(from: snaps)
+        }.value
+        guard !Task.isCancelled, edge == logStamp else { return }
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let groups = plans.map { plan in
+            NotInterestedSourceGroup(
+                sourceTitle: plan.sourceTitle,
+                sourceFeedURL: plan.sourceFeedURL,
+                sourceWebsiteURL: plan.sourceWebsiteURL,
+                feedID: plan.feedID,
+                entries: plan.entryIDs.compactMap { byID[$0] }
+            )
+        }
+        listCache.resolve(entries: entries, guids: guids, in: modelContext)
+        grouped = groups
+        logReady = true
+    }
+
     var body: some View {
-        let grouped = groups
-        return Group {
-            if grouped.isEmpty {
+        Group {
+            if !logReady && grouped.isEmpty {
+                Color.clear
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+            } else if grouped.isEmpty {
                 EmptyLibraryState(
                     title: "Nothing set aside",
                     systemImage: "hand.thumbsdown",
@@ -59,6 +84,9 @@ struct NotInterestedView: View {
         .oneFeedPaperToolbar()
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
+        .task(id: logStamp) {
+            await reloadLog()
+        }
         .toolbar {
             if !grouped.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
@@ -305,22 +333,17 @@ struct NotInterestedView: View {
 }
 
 private final class NotInterestedListCache {
-    private var stamp = 0
-    private var cachedGroups: [NotInterestedSourceGroup] = []
     private var articles: [PersistentIdentifier: Article?] = [:]
 
-    func groups(from entries: [NotInterestedEntry], stamp: Int, in context: ModelContext) -> [NotInterestedSourceGroup] {
-        if self.stamp == stamp { return cachedGroups }
-        self.stamp = stamp
+    /// One story lookup for the visible log. Bodies stay on disk until a row opens.
+    func resolve(entries: [NotInterestedEntry], guids: [String], in context: ModelContext) {
         articles.removeAll()
-        cachedGroups = NotInterestedLog.groups(from: entries)
-        let matches = NotInterestedLog.articles(matchingGUIDs: entries.map(\.articleGUID), in: context)
+        let matches = NotInterestedLog.articles(matchingGUIDs: guids, in: context)
         for entry in entries {
             if let match = matches[entry.articleGUID] {
                 articles[entry.persistentModelID] = match
             }
         }
-        return cachedGroups
     }
 
     func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {

@@ -73,9 +73,32 @@ struct NotInterestedLogTests {
         context.insert(kottkeArticle)
         try NotInterestedLog.record(kottkeArticle, in: context)
 
-        let groups = NotInterestedLog.groups(from: NotInterestedLog.entries(in: context))
+        let stored = NotInterestedLog.entries(in: context)
+        let groups = NotInterestedLog.groups(from: stored)
+        let plans = NotInterestedListPlan.groups(from: stored.map(NotInterestedEntrySnap.init))
         #expect(groups.map(\.sourceTitle) == ["The Verge", "kottke.org"])
         #expect(groups.first?.count == 3)
+        #expect(plans.map(\.sourceTitle) == groups.map(\.sourceTitle))
+        #expect(plans.map(\.entryIDs) == groups.map { $0.entries.map(\.id) })
+    }
+
+    @Test func groupPlanKeepsNewestFirstInsideTheSource() throws {
+        let context = try context()
+        let feed = Feed(title: "The Verge", feedURL: URL(string: "https://www.theverge.com/rss")!)
+        context.insert(feed)
+        let older = Article(guid: "older", title: "Older", feed: feed)
+        let newer = Article(guid: "newer", title: "Newer", feed: feed)
+        context.insert(older)
+        context.insert(newer)
+        try NotInterestedLog.record(older, in: context, now: Date(timeIntervalSince1970: 10))
+        try NotInterestedLog.record(newer, in: context, now: Date(timeIntervalSince1970: 40))
+
+        let stored = NotInterestedLog.entries(in: context)
+        let plans = NotInterestedListPlan.groups(from: stored.map(NotInterestedEntrySnap.init))
+        let groups = NotInterestedLog.groups(from: stored)
+        #expect(plans.count == 1)
+        #expect(plans.first?.entryIDs == groups.first?.entries.map(\.id))
+        #expect(groups.first?.entries.map(\.articleTitle) == ["Newer", "Older"])
     }
 
     @Test func snapshotMentionsRepeatsAndFolder() throws {
