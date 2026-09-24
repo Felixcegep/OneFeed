@@ -252,6 +252,39 @@ struct FeedAndFreshRSSDomainTests {
         #expect(summaries.map(\.unreadCount) == [1])
     }
 
+    @Test func feedRowsDropCopiesAndKeepASimilarCaption() {
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!)
+        let newest = Article(guid: "1", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: feed)
+        let copy = Article(guid: "2", title: "Copy", url: URL(string: "https://c.test/2"), publishedAt: .now.addingTimeInterval(-30), state: .queued, feed: feed)
+        let similar = Article(guid: "3", title: "Related", url: URL(string: "https://c.test/3"), publishedAt: .now.addingTimeInterval(-60), state: .queued, feed: feed)
+        let cluster = UUID()
+        let readAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let placements = [
+            ArticleIdentity.identityKey(for: newest): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: copy): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: similar): StoryPlacement(relationshipRaw: ContentRelationship.related.rawValue, matchedConsumedAt: readAt),
+        ]
+
+        let rows = StoryGrouping.rows(from: [newest, copy, similar], placements: placements, expandedClusterIDs: [])
+        #expect(rows.count == 3)
+        guard case .article(let primary, _) = rows[0].kind else {
+            Issue.record("Expected the newest story first")
+            return
+        }
+        #expect(primary.title == "New")
+        guard case .moreSources(_, let count) = rows[1].kind else {
+            Issue.record("Expected the other source on its own row")
+            return
+        }
+        #expect(count == 1)
+        guard case .article(let related, let caption) = rows[2].kind else {
+            Issue.record("Expected the related story to stay visible")
+            return
+        }
+        #expect(related.title == "Related")
+        #expect(caption?.hasPrefix("Similar to something you read") == true)
+    }
+
     @Test func parserReadsEnclosureAndYouTubeItem() throws {
         let xml = """
         <rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>Media</title>

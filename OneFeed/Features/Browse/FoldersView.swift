@@ -596,12 +596,12 @@ private struct FeedRootDirectory {
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
-    @Query private var memories: [ContentMemory]
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
     @State private var searchText = ""
     @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
+    @State private var storyPlacements: [String: StoryPlacement] = [:]
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
@@ -632,7 +632,7 @@ struct ArticleCollectionView: View {
     private var storyRows: [FeedStoryRow] {
         StoryGrouping.rows(
             from: items.filter(\.isStored),
-            memories: memories,
+            placements: storyPlacements,
             expandedClusterIDs: expandedClusterIDs
         )
     }
@@ -682,6 +682,12 @@ struct ArticleCollectionView: View {
         .background(OneFeedTheme.plaster)
         .searchable(text: $searchText, prompt: "Search articles")
         .debouncedSearch(searchText, into: $appliedSearch)
+        .task(id: articles.map(\.id)) {
+            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
+            storyPlacements = DailyDeckService.loadStoryPlacements(in: modelContext)
+        }
     }
 
     private func articleButton(_ article: Article, caption: String?) -> some View {
@@ -705,8 +711,7 @@ struct ArticleCollectionView: View {
             Text(title)
                 .font(.subheadline)
                 .foregroundStyle(OneFeedTheme.graphite)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
         .buttonStyle(DirectoryRowButtonStyle())
         .articleListRow()

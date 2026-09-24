@@ -288,14 +288,15 @@ struct DailyDeckService {
 
     nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
         var descriptor = FetchDescriptor<ContentMemory>()
-        descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID]
+        descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID, \.matchedConsumedAt]
         let memories = try context.fetch(descriptor)
         var lookup: [String: StoryPlacement] = [:]
         lookup.reserveCapacity(memories.count)
         for memory in memories {
             lookup[memory.identityKey] = StoryPlacement(
                 relationshipRaw: memory.relationshipRaw,
-                storyClusterID: memory.storyClusterID
+                storyClusterID: memory.storyClusterID,
+                matchedConsumedAt: memory.matchedConsumedAt
             )
         }
         return lookup
@@ -363,4 +364,5 @@ struct DailyDeckService {
 nonisolated struct StoryPlacement: Sendable {
     var relationshipRaw: String
     var storyClusterID: UUID?
+    var matchedConsumedAt: Date? = nil
 }

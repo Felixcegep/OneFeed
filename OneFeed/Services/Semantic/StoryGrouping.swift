@@ -76,18 +76,12 @@ enum StoryGrouping {
     /// Search is already applied. Exact and near copies drop out; same-story clusters collapse to the newest source.
     static func rows(
         from articles: [Article],
-        memories: [ContentMemory],
+        placements: [String: StoryPlacement],
         expandedClusterIDs: Set<UUID>,
         now: Date = .now
     ) -> [FeedStoryRow] {
-        var byKey: [String: ContentMemory] = [:]
-        byKey.reserveCapacity(memories.count)
-        for memory in memories {
-            byKey[memory.identityKey] = memory
-        }
-
         let visible = articles.filter { article in
-            let raw = byKey[ArticleIdentity.identityKey(for: article)]?.relationshipRaw
+            let raw = placements[ArticleIdentity.identityKey(for: article)]?.relationshipRaw
             return raw != ContentRelationship.exactDuplicate.rawValue
                 && raw != ContentRelationship.nearDuplicate.rawValue
         }
@@ -95,10 +89,10 @@ enum StoryGrouping {
         var members: [UUID: [Article]] = [:]
         var sameStoryClusters = Set<UUID>()
         for article in visible {
-            guard let memory = byKey[ArticleIdentity.identityKey(for: article)],
-                  let clusterID = memory.storyClusterID else { continue }
+            guard let mark = placements[ArticleIdentity.identityKey(for: article)],
+                  let clusterID = mark.storyClusterID else { continue }
             members[clusterID, default: []].append(article)
-            if memory.relationshipRaw == ContentRelationship.sameStory.rawValue {
+            if mark.relationshipRaw == ContentRelationship.sameStory.rawValue {
                 sameStoryClusters.insert(clusterID)
             }
         }
@@ -107,18 +101,19 @@ enum StoryGrouping {
         var rows: [FeedStoryRow] = []
         rows.reserveCapacity(visible.count)
         for article in visible {
-            let memory = byKey[ArticleIdentity.identityKey(for: article)]
-            if let clusterID = memory?.storyClusterID, sameStoryClusters.contains(clusterID) {
+            let key = ArticleIdentity.identityKey(for: article)
+            let mark = placements[key]
+            if let clusterID = mark?.storyClusterID, sameStoryClusters.contains(clusterID) {
                 guard emitted.insert(clusterID).inserted else { continue }
                 let ordered = (members[clusterID] ?? [article]).sorted { $0.publishedAt > $1.publishedAt }
                 let primary = ordered[0]
                 let others = Array(ordered.dropFirst())
-                let primaryMemory = byKey[ArticleIdentity.identityKey(for: primary)]
+                let primaryMark = placements[ArticleIdentity.identityKey(for: primary)]
                 rows.append(FeedStoryRow(
                     id: primary.id.uuidString,
                     kind: .article(
                         primary,
-                        caption: similarCaption(matchedConsumedAt: primaryMemory?.matchedConsumedAt, now: now)
+                        caption: similarCaption(matchedConsumedAt: primaryMark?.matchedConsumedAt, now: now)
                     )
                 ))
                 if !others.isEmpty {
@@ -139,7 +134,10 @@ enum StoryGrouping {
             }
             rows.append(FeedStoryRow(
                 id: article.id.uuidString,
-                kind: .article(article, caption: nil)
+                kind: .article(
+                    article,
+                    caption: similarCaption(matchedConsumedAt: mark?.matchedConsumedAt, now: now)
+                )
             ))
         }
         return rows
