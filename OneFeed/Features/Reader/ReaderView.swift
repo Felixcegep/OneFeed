@@ -103,6 +103,7 @@ struct ReaderView: View {
                 }
                 .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
             }
+            .interactiveDismissDisabled(decision != nil)
             .onChange(of: viewModel.hasAISummary) { _, ready in
                 if ready, article.contentKind == "youtube" {
                     mode = .reader
