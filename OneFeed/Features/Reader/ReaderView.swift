@@ -44,6 +44,7 @@ struct ReaderView: View {
     @State private var skipPulse = 0
     @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
+    @State private var didOfferSummary = false
     @State private var showingAPIKeySheet = false
     @State private var showingVideoChat = false
     @State private var geminiKey = ""
@@ -109,11 +110,11 @@ struct ReaderView: View {
             #if os(macOS)
             .toolbar(.hidden)
             #endif
-            .task {
+            .task(id: article.id) {
                 await viewModel.enrichReadableHTML()
-                if viewModel.shouldOfferYouTubeSummary {
-                    showingSummaryPrompt = true
-                }
+                guard !Task.isCancelled, !didOfferSummary, viewModel.shouldOfferYouTubeSummary else { return }
+                didOfferSummary = true
+                showingSummaryPrompt = true
             }
             #if os(iOS)
             .toolbar {
@@ -130,6 +131,7 @@ struct ReaderView: View {
                     HStack(spacing: 10) {
                         if viewModel.isExtracting || viewModel.isSummarizing {
                             OneFeedMarkPulse(isActive: true, size: 18)
+                                .frame(minWidth: 44, minHeight: 44)
                                 .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
                         }
                         if showsReadingOptions {
@@ -163,7 +165,7 @@ struct ReaderView: View {
                 get: { viewModel.summaryError != nil && !viewModel.isSummarizing },
                 set: { if !$0 { viewModel.summaryError = nil } }
             )) {
-                Button("Try again") { Task { await viewModel.summarizeYouTube() } }
+                Button("Try again") { viewModel.beginSummary() }
                 Button("OK", role: .cancel) { viewModel.summaryError = nil }
             } message: {
                 Text(viewModel.summaryError ?? "")
@@ -192,7 +194,7 @@ struct ReaderView: View {
                     guard GeminiAPIKeyStore.load() != nil else { return }
                     switch followUp {
                     case .summarize:
-                        Task { await viewModel.summarizeYouTube() }
+                        viewModel.beginSummary()
                     case .ask:
                         openVideoChatAfterKey = true
                     case nil:
@@ -682,7 +684,7 @@ struct ReaderView: View {
             geminiKeyFollowUp = .summarize
             showingAPIKeySheet = true
         } else {
-            Task { await viewModel.summarizeYouTube() }
+            viewModel.beginSummary()
         }
     }
 

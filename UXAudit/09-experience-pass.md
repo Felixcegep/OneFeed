@@ -30,7 +30,9 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The progress line reserved space while idle | Today, Feed, Settings | Medium | The top bar was always 2pt tall | The bar’s height is 0 until the line is actually shown | Code review |
 | The in-app browser spinner sat on top of the page | Reader browser | Medium | A `ProgressView` overlay was pinned to the top of the web view | Loading uses the mark in the toolbar, so the page can scroll freely | Code review |
 
+| The video summary prompt could return on the same visit | Reader | Medium | `.task` ran again and offered the dialog whenever the reader reappeared | The prompt is offered once per article. Starting a summary replaces one that is already running | Code review |
+
 ## Still open
 
-- Swiping the takeaway sheet closed still marks the article read. That matches Done → optional note. A draft is not saved on swipe.
+- Swiping the takeaway sheet closed still marks the article read. A changed note or choice is already kept as a draft.
 - No Xcode on this machine, so the new tests have not been executed here. Scroll-to-top of the progress line still needs a device pass.

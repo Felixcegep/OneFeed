@@ -16,6 +16,7 @@ final class ReaderViewModel {
     var askError: String?
     private let gemini: GeminiClient
     private var videoAsk: Task<Void, Never>?
+    private var summaryTask: Task<Void, Never>?
 
     init(article: Article, gemini: GeminiClient = GeminiClient()) {
         self.article = article
@@ -72,6 +73,16 @@ final class ReaderViewModel {
     func declineYouTubeSummary() {
         article.declinedVideoSummary = true
         try? article.modelContext?.save()
+    }
+
+    func beginSummary() {
+        summaryTask?.cancel()
+        summaryTask = Task { await self.summarizeYouTube() }
+    }
+
+    func cancelSummary() {
+        summaryTask?.cancel()
+        summaryTask = nil
     }
 
     func summarizeYouTube() async {
