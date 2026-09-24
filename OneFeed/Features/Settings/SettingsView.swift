@@ -55,8 +55,8 @@ struct SettingsView: View {
             library.configure(with: modelContext)
             geminiKey = GeminiAPIKeyStore.load() ?? ""
         }
-        .sheet(isPresented: $viewModel.isConnectingFreshRSS, onDismiss: viewModel.reload) {
-            FreshRSSConnectView(existingAccount: viewModel.freshRSS)
+        .sheet(isPresented: $viewModel.isConnectingFreshRSS) {
+            FreshRSSConnectView(existingAccount: viewModel.freshRSS, onConnected: { viewModel.reload() })
         }
         .confirmationDialog("Disconnect FreshRSS? Your locally stored articles will remain available.", isPresented: $viewModel.isConfirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { Task { await viewModel.disconnect() } }
@@ -320,9 +320,11 @@ private struct FreshRSSConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: FreshRSSConnectViewModel
+    var onConnected: () -> Void = {}
 
-    init(existingAccount: SyncAccount?) {
+    init(existingAccount: SyncAccount?, onConnected: @escaping () -> Void = {}) {
         _viewModel = State(initialValue: FreshRSSConnectViewModel(existingAccount: existingAccount))
+        self.onConnected = onConnected
     }
 
     var body: some View {
@@ -363,7 +365,12 @@ private struct FreshRSSConnectView: View {
                         OneFeedMarkPulse(isActive: true, size: 18)
                     } else {
                         Button("Connect") {
-                            Task { if await viewModel.connect(in: modelContext) { dismiss() } }
+                            Task {
+                                if await viewModel.connect(in: modelContext) {
+                                    onConnected()
+                                    dismiss()
+                                }
+                            }
                         }.disabled(viewModel.server.isEmpty || viewModel.username.isEmpty || viewModel.apiPassword.isEmpty)
                     }
                 }

@@ -160,9 +160,7 @@ struct CurrentView: View {
         .sheet(isPresented: $showingAddSource) {
             AddSourceView(onAdded: { Task { await viewModel.refresh() } })
         }
-        .sheet(isPresented: $showingTodayFilter, onDismiss: {
-            viewModel.loadCurrent()
-        }) {
+        .sheet(isPresented: $showingTodayFilter) {
             TodayFilterSheet { viewModel.loadCurrent() }
         }
         .onChange(of: stories.count) { oldCount, newCount in

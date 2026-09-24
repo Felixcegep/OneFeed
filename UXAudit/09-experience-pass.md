@@ -54,6 +54,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | More sources did not say whether the copies were open | Feed | Medium | The row had a label and no expanded value | VoiceOver hears Expanded or Collapsed, with a hint for the next tap | Code review |
 | Typing in search rebuilt the list on every letter | Feed, Queue, History, Sources, Today filter | High | The list and the live field shared one view, so each keystroke regrouped rows and stripped excerpts again | The field lives in its own view. The list updates when the query is applied. Each article remembers the excerpt it already stripped | Code review |
 | Closing Add to Queue fetched every saved story | Queue | High | Dismiss and each row action reloaded the whole saved library, including article bodies, into an array the list does not show | The list is the live query. Cancel, undo, and row actions no longer fetch it again. A handoff lookup loads ids only | `SwiftDataFreshRSSSyncTests.finishingLaterArticleLeavesTheQueueAndMarksRead` |
+| Canceling Connect or the Today filter reloaded the screen | Settings, Today | Medium | The sheet’s dismiss always fetched accounts and feeds, or reread the deck | A successful connection reloads accounts. A Today filter change reloads the deck. Cancel does neither | Code review |
 
 ## Still open
 
