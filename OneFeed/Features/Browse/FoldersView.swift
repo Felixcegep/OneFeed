@@ -48,8 +48,9 @@ struct FoldersView: View {
     @State private var folderOrderTick = 0
     @State private var storyPlacements: [String: StoryPlacement] = [:]
     @State private var placementTick = 0
-    /// Folder rows stay put while refresh progress updates. Rebuilt only when sources, stories, or order change.
-    @State private var directoryCache = FolderDirectoryCache()
+    /// Folder rows stay put while refresh progress updates. Rebuilt off the main thread when sources, stories, or order change.
+    @State private var folderSummaries: [FolderSummary] = []
+    @State private var folderDirectoryReady = false
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -58,7 +59,7 @@ struct FoldersView: View {
     var body: some View {
         let _ = iconTick
         let _ = folderOrderTick
-        let summaries = isEditingFolders ? [] : directorySummaries
+        let summaries = isEditingFolders ? [] : folderSummaries
         return List {
             Section {
                 if isEditingFolders {
@@ -69,6 +70,10 @@ struct FoldersView: View {
                         editingRow(row)
                     }
                     newFolderRow
+                } else if !folderDirectoryReady {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
                 } else if summaries.isEmpty {
                     emptySourceInvite
                 } else {
@@ -134,6 +139,9 @@ struct FoldersView: View {
         }
         .task(id: openQueryEdge) {
             await reloadStoryPlacements()
+        }
+        .task(id: directoryEdge) {
+            await reloadFolderSummaries()
         }
         .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
             Task { await reloadStoryPlacements() }
@@ -211,20 +219,35 @@ struct FoldersView: View {
         }
     }
 
-    /// Cached folder rows. A progress tick keeps the same edge, so the list is not walked again.
-    private var directorySummaries: [FolderSummary] {
+    private func reloadFolderSummaries() async {
         let edge = directoryEdge
-        if directoryCache.edge == edge {
-            return directoryCache.summaries
+        let feedSnaps = feeds.map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) }
+        let storySnaps = openQuery.map { article in
+            FolderStorySnap(
+                feedID: article.feed?.id,
+                publishedAt: article.publishedAt,
+                videoID: article.videoID,
+                url: article.url,
+                guid: article.guid,
+                id: article.id,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
         }
-        let summaries = FeedRootDirectory(
-            feeds: feeds,
-            articles: openQuery,
-            placements: storyPlacements
-        ).summaries
-        directoryCache.edge = edge
-        directoryCache.summaries = summaries
-        return summaries
+        let placements = storyPlacements
+        let order = FolderStore.knownNames()
+        let summaries = await Task.detached(priority: .userInitiated) {
+            FolderDirectoryCount.summaries(
+                feeds: feedSnaps,
+                stories: storySnaps,
+                placements: placements,
+                folderOrder: order
+            )
+        }.value
+        guard !Task.isCancelled, edge == directoryEdge else { return }
+        folderSummaries = summaries
+        folderDirectoryReady = true
     }
 
     /// Every open story, plus each source. A refresh tick does not regroup the folders.
@@ -657,20 +680,6 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
 private final class StoryRowCache {
     var edge = Int.min
     var rows: [FeedStoryRow] = []
-}
-
-private final class FolderDirectoryCache {
-    var edge = Int.min
-    var summaries: [FolderSummary] = []
-}
-
-private struct FeedRootDirectory {
-    let summaries: [FolderSummary]
-
-    init(feeds: [Feed], articles: [Article], placements: [String: StoryPlacement] = [:]) {
-        let open = FeedFolderGrouping.openArticles(from: articles)
-        summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open, placements: placements)
-    }
 }
 
 /// Progress ticks stay on this chrome. The folder list does not read the progress line, so a refresh does not rebuild the rows.

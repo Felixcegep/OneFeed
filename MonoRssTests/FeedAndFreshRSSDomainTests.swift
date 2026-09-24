@@ -250,6 +250,29 @@ struct FeedAndFreshRSSDomainTests {
 
         let summaries = FeedFolderGrouping.folderSummaries(feeds: [development, other], articles: [newest, copy], placements: placements)
         #expect(summaries.map(\.unreadCount) == [1])
+        let counted = FolderDirectoryCount.summaries(
+            feeds: [development, other].map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) },
+            stories: [newest, copy].map(folderStorySnap),
+            placements: placements,
+            folderOrder: []
+        )
+        #expect(counted.map(\.name) == summaries.map(\.name))
+        #expect(counted.map(\.unreadCount) == summaries.map(\.unreadCount))
+        #expect(counted.map(\.feedCount) == summaries.map(\.feedCount))
+    }
+
+    private func folderStorySnap(_ article: Article) -> FolderStorySnap {
+        FolderStorySnap(
+            feedID: article.feed?.id,
+            publishedAt: article.publishedAt,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            id: article.id,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
     }
 
     @Test func feedRowsDropCopiesAndKeepASimilarCaption() {

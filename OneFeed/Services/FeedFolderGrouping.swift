@@ -27,12 +27,143 @@ struct FolderArticleGroup: Identifiable {
     var name: String { folderID.title }
 }
 
-struct FolderSummary: Identifiable {
+struct FolderSummary: Identifiable, Sendable {
     var id: FeedFolderID { folderID }
     let folderID: FeedFolderID
     let unreadCount: Int
     let feedCount: Int
     var name: String { folderID.title }
+}
+
+/// Fields the folder list needs. Copied on the main thread so the count can run elsewhere.
+struct FolderFeedSnap: Sendable {
+    var id: UUID
+    var memberships: [String]
+}
+
+struct FolderStorySnap: Sendable {
+    var feedID: UUID?
+    var publishedAt: Date
+    var videoID: String?
+    var url: URL?
+    var guid: String
+    var id: UUID
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+}
+
+/// Same folder counts as `FeedFolderGrouping.folderSummaries`, without the model objects.
+nonisolated enum FolderDirectoryCount {
+    static func summaries(
+        feeds: [FolderFeedSnap],
+        stories: [FolderStorySnap],
+        placements: [String: StoryPlacement],
+        folderOrder: [String]
+    ) -> [FolderSummary] {
+        let open = collapsed(stories.sorted { $0.publishedAt > $1.publishedAt })
+        return groups(from: feeds, folderOrder: folderOrder).map { group in
+            let items = open.filter { story in
+                guard let id = story.feedID else { return group.folderID == .unfiled }
+                return group.feedIDs.contains(id)
+            }
+            let count = collapsedPrimaries(items, placements: placements).count
+            return FolderSummary(folderID: group.folderID, unreadCount: count, feedCount: group.feedCount)
+        }
+    }
+
+    private struct SnapGroup {
+        var folderID: FeedFolderID
+        var feedIDs: Set<UUID>
+        var feedCount: Int
+    }
+
+    private static func groups(from feeds: [FolderFeedSnap], folderOrder: [String]) -> [SnapGroup] {
+        var buckets: [FeedFolderID: [UUID]] = [:]
+        for feed in feeds {
+            if feed.memberships.isEmpty {
+                buckets[.unfiled, default: []].append(feed.id)
+                continue
+            }
+            for name in feed.memberships {
+                buckets[.named(name), default: []].append(feed.id)
+            }
+        }
+        let named = buckets
+            .filter { $0.key != .unfiled }
+            .sorted { precedes($0.key.title, $1.key.title, stored: folderOrder) }
+            .map { SnapGroup(folderID: $0.key, feedIDs: Set($0.value), feedCount: $0.value.count) }
+        if let unfiled = buckets[.unfiled], !unfiled.isEmpty {
+            return named + [SnapGroup(folderID: .unfiled, feedIDs: Set(unfiled), feedCount: unfiled.count)]
+        }
+        return named
+    }
+
+    private static func precedes(_ lhs: String, _ rhs: String, stored: [String]) -> Bool {
+        let li = stored.firstIndex { $0.caseInsensitiveCompare(lhs) == .orderedSame }
+        let ri = stored.firstIndex { $0.caseInsensitiveCompare(rhs) == .orderedSame }
+        switch (li, ri) {
+        case let (l?, r?) where l != r: return l < r
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: return FeedFolderGrouping.compareFolderNames(lhs, rhs)
+        }
+    }
+
+    private static func collapsed(_ stories: [FolderStorySnap]) -> [FolderStorySnap] {
+        var order: [String] = []
+        var groups: [String: [FolderStorySnap]] = [:]
+        for story in stories {
+            let key = identityKey(story)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(story)
+        }
+        return order.map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) }) ?? items[0]
+        }
+    }
+
+    private static func collapsedPrimaries(_ stories: [FolderStorySnap], placements: [String: StoryPlacement]) -> [FolderStorySnap] {
+        let exact = ContentRelationship.exactDuplicate.rawValue
+        let near = ContentRelationship.nearDuplicate.rawValue
+        let sameStory = ContentRelationship.sameStory.rawValue
+        let visible = stories.filter { story in
+            let raw = placements[identityKey(story)]?.relationshipRaw
+            return raw != exact && raw != near
+        }
+        var sameStoryClusters = Set<UUID>()
+        for story in visible {
+            guard let mark = placements[identityKey(story)],
+                  mark.relationshipRaw == sameStory,
+                  let clusterID = mark.storyClusterID else { continue }
+            sameStoryClusters.insert(clusterID)
+        }
+        var emitted = Set<UUID>()
+        var primaries: [FolderStorySnap] = []
+        for story in visible {
+            let key = identityKey(story)
+            if let clusterID = placements[key]?.storyClusterID, sameStoryClusters.contains(clusterID) {
+                guard emitted.insert(clusterID).inserted else { continue }
+            }
+            primaries.append(story)
+        }
+        return primaries
+    }
+
+    private static func identityKey(_ story: FolderStorySnap) -> String {
+        if let videoID = story.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: story.url, guid: story.guid, id: story.id)
+    }
+
+    private static func score(_ story: FolderStorySnap) -> Int {
+        var value = 0
+        if story.feedID != nil { value += 8 }
+        if story.hasRemoteID { value += 4 }
+        if story.stateRaw == "saved" || story.isRemoteStarred { value += 3 }
+        if story.stateRaw == "current" { value += 2 }
+        return value
+    }
 }
 
 enum FeedFolderGrouping {
