@@ -213,6 +213,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening Feed copied every story summary | Feed | High | The row plan copied each summary and video summary even when search was empty | An empty search leaves those fields unread. A search copies only the preview sample, and that sample still matches the blurb | `FeedAndFreshRSSDomainTests.feedSearchMatchesTheSummarySample` |
 | Moving a folder counted every open story again | Feed | Medium | Up and down rebuilt the folder list from the live articles | The move uses the folders already on screen | Code review |
 | Opening History copied every title and note | History | High | The day plan copied titles, notes, and source names even when search was empty | An empty search keeps only the dates. A search still matches a title, note, or source | `RetentionAndExtractionTests.historyDayKeepsNewestFirst` |
+| Opening Queue copied every title and note | Queue | High | The section plan copied titles, notes, and source names even when search was empty | An empty search keeps the fields the sections need. A search still matches a title | `RetentionAndExtractionTests.queuePlanKeepsTheSavedStoryAndSplitsTheVideo` |
 
 ## Still open
 

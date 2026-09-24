@@ -92,6 +92,19 @@ struct RetentionAndExtractionTests {
         #expect(plan.videos.isEmpty)
         #expect(plan.articles == [saved.id])
         #expect(plan.subtitle == "2 in queue · 1 video")
+        let datesOnly = [video, saved, copy].map { article in
+            var snap = queueSnap(article)
+            snap.title = ""
+            snap.readingNote = ""
+            snap.reactionRaw = ""
+            snap.feedTitle = nil
+            snap.author = nil
+            return snap
+        }
+        let quiet = QueueListPlan.make(from: datesOnly, query: "")
+        #expect(quiet.upNext == plan.upNext)
+        #expect(quiet.articles == plan.articles)
+        #expect(QueueListPlan.make(from: [video, saved, copy].map(queueSnap), query: "Essay").articles == [saved.id])
     }
 
     private func queueSnap(_ article: Article) -> QueueStorySnap {

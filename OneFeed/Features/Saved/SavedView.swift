@@ -44,18 +44,19 @@ struct SavedView: View {
     private func reloadQueue() async {
         let edge = queuePlanEdge
         let query = searchQuery
+        let searching = !query.isEmpty
         let snaps = savedQuery.compactMap { article -> QueueStorySnap? in
             guard article.isStored else { return nil }
             return QueueStorySnap(
                 id: article.id,
                 publishedAt: article.publishedAt,
-                title: article.title,
-                readingNote: article.readingNote,
-                reactionRaw: article.readingReactionRawValue,
-                feedTitle: article.feed?.title,
+                title: searching ? article.title : "",
+                readingNote: searching ? article.readingNote : "",
+                reactionRaw: searching ? article.readingReactionRawValue : "",
+                feedTitle: searching ? article.feed?.title : nil,
                 hasFeed: article.feed != nil,
                 url: article.url,
-                author: article.author,
+                author: searching ? article.author : nil,
                 contentKind: article.contentKind,
                 videoID: article.videoID,
                 guid: article.guid,
