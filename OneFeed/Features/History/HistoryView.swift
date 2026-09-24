@@ -35,6 +35,10 @@ struct HistoryView: View {
     }
 
     private func reloadHistoryDays() async {
+        if HistoryViewModel.groupsOnTheOpenScreen(storyCount: history.count, isSearching: !trimmedQuery.isEmpty) {
+            historyDays = HistoryViewModel.days(from: history)
+            historyReady = true
+        }
         let edge = historyEdge
         let query = trimmedQuery
         let searching = !query.isEmpty

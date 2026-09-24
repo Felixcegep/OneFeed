@@ -29,6 +29,13 @@ struct HistoryDayPlan: Sendable, Identifiable {
 }
 
 enum HistoryViewModel {
+    /// A modest history can be grouped on the open screen. A long one waits for the off-screen plan.
+    static let synchronousGroupingLimit = 200
+
+    static func groupsOnTheOpenScreen(storyCount: Int, isSearching: Bool) -> Bool {
+        !isSearching && storyCount > 0 && storyCount <= synchronousGroupingLimit
+    }
+
     static func days(from articles: [Article]) -> [HistoryDay] {
         let calendar = Calendar.current
         let stored = articles.filter(\.isStored)

@@ -231,6 +231,10 @@ struct RetentionAndExtractionTests {
         }
         #expect(HistoryViewModel.dayPlans(from: datesOnly, query: "").map(\.articleIDs) == [newer.id, older.id])
         #expect(HistoryViewModel.dayPlans(from: [older, newer].map(historySnap), query: "Newer").flatMap(\.articleIDs) == [newer.id])
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 2, isSearching: false))
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 2, isSearching: true) == false)
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 0, isSearching: false) == false)
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: HistoryViewModel.synchronousGroupingLimit + 1, isSearching: false) == false)
     }
 
     private func historySnap(_ article: Article) -> HistoryStorySnap {
