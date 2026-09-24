@@ -144,12 +144,11 @@ struct CurrentView: View {
                 celebrateClear = true
             }
         }
-        .onChange(of: celebrateClear) { _, celebrating in
-            guard celebrating else { return }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(900))
-                celebrateClear = false
-            }
+        .task(id: celebrateClear) {
+            guard celebrateClear else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            celebrateClear = false
         }
         .alert("Couldn’t refresh", isPresented: Binding(get: { viewModel.presentedError != nil }, set: { if !$0 { viewModel.clearError() } })) {
             Button("OK", role: .cancel) { viewModel.clearError() }
@@ -234,7 +233,9 @@ struct CurrentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(OneFeedTheme.plaster)
         .animation(nil, value: viewModel.progress.completed)
-        .sensoryFeedback(.success, trigger: celebrateClear)
+        .sensoryFeedback(.success, trigger: celebrateClear) { _, celebrating in
+            celebrating
+        }
     }
 
     private var todayFilterIsNarrowed: Bool {
