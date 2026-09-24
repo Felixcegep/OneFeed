@@ -189,6 +189,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A source form sorted every story on each redraw | Source | High | The newest-twenty list hashed and sorted the whole feed whenever the form refreshed | The list stays until the count changes. A refresh builds it again, including when the count stays the same | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
 | Opening Feed read every story cluster on the main thread | Feed | High | The folder list and the story list fetched content memories while building rows | That lookup runs off the main thread, and an unchanged result does not regroup the rows | Code review |
 | Today built story captions on the main thread before the deck could draw | Today | High | Opening Today fetched every open story and every memory before the list appeared | The deck draws first. Captions are copied off the main thread and fill in when they are ready | `SemanticDeckTests.todayCaptionsCanBeBuiltFromCopiedFields` |
+| Sources regrouped every folder whenever the screen refreshed | Sources | Medium | The folder groups were rebuilt from scratch on each redraw, including a status change | The groups stay until a source or a remembered folder name changes | Code review |
 
 ## Still open
 

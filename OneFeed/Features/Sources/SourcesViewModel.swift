@@ -31,8 +31,29 @@ final class SourcesViewModel {
         statusMessage = nil
     }
 
+    private var cachedFolderEdge = Int.min
+    private var cachedFolders: [FeedFolderGroup] = []
+
+    /// Folder groups stay put until a source or a remembered folder name changes.
     var folders: [FeedFolderGroup] {
-        FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+        let edge = Self.folderEdge(of: feeds)
+        if edge == cachedFolderEdge { return cachedFolders }
+        cachedFolders = FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+        cachedFolderEdge = edge
+        return cachedFolders
+    }
+
+    private static func folderEdge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+        }
+        for name in FolderStore.knownNames() {
+            token = token &* 31 &+ name.hashValue
+        }
+        return token
     }
 
     var folderNames: [String] { FolderStore.allNames(from: feeds) }
