@@ -39,6 +39,7 @@ struct ReaderView: View {
     @State private var isPresentingBrowser = false
     @State private var showingFocusSheet = false
     @State private var showingTakeaway = false
+    @State private var takeawayError: String?
     @State private var pendingReadFinish = false
     @State private var savePulse = 0
     @State private var donePulse = 0
@@ -176,7 +177,17 @@ struct ReaderView: View {
                     finish(.read)
                 }
             }) {
-                ReadingTakeawaySheet(article: article)
+                ReadingTakeawaySheet(article: article) { message in
+                    takeawayError = message
+                }
+            }
+            .alert("Couldn’t save that note", isPresented: Binding(
+                get: { takeawayError != nil },
+                set: { if !$0 { takeawayError = nil } }
+            )) {
+                Button("OK", role: .cancel) { takeawayError = nil }
+            } message: {
+                Text(takeawayError ?? "")
             }
             .sheet(isPresented: $showingAPIKeySheet, onDismiss: {
                 guard openVideoChatAfterKey else { return }
