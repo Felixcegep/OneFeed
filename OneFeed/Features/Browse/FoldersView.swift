@@ -584,8 +584,11 @@ struct FoldersView: View {
                 }
                 folderAddError = nil
             } catch {
+                let message = RefreshFailure.message(for: error, fallback: "Couldn’t add that source.")
                 if openFolderID == .named(folderName) {
-                    folderAddError = RefreshFailure.message(for: error, fallback: "Couldn’t add that source.")
+                    folderAddError = message
+                } else {
+                    sourceSaveError = message
                 }
             }
             isAddingAddress = false
