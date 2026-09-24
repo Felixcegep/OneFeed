@@ -104,6 +104,9 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Dragging focus intensity reconfigured the page on every step | Reader | Medium | Each slider change started another focus task, and an older one could finish last | The latest change waits a moment and replaces the one already waiting | Code review |
 | A second library Sync could merge the file twice | Settings | High | The file path did not mark itself busy until after the next tap could start | A sync that is already running ignores the next tap, including the pull and the push | Code review |
 | A background library push could run during Sync | Settings | High | The delayed push did not notice that a sync was already writing the file | The push waits and runs after that sync. Leaving the app does not start a second write | Code review |
+| Opening a source sorted every story on each redraw | Source | High | Recent stories sorted the whole feed while the form scrolled | The twenty newest stay cached until the count or the ends change | `SourceDetailTests.recentStoriesAreTheNewestTwenty` |
+| Typing blocked words saved the library on every character | Source | High | The field wrote and noted a library change for each keystroke | The words save after a short pause, and immediately when the source is left | `SourceDetailTests.blockedWordsWaitUntilTypingPauses` |
+| Removing a source could unsubscribe twice | Source, Not interested | High | Confirm started another removal before the first finished | A removal already running ignores the next one | `SourceDetailTests.aSecondRemoveIsIgnoredWhileTheFirstIsRunning` |
 
 ## Still open
 

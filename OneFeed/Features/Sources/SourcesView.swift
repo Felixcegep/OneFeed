@@ -417,6 +417,7 @@ private extension View {
 private struct SourceDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SourceDetailViewModel
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
@@ -528,6 +529,10 @@ private struct SourceDetailView: View {
                 Task { @MainActor in await viewModel.remove() }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { viewModel.commitBlockedWords() }
+        }
+        .onDisappear { viewModel.commitBlockedWords() }
     }
 
     private var addressTitle: String {

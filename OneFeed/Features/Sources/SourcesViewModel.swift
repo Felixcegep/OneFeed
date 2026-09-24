@@ -230,11 +230,15 @@ final class SourceDetailViewModel {
     var isConfirmingRemoval = false
     var presentedError: String?
     var availableFolders: [String] = []
+    private var isRemoving = false
+    private var blockedWordsTask: Task<Void, Never>?
+    private var pendingBlockedWords: String?
+    private let recentArticlesCache = RecentArticleCache()
 
-    init(feed: Feed, context: ModelContext) {
+    init(feed: Feed, context: ModelContext, freshRSSService: any FreshRSSSyncing = FreshRSSSyncService()) {
         self.feed = feed
         self.context = context
-        self.freshRSSService = FreshRSSSyncService()
+        self.freshRSSService = freshRSSService
         reloadFolders()
     }
 
@@ -288,10 +292,36 @@ final class SourceDetailViewModel {
         set { feed.includeShorts = newValue; LibraryChange.note(feed); try? context.save() }
     }
     var blockedWords: String {
-        get { feed.blockedWords }
-        set { feed.blockedWords = newValue; LibraryChange.note(feed); try? context.save() }
+        get { pendingBlockedWords ?? feed.blockedWords }
+        set { scheduleBlockedWordsSave(newValue) }
     }
+
+    /// Writes the words after typing pauses. Leaving the source writes immediately.
+    func commitBlockedWords() {
+        blockedWordsTask?.cancel()
+        blockedWordsTask = nil
+        guard let pending = pendingBlockedWords else { return }
+        pendingBlockedWords = nil
+        guard pending != feed.blockedWords else { return }
+        feed.blockedWords = pending
+        LibraryChange.note(feed)
+        try? context.save()
+    }
+
+    private func scheduleBlockedWordsSave(_ value: String) {
+        pendingBlockedWords = value
+        blockedWordsTask?.cancel()
+        blockedWordsTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            commitBlockedWords()
+        }
+    }
+
     func remove() async {
+        guard !isRemoving else { return }
+        isRemoving = true
+        defer { isRemoving = false }
         do {
             try await freshRSSService.removeSubscription(feed, in: context)
         } catch {
@@ -302,10 +332,27 @@ final class SourceDetailViewModel {
         }
     }
 
+    /// The twenty newest stories. Scrolling reuses them while the count and the ends stay put.
     var recentArticles: [Article] {
-        feed.articles
-            .sorted { $0.publishedAt > $1.publishedAt }
-            .prefix(20)
-            .map { $0 }
+        let articles = feed.articles
+        let edge = recentEdge(of: articles)
+        if recentArticlesCache.edge == edge { return recentArticlesCache.articles }
+        recentArticlesCache.edge = edge
+        recentArticlesCache.articles = Array(
+            articles.sorted { $0.publishedAt > $1.publishedAt }.prefix(20)
+        )
+        return recentArticlesCache.articles
     }
+
+    private func recentEdge(of articles: [Article]) -> Int {
+        var token = articles.count
+        token = token &* 31 &+ (articles.first?.id.hashValue ?? 0)
+        token = token &* 31 &+ (articles.last?.id.hashValue ?? 0)
+        return token
+    }
+}
+
+private final class RecentArticleCache {
+    var edge = Int.min
+    var articles: [Article] = []
 }

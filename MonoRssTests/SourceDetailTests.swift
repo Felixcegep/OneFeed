@@ -1,0 +1,123 @@
+import Foundation
+import SwiftData
+import Testing
+@testable import OneFeed
+
+@MainActor
+struct SourceDetailTests {
+    private func context() throws -> ModelContext {
+        try InMemoryStore.makeContext()
+    }
+
+    @Test func recentStoriesAreTheNewestTwenty() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        for index in 0..<30 {
+            context.insert(Article(
+                guid: "story-\(index)",
+                title: "Story \(index)",
+                publishedAt: start.addingTimeInterval(Double(index) * 60),
+                feed: feed
+            ))
+        }
+        try context.save()
+
+        let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+        let recent = model.recentArticles
+        #expect(recent.count == 20)
+        #expect(recent.first?.guid == "story-29")
+        #expect(recent.last?.guid == "story-10")
+        #expect(model.recentArticles.map(\.guid) == recent.map(\.guid))
+
+        context.insert(Article(
+            guid: "story-new",
+            title: "Newest",
+            publishedAt: start.addingTimeInterval(10_000_000),
+            feed: feed
+        ))
+        try context.save()
+        #expect(model.recentArticles.first?.guid == "story-new")
+        #expect(model.recentArticles.count == 20)
+    }
+
+    @Test func blockedWordsWaitUntilTypingPauses() {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: IdleFreshRSS())
+
+        model.blockedWords = "AI"
+        model.blockedWords = "AI, Sponsored"
+        #expect(feed.blockedWords.isEmpty)
+        model.commitBlockedWords()
+        #expect(feed.blockedWords == "AI, Sponsored")
+        model.commitBlockedWords()
+        #expect(feed.blockedWords == "AI, Sponsored")
+    }
+
+    @Test func aSecondRemoveIsIgnoredWhileTheFirstIsRunning() async throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        try context.save()
+        let service = HoldingFreshRSS()
+        let model = SourceDetailViewModel(feed: feed, context: context, freshRSSService: service)
+
+        let first = Task { await model.remove() }
+        for _ in 0..<50 where service.removals == 0 {
+            await Task.yield()
+        }
+        await model.remove()
+        #expect(service.removals == 1)
+        service.finish()
+        await first.value
+        #expect(service.removals == 1)
+        #expect(try context.fetch(FetchDescriptor<Feed>()).isEmpty)
+    }
+}
+
+@MainActor
+private final class IdleFreshRSS: FreshRSSSyncing {
+    func connect(serverURL: URL, username: String, password: String, in context: ModelContext) async throws -> SyncAccount {
+        SyncAccount(provider: .freshRSS, serverURL: serverURL, username: username)
+    }
+    func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws {}
+    func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
+    func addSubscription(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "https://source.test/rss")!)
+    }
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws {}
+    func subscribeLocalFeeds(in context: ModelContext) async throws {}
+}
+
+@MainActor
+private final class HoldingFreshRSS: FreshRSSSyncing {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+    private(set) var removals = 0
+
+    func connect(serverURL: URL, username: String, password: String, in context: ModelContext) async throws -> SyncAccount {
+        SyncAccount(provider: .freshRSS, serverURL: serverURL, username: username)
+    }
+    func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws {}
+    func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
+    func addSubscription(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "https://source.test/rss")!)
+    }
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws {
+        removals += 1
+        await withCheckedContinuation { continuations.append($0) }
+        context.delete(feed)
+        try context.save()
+    }
+    func subscribeLocalFeeds(in context: ModelContext) async throws {}
+
+    func finish() {
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
+    }
+}

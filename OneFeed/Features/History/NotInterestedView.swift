@@ -9,6 +9,7 @@ struct NotInterestedView: View {
     @State private var pendingRemoval: NotInterestedSourceGroup?
     @State private var librarianPrompt: LibrarianPrompt?
     @State private var listCache = NotInterestedListCache()
+    @State private var isRemovingSource = false
 
     private var groups: [NotInterestedSourceGroup] {
         listCache.groups(from: entries, stamp: logStamp)
@@ -76,10 +77,9 @@ struct NotInterestedView: View {
             titleVisibility: .visible
         ) {
             Button("Remove source", role: .destructive) {
-                if let group = pendingRemoval {
-                    Task { await removeSource(group) }
-                }
+                guard let group = pendingRemoval else { return }
                 pendingRemoval = nil
+                Task { await removeSource(group) }
             }
         }
     }
@@ -194,7 +194,10 @@ struct NotInterestedView: View {
     }
 
     private func removeSource(_ group: NotInterestedSourceGroup) async {
+        guard !isRemovingSource else { return }
         guard let feed = NotInterestedLog.feed(matching: group, in: feeds) else { return }
+        isRemovingSource = true
+        defer { isRemovingSource = false }
         do {
             try await FreshRSSSyncService().removeSubscription(feed, in: modelContext)
         } catch {
