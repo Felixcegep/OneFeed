@@ -171,6 +171,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Connect could dismiss Settings after the FreshRSS sheet was already closed | Settings | Medium | A successful connect always called dismiss | The account still saves. The sheet dismisses only while it is still up | Code review |
 | Pasting a source into a folder lost the error if that folder closed first | Feed | Medium | The failure was written only into the open folder’s row | The row still shows the error while the folder is open. Otherwise an alert explains it | Code review |
 | The reader could be swiped away while Done, Skip, or Queue was still finishing | Reader | Medium | The cover stayed dismissible during the decision curtain | The swipe-away stays off until that finish completes or fails | Code review |
+| One bad file stopped the rest of a shared import | Queue | High | The batch lived in one do/catch, so the first failure skipped the remaining files | Each file is imported on its own. A later file still opens, and the alert says how many failed | Code review |
 
 ## Still open
 

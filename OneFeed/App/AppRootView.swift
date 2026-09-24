@@ -157,17 +157,27 @@ struct AppRootView: View {
         while !pendingImportURLs.isEmpty {
             let batch = pendingImportURLs
             pendingImportURLs.removeAll()
-            do {
-                var last: Article?
-                for url in batch {
+            var last: Article?
+            var failed = 0
+            var firstFailure: String?
+            for url in batch {
+                do {
                     last = try await service.importFile(at: url, in: modelContext)
+                } catch {
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
+                    }
                 }
-                if let last {
-                    QueueHandoff.pendingArticleID = last.id
-                    NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
-                }
-            } catch {
-                importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
+            }
+            if let last {
+                QueueHandoff.pendingArticleID = last.id
+                NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
+            }
+            if failed > 0 {
+                importError = failed == batch.count
+                    ? (firstFailure ?? "Couldn’t import that file.")
+                    : "Imported \(batch.count - failed). \(failed) could not be imported."
             }
         }
     }
