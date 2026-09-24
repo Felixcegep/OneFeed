@@ -38,6 +38,31 @@ struct QueueLinkServiceTests {
         #expect(unread.state == .saved)
     }
 
+    @Test func findingALinkByURLLeavesThePageOnDisk() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let html = "<p>\(String(repeating: "word ", count: 80))</p>"
+        let article = Article(
+            guid: "story",
+            title: "A story",
+            url: URL(string: "https://source.test/story"),
+            summary: "Blurb",
+            contentHTML: html,
+            state: .queued
+        )
+        setup.insert(article)
+        try setup.save()
+
+        let screen = ModelContext(container)
+        let found = try #require(ArticleIdentity.storedArticle(matching: URL(string: "https://source.test/story")!, in: screen))
+        #expect(found.title == "A story")
+        #expect(found.summary == "Blurb")
+        #expect(found.modelContext === screen)
+        let matchID = article.id
+        let stored = try #require(setup.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })).first)
+        #expect(stored.contentHTML == html)
+    }
+
     @Test func titleFallsBackToHostWhenThePathIsEmpty() {
         let url = URL(string: "https://www.noema.media/")!
         #expect(QueueLinkService.fallbackTitle(for: url) == "noema.media")

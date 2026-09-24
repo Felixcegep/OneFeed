@@ -54,13 +54,19 @@ nonisolated enum ArticleIdentity {
         articles.max(by: { score($0) < score($1) }) ?? articles[0]
     }
 
-    /// Finds a saved story by URL without loading article bodies.
+    /// Finds a saved story by URL without loading article bodies into the open screen.
+    /// The scan uses a short-lived context. The story handed back already has the columns a row reads, so a later title read does not fault the page.
     static func storedArticle(matching url: URL, in context: ModelContext) -> Article? {
-        let key = normalizedURLString(url)
-        var descriptor = FetchDescriptor<Article>()
-        descriptor.propertiesToFetch = [\.id, \.guid, \.url]
-        let articles = (try? context.fetch(descriptor)) ?? []
-        return articles.first { normalizedURLString($0.url) == key }
+        guard let key = normalizedURLString(url) else { return nil }
+        let lookup = ModelContext(context.container)
+        lookup.autosaveEnabled = false
+        var scan = FetchDescriptor<Article>()
+        scan.propertiesToFetch = [\.id, \.url]
+        let found = (try? lookup.fetch(scan)) ?? []
+        guard let matchID = found.first(where: { normalizedURLString($0.url) == key })?.id else { return nil }
+        var row = ArticleListFetch.rows(predicate: #Predicate { $0.id == matchID })
+        row.fetchLimit = 1
+        return try? context.fetch(row).first
     }
 
     static func identityKey(for article: Article) -> String {
