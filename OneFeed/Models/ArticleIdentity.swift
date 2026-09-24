@@ -54,6 +54,15 @@ nonisolated enum ArticleIdentity {
         articles.max(by: { score($0) < score($1) }) ?? articles[0]
     }
 
+    /// Finds a saved story by URL without loading article bodies.
+    static func storedArticle(matching url: URL, in context: ModelContext) -> Article? {
+        let key = normalizedURLString(url)
+        var descriptor = FetchDescriptor<Article>()
+        descriptor.propertiesToFetch = [\.id, \.guid, \.url]
+        let articles = (try? context.fetch(descriptor)) ?? []
+        return articles.first { normalizedURLString($0.url) == key }
+    }
+
     static func identityKey(for article: Article) -> String {
         if let videoID = article.videoID, !videoID.isEmpty {
             return "video:\(videoID)"

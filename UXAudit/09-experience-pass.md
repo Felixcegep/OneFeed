@@ -62,6 +62,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | The opening cover faded by animating the web view | Reader | Medium | The cover’s animation sat on the page, so the web view moved as the cover left | The cover fades in its own overlay. The page underneath stays still | Code review |
 | Launch and Undo animated the screen behind them | Launch, reader, lists | High | The fade sat on the root and on the list, so tabs and rows moved with the cover or the banner | The launch cover and the Undo bar animate inside their own overlay. The screen behind them stays still | Code review |
 | Save on the takeaway sheet could write twice | Reader | Medium | The button stayed active until the sheet finished dismissing | A second Save is ignored. The curtain’s caption wait also stops if the curtain is already gone | Code review |
+| Adding a link loaded every article body to see if it was already saved | Queue, Feed | High | The lookup fetched full articles, including HTML, then compared URLs | The lookup reads ids and URLs only. The matching story is opened after it is found | Code review |
 
 ## Still open
 

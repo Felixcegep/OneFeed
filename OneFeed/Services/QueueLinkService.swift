@@ -135,9 +135,7 @@ struct QueueLinkService {
     }
 
     private func existingArticle(matching url: URL, in context: ModelContext) -> Article? {
-        let key = ArticleIdentity.normalizedURLString(url)
-        let articles = (try? context.fetch(FetchDescriptor<Article>())) ?? []
-        return articles.first { ArticleIdentity.normalizedURLString($0.url) == key }
+        ArticleIdentity.storedArticle(matching: url, in: context)
     }
 
     private func pagePreview(for url: URL) async -> (title: String, imageURL: URL?, html: String?)? {
