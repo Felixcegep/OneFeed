@@ -65,7 +65,9 @@ struct NotInterestedView: View {
             logReady = true
             return
         }
-        listCache.resolve(entries: entries, guids: entries.map(\.articleGUID), in: modelContext)
+        if NotInterestedListPlan.prefetchesStories(entryCount: entries.count) {
+            listCache.resolve(entries: entries, guids: entries.map(\.articleGUID), in: modelContext)
+        }
         grouped = groups
         logReady = true
     }

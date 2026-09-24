@@ -280,6 +280,11 @@ nonisolated enum NotInterestedListPlan {
         entryCount > 0 && entryCount <= synchronousGroupingLimit
     }
 
+    /// A modest log can look up its stories before the rows draw. A long log looks up a row when it appears.
+    static func prefetchesStories(entryCount: Int) -> Bool {
+        entryCount <= synchronousGroupingLimit
+    }
+
     /// Copies marks on a short-lived context. A long log uses this instead of walking the rows on screen.
     static func snaps(in container: ModelContainer) -> [NotInterestedEntrySnap] {
         let context = ModelContext(container)
