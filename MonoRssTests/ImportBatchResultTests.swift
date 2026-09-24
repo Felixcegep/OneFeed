@@ -23,5 +23,6 @@ struct ImportBatchResultTests {
         #expect(shown.first?.title == "Story 0")
         let withCopy = [Article(guid: "copy", title: "Copy", url: URL(string: "https://example.com/0")!)] + articles
         #expect(QueueFeedSuggestions.capped(withCopy).count == QueueFeedSuggestions.shown)
+        #expect(QueueFeedSuggestions.capped(withCopy).map(\.id) == Array(ArticleIdentity.collapsingDuplicates(withCopy).prefix(QueueFeedSuggestions.shown)).map(\.id))
     }
 }

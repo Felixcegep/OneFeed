@@ -120,7 +120,14 @@ struct AddToQueueView: View {
             .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
                 importDropped(providers)
             }
-            .task { suggestions = QueueFeedSuggestions.load(in: modelContext) }
+            .task {
+                let container = modelContext.container
+                let ids = await Task.detached(priority: .userInitiated) {
+                    QueueFeedSuggestions.ids(in: container)
+                }.value
+                guard !Task.isCancelled else { return }
+                suggestions = QueueFeedSuggestions.stories(for: ids, in: modelContext)
+            }
             .onAppear {
                 if startWithFilePicker {
                     isPickingFile = true
@@ -283,21 +290,113 @@ enum QueueFeedSuggestions {
     static let shown = 8
     static let fetchCap = 24
 
-    static func load(in context: ModelContext) -> [Article] {
+    /// Chooses suggestion ids away from the open sheet. The sheet then fetches only those rows.
+    static func ids(in container: ModelContainer) -> [UUID] {
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
         let queued = ArticleState.queued.rawValue
         let current = ArticleState.current.rawValue
-        var descriptor = ArticleListFetch.rows(
+        var descriptor = FetchDescriptor<Article>(
             predicate: #Predicate { article in
                 article.stateRawValue == queued || article.stateRawValue == current
             },
             sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
         )
         descriptor.fetchLimit = fetchCap
-        let fetched = (try? context.fetch(descriptor)) ?? []
-        return capped(fetched.filter(\.isStored))
+        descriptor.propertiesToFetch = [\.id, \.url, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let fetched = (try? lookup.fetch(descriptor)) ?? []
+        let snaps = fetched.filter(\.isStored).map {
+            QueueSuggestionSnap(
+                id: $0.id,
+                url: $0.url,
+                videoID: $0.videoID,
+                guid: $0.guid,
+                hasFeed: $0.feed != nil,
+                hasRemoteID: $0.remoteID != nil,
+                stateRaw: $0.stateRawValue,
+                isRemoteStarred: $0.isRemoteStarred
+            )
+        }
+        return chosenIDs(from: snaps)
+    }
+
+    static func stories(for ids: [UUID], in context: ModelContext) -> [Article] {
+        guard !ids.isEmpty else { return [] }
+        let needed = ids
+        let fetched = (try? context.fetch(ArticleListFetch.rows(
+            predicate: #Predicate { needed.contains($0.id) }
+        ))) ?? []
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
+
+    static func chosenIDs(from snaps: [QueueSuggestionSnap]) -> [UUID] {
+        var order: [String] = []
+        var groups: [String: [QueueSuggestionSnap]] = [:]
+        for snap in snaps {
+            let key = identityKey(snap)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(snap)
+        }
+        return order.prefix(shown).map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) })?.id ?? items[0].id
+        }
     }
 
     static func capped(_ articles: [Article]) -> [Article] {
-        Array(ArticleIdentity.collapsingDuplicates(articles).prefix(shown))
+        let ids = chosenIDs(from: articles.map(QueueSuggestionSnap.init))
+        let byID = Dictionary(articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
+
+    private static func identityKey(_ snap: QueueSuggestionSnap) -> String {
+        if let videoID = snap.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: snap.url, guid: snap.guid, id: snap.id)
+    }
+
+    private static func score(_ snap: QueueSuggestionSnap) -> Int {
+        var value = 0
+        if snap.hasFeed { value += 8 }
+        if snap.hasRemoteID { value += 4 }
+        if snap.stateRaw == ArticleState.saved.rawValue || snap.isRemoteStarred { value += 3 }
+        if snap.stateRaw == ArticleState.current.rawValue { value += 2 }
+        return value
+    }
+}
+
+struct QueueSuggestionSnap: Sendable {
+    var id: UUID
+    var url: URL?
+    var videoID: String?
+    var guid: String
+    var hasFeed: Bool
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+
+    init(id: UUID, url: URL?, videoID: String?, guid: String, hasFeed: Bool, hasRemoteID: Bool, stateRaw: String, isRemoteStarred: Bool) {
+        self.id = id
+        self.url = url
+        self.videoID = videoID
+        self.guid = guid
+        self.hasFeed = hasFeed
+        self.hasRemoteID = hasRemoteID
+        self.stateRaw = stateRaw
+        self.isRemoteStarred = isRemoteStarred
+    }
+
+    init(_ article: Article) {
+        self.init(
+            id: article.id,
+            url: article.url,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasFeed: article.feed != nil,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
     }
 }

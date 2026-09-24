@@ -274,6 +274,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Opening Sources fetched every feed again | Sources | Medium | The folder list already grouped the feeds on screen, and opening the tab fetched them a second time | Opening keeps the context for later edits. A later edit can still reload the stored feeds | `FeedAndFreshRSSDomainTests.openingSourcesDoesNotFetchEveryFeed` |
 | Opening Settings fetched every feed | Settings | Medium | The root screen does not list feeds, and opening the tab fetched every source anyway | Opening keeps the context. Accounts and the export list load when those screens appear | `SettingsGoogleDriveLinkTests.openingSettingsDoesNotFetchEveryFeed` |
 | A folder’s stories stayed blank, then showed every copy, then collapsed | Feed | Medium | Grouping waited off screen, so a modest library first showed a blank row and then the uncollapsed list | A modest library is collapsed on the open screen, including a similar-story line already known. A search and a long library still wait. The same rows are not published again | `FeedAndFreshRSSDomainTests.feedRowsDropCopiesAndKeepASimilarCaption` |
+| Add to Queue picked its suggestions on the open sheet | Queue | Medium | Opening the sheet fetched and collapsed the newest open stories on the main thread | Those ids are chosen away from the sheet. The sheet then fetches only the eight rows it shows | `ImportBatchResultTests.queueSuggestionsStopAtEight` |
 
 ## Still open
 
