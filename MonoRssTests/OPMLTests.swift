@@ -83,4 +83,20 @@ struct OPMLTests {
         let folders = Set((try context.fetch(FetchDescriptor<Feed>())).compactMap(\.folderName))
         #expect(folders == Set(FeedSeedCatalog.folderOrder))
     }
+
+    @Test func opmlParseRunsOffTheMainActor() async throws {
+        let opml = """
+        <?xml version="1.0"?><opml version="2.0"><body>
+          <outline text="Must read">
+            <outline text="One" xmlUrl="https://one.test/rss" />
+          </outline>
+        </body></opml>
+        """
+        let parsed = try await Task.detached {
+            try OPMLService.parse(Data(opml.utf8))
+        }.value
+        #expect(parsed.count == 1)
+        #expect(parsed.first?.title == "One")
+        #expect(parsed.first?.folderName == "Must read")
+    }
 }

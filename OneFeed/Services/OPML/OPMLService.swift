@@ -72,7 +72,11 @@ struct OPMLImportPreview: Equatable, Sendable {
 struct OPMLService {
     /// Reads the document and reports what import would change. Does not insert.
     func previewDocument(_ data: Data, in context: ModelContext) throws -> OPMLImportPreview {
-        let outlines = try Self.parse(data)
+        try preview(outlines: Self.parse(data), in: context)
+    }
+
+    /// Matches already-parsed outlines against the library. The file parse stays off this call.
+    func preview(outlines: [OPMLFeedOutline], in context: ModelContext) throws -> OPMLImportPreview {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
         var known: [(url: URL, folders: Set<String>)] = feeds.map { feed in
             (feed.feedURL, Set(feed.memberships.map { $0.lowercased() }))
@@ -169,7 +173,7 @@ struct OPMLService {
         return OPMLDocument(data: Data(xml.utf8))
     }
 
-    static func parse(_ data: Data) throws -> [OPMLFeedOutline] {
+    nonisolated static func parse(_ data: Data) throws -> [OPMLFeedOutline] {
         let parser = OPMLOutlineParser()
         let xmlParser = XMLParser(data: data)
         xmlParser.delegate = parser
@@ -195,7 +199,7 @@ enum OPMLServiceError: LocalizedError {
     var errorDescription: String? { "That file is not a valid OPML document." }
 }
 
-private final class OPMLOutlineParser: NSObject, XMLParserDelegate {
+nonisolated private final class OPMLOutlineParser: NSObject, XMLParserDelegate {
     private enum Frame {
         case folder(String)
         case feed

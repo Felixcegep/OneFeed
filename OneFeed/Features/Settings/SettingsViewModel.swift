@@ -16,6 +16,7 @@ final class SettingsViewModel {
     var isConnectingFreshRSS = false
     var isConfirmingDisconnect = false
     var isImportingOPML = false
+    private var isStagingOPML = false
     var isExportingOPML = false
     var isConfirmingOPMLImport = false
     var statusTitle: String?
@@ -222,18 +223,28 @@ final class SettingsViewModel {
 
     /// Parses the picked file once and keeps the preview until Import or Cancel.
     func stageOPMLImport(from url: URL) {
-        guard let context else { return }
+        guard let context, !isStagingOPML else { return }
+        isStagingOPML = true
         do {
             guard url.startAccessingSecurityScopedResource() else { throw OPMLServiceError.invalidDocument }
             defer { url.stopAccessingSecurityScopedResource() }
             let data = try Data(contentsOf: url)
-            let preview = try OPMLService().previewDocument(data, in: context)
-            pendingOPMLPreview = preview
-            opmlImportConfirmation = preview.confirmationMessage
-            Task { @MainActor in
-                isConfirmingOPMLImport = true
+            Task {
+                defer { isStagingOPML = false }
+                do {
+                    let outlines = try await Task.detached {
+                        try OPMLService.parse(data)
+                    }.value
+                    let preview = try OPMLService().preview(outlines: outlines, in: context)
+                    pendingOPMLPreview = preview
+                    opmlImportConfirmation = preview.confirmationMessage
+                    isConfirmingOPMLImport = true
+                } catch {
+                    presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
+                }
             }
         } catch {
+            isStagingOPML = false
             presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
         }
     }
