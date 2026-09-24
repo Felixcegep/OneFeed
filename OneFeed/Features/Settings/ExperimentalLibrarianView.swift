@@ -139,10 +139,14 @@ final class ExperimentalLibrarianViewModel {
         defer { isWorking = false }
         do {
             for _ in 0..<8 {
+                if context.hasChanges {
+                    try? context.save()
+                }
                 let contentsJSON = try JSONSerialization.data(withJSONObject: apiContents)
+                let instruction = await librarian.systemInstruction(from: context.container)
                 let result = try await gemini.generateLibrarian(
                     contentsJSON: contentsJSON,
-                    systemInstruction: librarian.systemInstruction(in: context)
+                    systemInstruction: instruction
                 )
                 apiContents.append(result.modelContent)
                 if result.functionCalls.isEmpty {

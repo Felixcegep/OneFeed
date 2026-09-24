@@ -59,14 +59,14 @@ enum NotInterestedLog {
         return byGUID + byURL.filter { seen.insert($0.id).inserted }
     }
 
-    static func entries(in context: ModelContext) -> [NotInterestedEntry] {
+    nonisolated static func entries(in context: ModelContext) -> [NotInterestedEntry] {
         let descriptor = FetchDescriptor<NotInterestedEntry>(
             sortBy: [SortDescriptor(\.recordedAt, order: .reverse)]
         )
         return (try? context.fetch(descriptor)) ?? []
     }
 
-    static func groups(from entries: [NotInterestedEntry]) -> [NotInterestedSourceGroup] {
+    nonisolated static func groups(from entries: [NotInterestedEntry]) -> [NotInterestedSourceGroup] {
         var order: [String] = []
         var buckets: [String: [NotInterestedEntry]] = [:]
         for entry in entries {
@@ -91,7 +91,7 @@ enum NotInterestedLog {
         }
     }
 
-    static func snapshot(in context: ModelContext, sources: Int = 12, articlesPerSource: Int = 3) -> String {
+    nonisolated static func snapshot(in context: ModelContext, sources: Int = 12, articlesPerSource: Int = 3) -> String {
         let grouped = groups(from: entries(in: context))
         guard !grouped.isEmpty else {
             return "No articles have been marked not interested."
@@ -173,14 +173,14 @@ enum NotInterestedLog {
         }
     }
 
-    static func feed(matching group: NotInterestedSourceGroup, in feeds: [Feed]) -> Feed? {
+    nonisolated static func feed(matching group: NotInterestedSourceGroup, in feeds: [Feed]) -> Feed? {
         if let id = group.feedID, let feed = feeds.first(where: { $0.id == id }) {
             return feed
         }
         return feed(matchingFeedURL: group.sourceFeedURL, in: feeds)
     }
 
-    static func feed(matchingFeedURL raw: String, in feeds: [Feed]) -> Feed? {
+    nonisolated static func feed(matchingFeedURL raw: String, in feeds: [Feed]) -> Feed? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if let url = URL(string: trimmed) {

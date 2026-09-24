@@ -82,27 +82,27 @@ final class Feed {
     }
 
     /// Folders this source appears in. A legacy row with only `folderName` still resolves.
-    var memberships: [String] {
+    nonisolated var memberships: [String] {
         let stored = FeedMembership.normalize(folderNames)
         if !stored.isEmpty { return stored }
         if let legacy = FeedMembership.normalized(folderName) { return [legacy] }
         return []
     }
 
-    func containsFolder(_ name: String) -> Bool {
+    nonisolated func containsFolder(_ name: String) -> Bool {
         guard let name = FeedMembership.normalized(name) else { return false }
         return memberships.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     /// Graphite line shown inside one folder when the source also lives elsewhere.
-    func alsoInLine(excluding folder: String) -> String? {
+    nonisolated func alsoInLine(excluding folder: String) -> String? {
         let others = memberships.filter { $0.caseInsensitiveCompare(folder) != .orderedSame }
         guard !others.isEmpty else { return nil }
         return "Also in \(others.joined(separator: ", "))"
     }
 
     /// Where an existing source already lives, shown while adding it to another folder.
-    var filedInLine: String {
+    nonisolated var filedInLine: String {
         let names = memberships
         if names.isEmpty { return "Unfiled" }
         return "In \(names.joined(separator: ", "))"
