@@ -234,6 +234,8 @@ enum ArticlePresentation {
 struct ArticleRow: View {
     let article: Article
     var status: String? = nil
+    /// Heard when the similar-story line is not drawn on the row yet.
+    var spokenStatus: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
@@ -310,9 +312,15 @@ struct ArticleRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
         .accessibilityHint("Opens this article")
+        .accessibilityValue(spokenCaption)
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
+    }
+
+    private var spokenCaption: String {
+        guard let spokenStatus, spokenStatus != status else { return "" }
+        return spokenStatus
     }
 
     private var thumbnailPlaceholder: some View {
@@ -336,6 +344,8 @@ struct ArticleRow: View {
 struct FeaturedStory: View {
     let article: Article
     var status: String? = nil
+    /// Heard when the similar-story line is not drawn on the card yet.
+    var spokenStatus: String? = nil
     /// Set when the excerpt was already prepared off the main thread. A nil value then means the card has no preview.
     var preparedExcerpt: String? = nil
     var usesPreparedExcerpt = false
@@ -412,9 +422,15 @@ struct FeaturedStory: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(article.isCurrentReading ? .isSelected : [])
         .accessibilityHint("Opens this article")
+        .accessibilityValue(spokenCaption)
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
+    }
+
+    private var spokenCaption: String {
+        guard let spokenStatus, spokenStatus != status else { return "" }
+        return spokenStatus
     }
 
     private var byline: String {

@@ -31,6 +31,15 @@ struct TodayRefreshCoverTests {
         #expect(next.advancing(to: nil, preview: "Gone").text == nil)
     }
 
+    @Test func aLateCaptionWaitsForTheNextDeck() {
+        let shownID = UUID()
+        let waitingID = UUID()
+        let known = [shownID: "Similar to something you read earlier today"]
+        let visual = StoryCaptionPublish.visual(known: known, visibleIDs: [shownID, waitingID])
+        #expect(visual == [shownID: "Similar to something you read earlier today"])
+        #expect(visual[waitingID] == nil)
+    }
+
     @Test func anEmptyLibraryExplainsItselfBeforeThePlan() {
         #expect(LibraryHold.showsExplanation(hasStoredRows: false, ready: false, hasPlannedRows: false))
         #expect(LibraryHold.showsExplanation(hasStoredRows: true, ready: false, hasPlannedRows: false) == false)

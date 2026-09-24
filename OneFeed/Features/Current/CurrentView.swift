@@ -348,6 +348,7 @@ private struct TodayStoryList: View {
                         FeaturedStory(
                             article: featured,
                             status: viewModel.storyCaptions[featured.id],
+                            spokenStatus: viewModel.spokenCaptions[featured.id],
                             preparedExcerpt: viewModel.featuredExcerptID == featured.id ? viewModel.featuredExcerpt : nil,
                             usesPreparedExcerpt: true
                         )
@@ -370,7 +371,11 @@ private struct TodayStoryList: View {
                 Section {
                     ForEach(Array(stories.dropFirst())) { article in
                         Button { open(article) } label: {
-                            ArticleRow(article: article, status: viewModel.storyCaptions[article.id])
+                            ArticleRow(
+                                article: article,
+                                status: viewModel.storyCaptions[article.id],
+                                spokenStatus: viewModel.spokenCaptions[article.id]
+                            )
                         }
                         .buttonStyle(DirectoryRowButtonStyle())
                         .articleListRow(isCurrent: article.isCurrentReading, isSelected: readerArticleID == article.id)

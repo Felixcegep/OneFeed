@@ -25,6 +25,7 @@ final class CurrentViewModel {
     private var captionTask: Task<Void, Never>?
     private var cachedCaptions: [UUID: String] = [:]
     private(set) var storyCaptions: [UUID: String] = [:]
+    private(set) var spokenCaptions: [UUID: String] = [:]
     private(set) var featuredExcerpt: String?
     private(set) var featuredExcerptID: UUID?
     /// Plain previews for stories that are about to become the featured card.
@@ -267,6 +268,7 @@ final class CurrentViewModel {
             captionStamp = Int.min
             cachedCaptions = [:]
             storyCaptions = [:]
+            spokenCaptions = [:]
             prefetchedExcerpts = [:]
             featuredExcerpt = nil
             featuredExcerptID = nil
@@ -283,6 +285,10 @@ final class CurrentViewModel {
         if frame.articleID != featuredExcerptID || frame.text != featuredExcerpt {
             featuredExcerpt = frame.text
             featuredExcerptID = frame.articleID
+        }
+        let visibleCaptions = StoryCaptionPublish.visual(known: cachedCaptions, visibleIDs: articles.map(\.id))
+        if visibleCaptions != storyCaptions {
+            storyCaptions = visibleCaptions
         }
         let upcoming = articles.dropFirst().prefix(2).compactMap { article -> (id: UUID, sample: CardExcerptSample)? in
             guard prefetchedExcerpts[article.id] == nil else { return nil }
@@ -311,7 +317,7 @@ final class CurrentViewModel {
             guard !Task.isCancelled, generation == captionGeneration else { return }
             captionStamp = stamp
             cachedCaptions = captions
-            storyCaptions = captions
+            spokenCaptions = captions
             for preview in previews where prefetchedExcerpts[preview.0] == nil {
                 prefetchedExcerpts[preview.0] = preview.1.map(PrefetchedExcerpt.text) ?? .none
             }
@@ -357,5 +363,19 @@ struct FeaturedExcerptFrame: Equatable {
     func advancing(to articleID: UUID?, preview: String?) -> FeaturedExcerptFrame {
         guard let articleID else { return FeaturedExcerptFrame(articleID: nil, text: nil) }
         return FeaturedExcerptFrame(articleID: articleID, text: preview)
+    }
+}
+
+/// A similar-story line that is already known is shown with the card. One that arrives later is kept for the next deck.
+enum StoryCaptionPublish {
+    static func visual(known: [UUID: String], visibleIDs: [UUID]) -> [UUID: String] {
+        var shown: [UUID: String] = [:]
+        shown.reserveCapacity(visibleIDs.count)
+        for id in visibleIDs {
+            if let text = known[id] {
+                shown[id] = text
+            }
+        }
+        return shown
     }
 }
