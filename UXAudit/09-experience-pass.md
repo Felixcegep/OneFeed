@@ -235,6 +235,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A FreshRSS sync read every stored article to keep the longer one | Today, Feed | High | Each remote item compared its HTML length with the stored body, so a short update still loaded a full extract | A stored read that is already longer than the remote estimate stays on disk. An equal estimate still compares the text | `FreshRSSTests.aLongerStoredReadKeepsItsBodyDuringSync` |
 | Opening a saved PDF copied its text on the open article | Reader | High | The reader checked `contentHTML` on the screen’s article before it could see the text was already stored | That check runs on a separate store context. An unsaved extract still uses the text already in memory | `ReaderFocusTests.aSavedPDFDoesNotCopyItsTextOnTheOpenArticle` |
 | Finishing a story loaded the whole queue to choose the next one | Today, Feed, Queue | High | The next story walked every queued article on the screen’s context, including ones that could not be next | The next story is the oldest article from another source, or the oldest queued article when that source is the only one left | `ArticleStateTests.nextStorySkipsTheSameSourceBeforeTheOlderCopy` |
+| A refresh indexed the whole article when a story had no summary | Today, Feed | High | The memory pass stripped every character of `contentHTML` for each new story that had no blurb | That index uses the opening of the article. The stored body stays complete | `SemanticMemoryPassTests.aSummarylessStoryIndexesTheOpening` |
 
 ## Still open
 

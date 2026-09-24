@@ -44,4 +44,29 @@ struct SemanticMemoryPassTests {
         #expect(third.count == 1)
         #expect(third.first?.consumedAt != nil)
     }
+
+    @Test func aSummarylessStoryIndexesTheOpening() async throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        let opening = "Opening sentence about rivers."
+        let html = "<p>\(opening)</p>" + String(repeating: "x", count: 50_000) + "<p>TAILMARKER</p>"
+        let article = Article(
+            guid: "long",
+            title: "Long",
+            url: URL(string: "https://example.com/long"),
+            publishedAt: .now,
+            contentHTML: html,
+            state: .queued,
+            feed: feed
+        )
+        context.insert(feed)
+        context.insert(article)
+
+        try await SemanticMemoryPass.prepare(in: context)
+
+        let memory = try #require(try context.fetch(FetchDescriptor<ContentMemory>()).first)
+        #expect(memory.itemDescription.contains("Opening sentence about rivers"))
+        #expect(!memory.itemDescription.contains("TAILMARKER"))
+        #expect(article.contentHTML?.contains("TAILMARKER") == true)
+    }
 }

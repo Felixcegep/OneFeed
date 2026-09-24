@@ -30,6 +30,12 @@ nonisolated enum ContentClassifier: Sendable {
     /// Long enough for a reading-time estimate; stops ingest from regexing a 200 KB RSS body on the main actor.
     private static let wordCountSampleLimit = 48_000
 
+    /// Plain text for indexing. A long article is sampled so a refresh does not regex the whole body.
+    static func indexingText(in html: String) -> String {
+        let sample = html.utf8.count > wordCountSampleLimit ? String(html.prefix(wordCountSampleLimit)) : html
+        return stripHTML(sample)
+    }
+
     static func stripHTML(_ html: String) -> String {
         var stripped = html.replacing(htmlTagPattern, with: " ")
         stripped = stripped.replacing(/<\/?[a-zA-Z][^>]*>?/, with: " ")

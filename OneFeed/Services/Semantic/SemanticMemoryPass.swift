@@ -150,7 +150,7 @@ nonisolated enum SemanticMemoryPass {
     private static func plainBody(of article: Article) -> String {
         let summary = ContentClassifier.stripHTML(article.summary ?? "")
         if !summary.isEmpty { return summary }
-        return ContentClassifier.stripHTML(article.contentHTML ?? "")
+        return ContentClassifier.indexingText(in: article.contentHTML ?? "")
     }
 
     private static func sourceTitles(for articles: [Article]) -> [String: String] {
