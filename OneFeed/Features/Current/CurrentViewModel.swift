@@ -75,12 +75,18 @@ final class CurrentViewModel {
         loadCurrent()
     }
 
-    /// Starts a refresh that outlives Today disappearing, and skips work when feeds are still fresh.
-    func startRefreshIfNeeded() {
-        if needsRefresh {
+    /// Starts a refresh that outlives Today disappearing, and skips work when the feeds already on screen are still fresh.
+    func startRefreshIfNeeded(feeds: [Feed]) {
+        if Self.shouldRefresh(
+            feeds: feeds.map {
+                FeedFreshness(isEnabled: $0.isEnabled, isRemote: $0.remoteID != nil, lastFetchedAt: $0.lastFetchedAt)
+            },
+            lastSuccessfulRefresh: BackgroundRefreshCoordinator.lastSuccessfulRefresh,
+            isRefreshing: isRefreshing
+        ) {
             guard inFlightRefresh == nil else { return }
             inFlightIsFullRefresh = true
-            inFlightRefresh = Task { await self.performRefresh() }
+            inFlightRefresh = Task { await self.performRefresh(followsUp: false) }
             return
         }
         guard inFlightRefresh == nil, !didRunUtilityBackfill else { return }
@@ -160,30 +166,35 @@ final class CurrentViewModel {
             return
         }
         inFlightIsFullRefresh = true
-        let task = Task { await self.performRefresh() }
+        let task = Task { await self.performRefresh(followsUp: true) }
         inFlightRefresh = task
         await task.value
     }
 
     func clearError() { presentedError = nil }
 
-    private var needsRefresh: Bool {
+    /// Whether Today should fetch. Uses the feeds already on screen, so opening Today does not load them again.
+    static func shouldRefresh(
+        feeds: [FeedFreshness],
+        lastSuccessfulRefresh: Date?,
+        now: Date = .now,
+        staleInterval: TimeInterval = BackgroundRefreshCoordinator.staleInterval,
+        isRefreshing: Bool
+    ) -> Bool {
         if isRefreshing { return false }
-        let feeds = (try? context?.fetch(FetchDescriptor<Feed>())) ?? []
-        let localFeeds = feeds.filter { $0.isEnabled && $0.remoteID == nil }
+        let localFeeds = feeds.filter { $0.isEnabled && !$0.isRemote }
         if localFeeds.contains(where: { $0.lastFetchedAt == nil }) { return true }
-        if let last = BackgroundRefreshCoordinator.lastSuccessfulRefresh,
-           Date().timeIntervalSince(last) < BackgroundRefreshCoordinator.staleInterval {
+        if let last = lastSuccessfulRefresh, now.timeIntervalSince(last) < staleInterval {
             return false
         }
         if let lastFetched = localFeeds.compactMap(\.lastFetchedAt).max(),
-           Date().timeIntervalSince(lastFetched) < BackgroundRefreshCoordinator.staleInterval {
+           now.timeIntervalSince(lastFetched) < staleInterval {
             return false
         }
         return !localFeeds.isEmpty
     }
 
-    private func performRefresh() async {
+    private func performRefresh(followsUp: Bool) async {
         guard let context else {
             inFlightRefresh = nil
             return
@@ -195,7 +206,7 @@ final class CurrentViewModel {
             inFlightRefresh = nil
             inFlightIsFullRefresh = false
         }
-        await BackgroundRefreshCoordinator.runExclusive {
+        await BackgroundRefreshCoordinator.runExclusive(followsUp: followsUp) {
             await self.performRefreshWork(in: context)
         }
         loadCurrent()
@@ -348,6 +359,13 @@ final class CurrentViewModel {
         }
         return stamp
     }
+}
+
+/// The fields Today needs to decide whether a source is stale. The list already has them.
+struct FeedFreshness: Equatable, Sendable {
+    var isEnabled: Bool
+    var isRemote: Bool
+    var lastFetchedAt: Date?
 }
 
 enum PrefetchedExcerpt: Equatable {

@@ -17,15 +17,19 @@ enum BackgroundRefreshCoordinator {
     private static var pendingEnrich: (ModelContext, DailyDeckItem?, Int)?
 
     /// Lets Today, Feed, and scene-phase refresh share one in-flight update.
-    /// A refresh that starts while one is running waits, then runs once so a source added mid-refresh is fetched.
-    static func runExclusive(_ work: @escaping @MainActor () async -> Void) async {
+    /// A refresh that starts while one is running waits. It runs once more only when `followsUp` is true, so a source added mid-refresh is fetched.
+    /// An automatic refresh passes `followsUp: false` and only waits, so opening the app does not fetch every source twice.
+    static func runExclusive(
+        followsUp: Bool = true,
+        _ work: @escaping @MainActor () async -> Void
+    ) async {
         if exclusiveRefresh != nil {
             let seen = refreshGeneration
             while refreshGeneration == seen, let running = exclusiveRefresh {
                 await running.value
             }
-            if refreshGeneration == seen {
-                await runExclusive(work)
+            if followsUp, refreshGeneration == seen {
+                await runExclusive(followsUp: true, work)
             }
             return
         }
@@ -69,7 +73,7 @@ enum BackgroundRefreshCoordinator {
         feedService: any FeedRepository,
         freshRSSService: any FreshRSSSyncing
     ) async {
-        await runExclusive {
+        await runExclusive(followsUp: false) {
             do { try await feedService.refreshAll(in: context) } catch {}
             let freshRSS = SyncProvider.freshRSS.rawValue
             if let account = try? context.fetch(FetchDescriptor<SyncAccount>(predicate: #Predicate { $0.providerRawValue == freshRSS && $0.isEnabled })).first {

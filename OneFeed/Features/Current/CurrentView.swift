@@ -98,7 +98,7 @@ struct CurrentView: View {
                 || process.environment["XCTestConfigurationFilePath"] != nil
                 || process.environment["XCTestBundlePath"] != nil
             if !hostedByTests {
-                viewModel.startRefreshIfNeeded()
+                viewModel.startRefreshIfNeeded(feeds: feeds)
             }
         }
         .onAppear { viewModel.syncVisibleDeck() }

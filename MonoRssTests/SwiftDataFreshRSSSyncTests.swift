@@ -269,6 +269,55 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(gate.entered == 2)
         BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
     }
+
+    @Test func aStaleRefreshThatJoinsAnotherDoesNotRunAgain() async {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let gate = RefreshGate()
+        let first = Task {
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: false) {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<50 where gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task {
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: false) {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        gate.release()
+        await first.value
+        await second.value
+        #expect(gate.entered == 1)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func todaySkipsARefreshWhenTheFeedsOnScreenAreFresh() {
+        let now = Date()
+        let fresh = FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: now.addingTimeInterval(-60))
+        let stale = FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: now.addingTimeInterval(-20 * 60))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: now, now: now, isRefreshing: false))
+        #expect(CurrentViewModel.shouldRefresh(
+            feeds: [FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: nil)],
+            lastSuccessfulRefresh: now,
+            now: now,
+            isRefreshing: false
+        ))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: now.addingTimeInterval(-20 * 60), now: now, isRefreshing: false))
+        #expect(CurrentViewModel.shouldRefresh(feeds: [stale], lastSuccessfulRefresh: now.addingTimeInterval(-20 * 60), now: now, isRefreshing: false))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [], lastSuccessfulRefresh: nil, now: now, isRefreshing: false))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: nil, now: now, isRefreshing: true))
+        #expect(!CurrentViewModel.shouldRefresh(
+            feeds: [FeedFreshness(isEnabled: true, isRemote: true, lastFetchedAt: nil)],
+            lastSuccessfulRefresh: nil,
+            now: now,
+            isRefreshing: false
+        ))
+    }
 }
 
 @MainActor

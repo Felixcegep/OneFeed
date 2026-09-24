@@ -279,6 +279,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Moving a source fetched every feed | Sources | Medium | The folder list already came from the feeds on screen, and a move fetched them again | The move saves the source. The list updates from the feeds already shown | `FeedAndFreshRSSDomainTests.movingASourceDoesNotFetchEveryFeed` |
 | Feed folder badges popped in after the names | Feed | Medium | Unread counts waited off screen, so each folder first drew without its badge | A modest library counts unread stories on the open screen. A long library still waits. The same counts are not published again | `FeedAndFreshRSSDomainTests.folderNamesMatchTheCountedFoldersBeforeUnreadBadges` |
 | Restoring sources fetched every feed twice | Sources | Medium | The list already comes from the feeds on screen, and a restore fetched them again before and after the update | The restore writes the sources and tells you what landed. It does not fetch the list again | `FeedAndFreshRSSDomainTests.restoringSourcesDoesNotFetchEveryFeed` |
+| Opening the app refreshed every source twice | Today | High | Returning to the app and opening Today each started a refresh, and a refresh that overlapped another always ran a second time | An automatic refresh waits for the one already running. Pull to refresh still runs again so a source added during an update is fetched. Today decides from the feeds already on screen | `SwiftDataFreshRSSSyncTests.aStaleRefreshThatJoinsAnotherDoesNotRunAgain` |
 
 ## Still open
 
