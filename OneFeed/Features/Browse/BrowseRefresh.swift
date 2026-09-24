@@ -12,12 +12,10 @@ final class BrowseRefresh {
     private(set) var lastRefreshedAt: Date?
     let progress = RefreshProgress()
     var presentedError: String?
-
-    /// Stays put while a refresh runs. The progress line carries that status, so the title bar does not resize.
-    var statusText: String {
-        guard let lastRefreshedAt else { return "Pull to update" }
-        return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
-    }
+    /// Clock time, not a relative phrase. A relative phrase changes as minutes pass, and each progress tick redraws the title bar.
+    private(set) var statusText = "Pull to update"
+    private var statusDay: Date?
+    private var statusStamp: Date?
 
     init() {
         self.feedService = FeedService()
@@ -51,7 +49,7 @@ final class BrowseRefresh {
         }
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)
-            self.lastRefreshedAt = .now
+            self.recordRefreshTime(.now)
         }
     }
 
@@ -77,8 +75,42 @@ final class BrowseRefresh {
         }
     }
 
-    func adoptLatestFetch(from feeds: [Feed]) {
-        guard lastRefreshedAt == nil else { return }
-        lastRefreshedAt = feeds.compactMap(\.lastFetchedAt).max()
+    func adoptLatestFetch(from feeds: [Feed], now: Date = .now) {
+        if lastRefreshedAt == nil {
+            lastRefreshedAt = feeds.compactMap(\.lastFetchedAt).max()
+        }
+        noteVisibleDay(now: now)
+    }
+
+    /// Republishes the subtitle when the calendar day changes. A refresh in progress keeps the line that was already showing.
+    func noteVisibleDay(now: Date = .now, calendar: Calendar = .current) {
+        guard !isRefreshing else { return }
+        let day = calendar.startOfDay(for: now)
+        guard statusDay != day || statusStamp != lastRefreshedAt else { return }
+        publishStatus(now: now, calendar: calendar)
+    }
+
+    private func recordRefreshTime(_ date: Date, now: Date = .now) {
+        lastRefreshedAt = date
+        publishStatus(now: now)
+    }
+
+    private func publishStatus(now: Date, calendar: Calendar = .current) {
+        statusDay = calendar.startOfDay(for: now)
+        statusStamp = lastRefreshedAt
+        statusText = Self.updatedLine(at: lastRefreshedAt, now: now, calendar: calendar)
+    }
+
+    /// Same-day updates use a clock time, so the title bar does not grow from “just now” to “1 minute ago” while the progress line moves.
+    static func updatedLine(at date: Date?, now: Date = .now, calendar: Calendar = .current) -> String {
+        guard let date else { return "Pull to update" }
+        if calendar.isDate(date, inSameDayAs: now) {
+            return "Updated \(date.formatted(date: .omitted, time: .shortened))"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Updated yesterday"
+        }
+        return "Updated \(date.formatted(date: .abbreviated, time: .omitted))"
     }
 }

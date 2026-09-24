@@ -43,6 +43,7 @@ struct FoldersView: View {
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Full-screen cover only while refreshing with no folder rows and no articles yet.
     private var showsSourceRefreshCover: Bool {
@@ -122,6 +123,10 @@ struct FoldersView: View {
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
+        .onAppear { refresh.noteVisibleDay() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refresh.noteVisibleDay() }
+        }
         .task {
             refresh.adoptLatestFetch(from: feeds)
             if ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") {
