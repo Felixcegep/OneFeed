@@ -660,7 +660,7 @@ struct ReaderView: View {
     @ViewBuilder
     private var articleCanvas: some View {
         if article.contentKind == "pdf", mode == .website {
-            if let url = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+            if let url = viewModel.importedFileURL {
                 PDFReaderPane(url: url)
             } else {
                 missingImportedFile
@@ -707,7 +707,7 @@ struct ReaderView: View {
 
     private var showsModePicker: Bool {
         if article.contentKind == "pdf" {
-            return ImportedDocumentStore.shared.resolvedFileURL(for: article) != nil
+            return viewModel.importedFileURL != nil
         }
         return !article.isImportedDocument && article.url != nil
     }
@@ -718,7 +718,7 @@ struct ReaderView: View {
     }
 
     private var shareURL: URL? {
-        if let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+        if let file = viewModel.importedFileURL {
             return file
         }
         let scheme = article.url?.scheme?.lowercased()

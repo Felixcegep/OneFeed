@@ -18,6 +18,10 @@ final class ReaderViewModel {
     private let gemini: GeminiClient
     private var videoAsk: Task<Void, Never>?
     private var summaryTask: Task<Void, Never>?
+    private var didResolveFile = false
+    private var resolvedFile: URL?
+    /// Disk lookups for an imported file. A redraw does not increment this.
+    private(set) var fileResolves = 0
 
     init(article: Article, gemini: GeminiClient = GeminiClient()) {
         self.article = article
@@ -37,6 +41,14 @@ final class ReaderViewModel {
 
     var youtubeURL: URL? {
         article.videoID.flatMap { YouTubeProcessor.watchURL(for: $0) } ?? article.url
+    }
+
+    var importedFileURL: URL? {
+        if didResolveFile { return resolvedFile }
+        didResolveFile = true
+        fileResolves += 1
+        resolvedFile = ImportedDocumentStore.shared.resolvedFileURL(for: article)
+        return resolvedFile
     }
 
     var videoChatMessages: [VideoChatMessage] {
@@ -553,7 +565,7 @@ final class ReaderViewModel {
 
     private func loadPDFTextIfNeeded() async {
         if Self.hasVisibleText(article.contentHTML) { return }
-        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) else { return }
+        guard let file = importedFileURL else { return }
         isExtracting = true
         defer { isExtracting = false }
         let html = await Task.detached {
@@ -576,7 +588,7 @@ final class ReaderViewModel {
 
     private func loadEPUBIfNeeded() async {
         if Self.hasVisibleText(article.contentHTML) { return }
-        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article),
+        guard let file = importedFileURL,
               let hash = ImportedDocumentStore.hash(fromGuid: article.guid) else { return }
         isExtracting = true
         defer { isExtracting = false }

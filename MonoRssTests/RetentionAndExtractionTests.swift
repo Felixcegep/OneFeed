@@ -234,6 +234,15 @@ struct RetentionAndExtractionTests {
         #expect(article.contentHTML == "<p>\(long)</p>")
     }
 
+    @Test @MainActor func readerRedrawDoesNotLookUpTheImportedFileAgain() {
+        let article = Article(guid: "story", title: "Story", url: URL(string: "https://source.test/story")!)
+        let model = ReaderViewModel(article: article)
+        #expect(model.importedFileURL == nil)
+        let resolves = model.fileResolves
+        #expect(model.importedFileURL == nil)
+        #expect(model.fileResolves == resolves)
+    }
+
     @Test func swiftReadabilityExtractsArticleAndAbsoluteURLs() throws {
         let html = """
         <!doctype html><html><head><title>Site chrome</title></head>

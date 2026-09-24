@@ -220,6 +220,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Checking a folder on a source fetched every source | Source | Medium | Each check rebuilt the folder name list from the whole library | The names stay. The check only updates that source. A new folder still reloads the list once | `SourceDetailTests.checkingAFolderDoesNotReloadTheFolderList` |
 | Each Today switch rebuilt the deck | Today | High | Turning one source on or off fetched candidates and story memories, then reloaded Today under the sheet | The switch is saved immediately. Today rebuilds once when the sheet closes | `DailyDeckTests.todayFilterStoresTheSwitchAndRebuildsTheDeckOnce` |
 | Opening a full article copied the body to decide whether to fetch the page | Reader | High | The word-count check copied `contentHTML` on the main thread before it could see the article was already complete | That read happens on a separate store context. A full article stays on the stored page | `RetentionAndExtractionTests.aFullArticleDoesNotStartAPageFetch` |
+| The reader checked the disk for an imported file on every redraw | Reader | Medium | The PDF pane, the mode switch, and Share each asked whether the file exists | The lookup happens once. Later redraws reuse that result | `RetentionAndExtractionTests.readerRedrawDoesNotLookUpTheImportedFileAgain` |
 
 ## Still open
 
