@@ -38,16 +38,19 @@ struct AppRootView: View {
                 }
             }
             .overlay {
-                if showsLaunchCover {
-                    OneFeedLoadingCover(
-                        title: "OneFeed",
-                        status: "Hanging the room…",
-                        canvas: OneFeedTheme.plaster
-                    )
-                    .ignoresSafeArea()
+                ZStack {
+                    if showsLaunchCover {
+                        OneFeedLoadingCover(
+                            title: "OneFeed",
+                            status: "Hanging the room…",
+                            canvas: OneFeedTheme.plaster
+                        )
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsLaunchCover)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsLaunchCover)
             .task {
                 LibrarySyncService.shared.configure(with: modelContext)
                 guard ReaderWebWarmup.isEnabled else {

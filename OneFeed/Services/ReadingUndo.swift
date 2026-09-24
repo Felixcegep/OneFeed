@@ -260,12 +260,14 @@ struct ReadingUndoBanner: ViewModifier {
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let offer = center.offer {
-                    bar(offer)
-                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                ZStack {
+                    if let offer = center.offer {
+                        bar(offer)
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
     }
 
     private func bar(_ offer: ReadingUndoCenter.Offer) -> some View {

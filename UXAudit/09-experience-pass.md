@@ -60,6 +60,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Queue and Feed lists loaded every article body to hide a duplicate | Queue, Feed | High | Choosing which copy to show checked whether `contentHTML` was empty, which faults the stored body | The choice uses the feed, the sync id, and the reading state. Lists no longer open the body | Code review |
 | Switching reader mode or starting a summary animated the whole page | Reader | High | Animation modifiers on the reader column included the web view | Only the decision curtain fades. The page, the loading mark, and a mode change stay put | Code review |
 | The opening cover faded by animating the web view | Reader | Medium | The cover’s animation sat on the page, so the web view moved as the cover left | The cover fades in its own overlay. The page underneath stays still | Code review |
+| Launch and Undo animated the screen behind them | Launch, reader, lists | High | The fade sat on the root and on the list, so tabs and rows moved with the cover or the banner | The launch cover and the Undo bar animate inside their own overlay. The screen behind them stays still | Code review |
 
 ## Still open
 
