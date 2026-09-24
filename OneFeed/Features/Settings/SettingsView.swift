@@ -64,13 +64,13 @@ struct SettingsView: View {
         .fileImporter(isPresented: $isPickingLibraryFolder, allowedContentTypes: LibraryDocumentPicker.folderTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
+                catch { viewModel.presentStatus("Couldn’t open library", message: UserFacingFailure.message(for: error, fallback: "Try another file.")) }
             }
         }
         .fileImporter(isPresented: $isPickingLibraryFile, allowedContentTypes: LibraryDocumentPicker.fileTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
+                catch { viewModel.presentStatus("Couldn’t open library", message: UserFacingFailure.message(for: error, fallback: "Try another file.")) }
             }
         }
         .fileImporter(isPresented: $viewModel.isImportingOPML, allowedContentTypes: [.xml, UTType(filenameExtension: "opml") ?? .xml]) { result in
@@ -78,7 +78,7 @@ struct SettingsView: View {
             case .success(let url):
                 viewModel.stageOPMLImport(from: url)
             case .failure(let error):
-                viewModel.presentStatus("Couldn’t import", message: error.localizedDescription)
+                viewModel.presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
             }
         }
         .confirmationDialog(
@@ -93,7 +93,7 @@ struct SettingsView: View {
         }
         .fileExporter(isPresented: $viewModel.isExportingOPML, document: viewModel.exportDocument, contentType: .xml, defaultFilename: "OneFeed Sources.opml") { result in
             if case .failure(let error) = result {
-                viewModel.presentStatus("Couldn’t export", message: error.localizedDescription)
+                viewModel.presentStatus("Couldn’t export", message: UserFacingFailure.message(for: error, fallback: "That file could not be exported."))
             }
         }
         .alert(

@@ -26,7 +26,8 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Asking about a video kept running after the sheet closed | Reader | Medium | The ask task was unstructured | The sheet cancels that task on disappear | Code review |
 | Building Today loaded every article body and every vector | Today build | High | `prepare` fetched full articles and unpacked every memory | HTML stays a fault until a story is embedded. Vectors unpack only for the language being scored. Deck placement and captions skip vector blobs | Code review |
 | Today hid other sources for the same story | Today | Medium | The deck keeps one slot and did not mention the rest | The row uses Feed’s “N more sources about this story” line. It does not expand those sources on Today | `SemanticDeckTests.oneStoryClusterFillsASingleTodaySlot` |
-| Queue and import alerts showed system errors | Queue, app import | Medium | `localizedDescription` included SwiftData and file-system text | App errors keep their sentence. Other failures use a short fallback | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
+| Queue and import alerts showed system errors | Queue, app import, Settings | Medium | `localizedDescription` included SwiftData and file-system text | App errors keep their sentence. Other failures use a short fallback. A dropped connection does not raise an alert | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
+| The progress line reserved space while idle | Today, Feed, Settings | Medium | The top bar was always 2pt tall | The bar’s height is 0 until the line is actually shown | Code review |
 
 ## Still open
 

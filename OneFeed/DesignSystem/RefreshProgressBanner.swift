@@ -8,7 +8,7 @@ struct RefreshProgressBanner: View {
 
     var body: some View {
         Color.clear
-            .frame(height: 2)
+            .frame(height: isShown ? 2 : 0)
             .overlay(alignment: .leading) {
                 Rectangle()
                     .fill(OneFeedTheme.accent)

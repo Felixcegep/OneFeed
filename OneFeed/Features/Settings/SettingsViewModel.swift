@@ -68,7 +68,8 @@ final class SettingsViewModel {
             presentStatus("FreshRSS is up to date")
             reload()
         } catch {
-            presentStatus("Couldn’t refresh", message: RefreshFailure.message(for: error) ?? error.localizedDescription)
+            guard UserFacingFailure.shouldSurface(error) else { return }
+            presentStatus("Couldn’t refresh", message: UserFacingFailure.message(for: error, fallback: "Try again in a moment."))
         }
     }
     func disconnect() async {
@@ -78,7 +79,7 @@ final class SettingsViewModel {
             presentStatus("FreshRSS disconnected")
             reload()
         } catch {
-            presentStatus("Couldn’t disconnect", message: error.localizedDescription)
+            presentStatus("Couldn’t disconnect", message: UserFacingFailure.message(for: error, fallback: "FreshRSS is still connected."))
         }
     }
     func seedAllCatalogSources() {
@@ -106,7 +107,7 @@ final class SettingsViewModel {
                 await refreshImportedSources(importedCount: result.inserted)
             }
         } catch {
-            presentStatus("Couldn’t restore sources", message: error.localizedDescription)
+            presentStatus("Couldn’t restore sources", message: UserFacingFailure.message(for: error, fallback: "The reading pack could not be restored."))
         }
     }
 
@@ -136,7 +137,7 @@ final class SettingsViewModel {
                 await refreshImportedSources(importedCount: result.inserted)
             }
         } catch {
-            presentStatus("Couldn’t load reading pack", message: error.localizedDescription)
+            presentStatus("Couldn’t load reading pack", message: UserFacingFailure.message(for: error, fallback: "The reading pack could not be loaded."))
         }
     }
 
@@ -162,7 +163,7 @@ final class SettingsViewModel {
                     }
                 )
             } catch {
-                presentStatus("Couldn’t link Google Drive", message: error.localizedDescription)
+                presentStatus("Couldn’t link Google Drive", message: UserFacingFailure.message(for: error, fallback: "Google Drive could not be linked."))
             }
         }
     }
@@ -226,7 +227,7 @@ final class SettingsViewModel {
                 isConfirmingOPMLImport = true
             }
         } catch {
-            presentStatus("Couldn’t import", message: error.localizedDescription)
+            presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
         }
     }
 
@@ -257,7 +258,7 @@ final class SettingsViewModel {
                 await finishOPMLImport(newSourceCount: newSources, folderMembershipsAdded: folderMembershipsAdded)
             }
         } catch {
-            presentStatus("Couldn’t import", message: error.localizedDescription)
+            presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
         }
     }
 
@@ -276,7 +277,9 @@ final class SettingsViewModel {
             reload()
         } catch {
             progress.finish()
-            refreshError = RefreshFailure.message(for: error) ?? error.localizedDescription
+            if UserFacingFailure.shouldSurface(error) {
+                refreshError = UserFacingFailure.message(for: error, fallback: "Try again in a moment.")
+            }
         }
         presentStatus(
             OPMLImportPreview.resultTitle(newSourceCount: newSourceCount),
@@ -293,7 +296,8 @@ final class SettingsViewModel {
             reload()
         } catch {
             progress.finish()
-            presentStatus("Couldn’t refresh", message: RefreshFailure.message(for: error) ?? error.localizedDescription)
+            guard UserFacingFailure.shouldSurface(error) else { return }
+            presentStatus("Couldn’t refresh", message: UserFacingFailure.message(for: error, fallback: "Try again in a moment."))
         }
     }
 }
@@ -321,7 +325,7 @@ final class FreshRSSConnectViewModel {
         }
         isConnecting = true
         do { _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context); return true }
-        catch { presentedError = error.localizedDescription; isConnecting = false; return false }
+        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t connect to FreshRSS."); isConnecting = false; return false }
     }
 }
 

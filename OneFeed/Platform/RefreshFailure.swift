@@ -10,8 +10,12 @@ enum RefreshFailure {
 
 enum UserFacingFailure {
     /// Uses an error's own sentence when the app wrote one. Otherwise the fallback, never a raw system dump.
+    nonisolated static func shouldSurface(_ error: Error) -> Bool {
+        !error.isCancellation && !error.isTransientNetwork
+    }
+
     nonisolated static func message(for error: Error, fallback: String) -> String {
-        if error.isCancellation || error.isTransientNetwork {
+        if !shouldSurface(error) {
             return fallback
         }
         if !(error is NSError),
