@@ -157,9 +157,9 @@ struct CurrentView: View {
             #endif
         }
         .refreshable { await viewModel.refresh() }
-        .sheet(isPresented: $showingAddSource, onDismiss: {
-            if !feeds.isEmpty { Task { await viewModel.refresh() } }
-        }) { AddSourceView() }
+        .sheet(isPresented: $showingAddSource) {
+            AddSourceView(onAdded: { Task { await viewModel.refresh() } })
+        }
         .sheet(isPresented: $showingTodayFilter, onDismiss: {
             viewModel.loadCurrent()
         }) {

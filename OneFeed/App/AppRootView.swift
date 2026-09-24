@@ -23,7 +23,9 @@ struct AppRootView: View {
             .tint(OneFeedTheme.ink)
             .onOpenURL(perform: handleIncomingURL)
             .sheet(isPresented: $isPresentingSubscribe, onDismiss: { subscribeAddress = nil }) {
-                AddSourceView(initialAddress: subscribeAddress)
+                AddSourceView(initialAddress: subscribeAddress, onAdded: {
+                    Task { await BackgroundRefreshCoordinator.refresh(in: modelContext) }
+                })
             }
             .oneFeedOnboardingCover(isPresented: Binding(get: { !completedOnboarding }, set: { if !$0 { completedOnboarding = true } })) {
                 OnboardingView { completedOnboarding = true }

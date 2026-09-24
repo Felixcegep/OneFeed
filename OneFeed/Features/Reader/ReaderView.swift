@@ -747,6 +747,7 @@ private struct ReaderBarGlyph: View {
     let title: String
     let systemImage: String
     var emphasized = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 5) {
@@ -755,7 +756,9 @@ private struct ReaderBarGlyph: View {
                 .symbolRenderingMode(.hierarchical)
             Text(title)
                 .font(.caption2.weight(.medium))
-                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(emphasized ? OneFeedTheme.plaster : OneFeedTheme.ink)
         .padding(.horizontal, 10)

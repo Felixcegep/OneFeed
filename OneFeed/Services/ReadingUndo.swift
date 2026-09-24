@@ -255,6 +255,7 @@ struct ReadingUndoBanner: ViewModifier {
     var onApplied: () -> Void = {}
     @State private var center = ReadingUndoCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func body(content: Content) -> some View {
         content
@@ -272,7 +273,8 @@ struct ReadingUndoBanner: ViewModifier {
             Text(offer.title)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(OneFeedTheme.ink)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             Button("Undo") {
                 center.performUndo()

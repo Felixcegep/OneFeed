@@ -90,9 +90,8 @@ struct SourcesView: View {
         }
         .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: {
             addPreferredFolder = nil
-            viewModel.reload()
         }) {
-            AddSourceView(preferredFolder: addPreferredFolder)
+            AddSourceView(preferredFolder: addPreferredFolder, onAdded: { viewModel.reload() })
         }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
@@ -518,9 +517,11 @@ struct AddSourceView: View {
     @State private var viewModel = AddSourceViewModel()
     @State private var showSuccess = false
 
-    var preferredFolder: String?
+    var preferredFolder: String? = nil
     /// Prefills the address field (e.g. from a `feed:` / Share / deep link).
     var initialAddress: String? = nil
+    /// Runs after at least one source is saved. Cancel does not call this.
+    var onAdded: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -637,6 +638,7 @@ struct AddSourceView: View {
     private func add() {
         Task {
             guard await viewModel.add(in: modelContext) else { return }
+            onAdded()
             showSuccess = true
             if !reduceMotion {
                 try? await Task.sleep(for: .milliseconds(420))

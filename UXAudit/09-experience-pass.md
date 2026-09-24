@@ -29,10 +29,11 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Queue and import alerts showed system errors | Queue, Sources, Settings | Medium | `localizedDescription` included SwiftData and file-system text | App errors keep their sentence. Other failures use a short fallback. A dropped connection does not raise an alert | `RetentionAndExtractionTests.queueErrorsUseAppSentences` |
 | The progress line reserved space while idle | Today, Feed, Settings | Medium | The top bar was always 2pt tall | The bar’s height is 0 until the line is actually shown | Code review |
 | The in-app browser spinner sat on top of the page | Reader browser | Medium | A `ProgressView` overlay was pinned to the top of the web view | Loading uses the mark in the toolbar, so the page can scroll freely | Code review |
-
 | The video summary prompt could return on the same visit | Reader | Medium | `.task` ran again and offered the dialog whenever the reader reappeared | The prompt is offered once per article. Starting a summary replaces one that is already running | Code review |
 | Focus options used a fixed sheet height | Reader | Medium | The detent was locked at 340pt, and the mode chips were 36pt tall | The sheet uses medium and large detents, and each mode is at least 44pt | Code review |
 | iPhone Close skipped the reader’s close callback | Reader | Medium | The toolbar called `dismiss()` while Mac called `onClose` | Both paths use `closeReader()`, so the list clears the open story | Code review |
+| Closing Add Source refreshed Today even when nothing was added | Today, Sources | High | The sheet’s `onDismiss` always started a full refresh or a sources reload | `onAdded` runs only after a source is saved. Cancel leaves the current deck and the sources list alone. A link-in add still refreshes the library | Code review |
+| Undo title and Mac reader labels stayed on one line at large type | Undo banner, Mac reader | Medium | `lineLimit(1)` clipped the action title | Accessibility sizes wrap. Smaller sizes stay on one line | Code review |
 
 ## Still open
 
