@@ -231,10 +231,21 @@ final class CurrentViewModel {
         self.totalCount = totalCount
         if let context {
             remainingArticles = (try? deckService.remainingArticles(in: context)) ?? []
+            let queued = ArticleState.queued.rawValue
+            let current = ArticleState.current.rawValue
+            var openDescriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            })
+            openDescriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID]
+            let openArticles = (try? context.fetch(openDescriptor)) ?? []
             var descriptor = FetchDescriptor<ContentMemory>()
-            descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt]
+            descriptor.propertiesToFetch = [\.identityKey, \.matchedConsumedAt, \.storyClusterID, \.relationshipRaw]
             let memories = (try? context.fetch(descriptor)) ?? []
-            storyCaptions = StoryGrouping.captions(for: remainingArticles, memories: memories)
+            storyCaptions = StoryGrouping.captions(
+                for: remainingArticles,
+                memories: memories,
+                openArticles: openArticles
+            )
         } else {
             remainingArticles = []
             storyCaptions = [:]

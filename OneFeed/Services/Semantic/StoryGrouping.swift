@@ -31,19 +31,44 @@ enum StoryGrouping {
         return "Similar to something you read \(relative)"
     }
 
-    static func captions(for articles: [Article], memories: [ContentMemory], now: Date = .now) -> [UUID: String] {
+    static func captions(
+        for articles: [Article],
+        memories: [ContentMemory],
+        openArticles: [Article] = [],
+        now: Date = .now
+    ) -> [UUID: String] {
         var byKey: [String: ContentMemory] = [:]
         byKey.reserveCapacity(memories.count)
         for memory in memories {
             byKey[memory.identityKey] = memory
         }
+        let pool = openArticles.isEmpty ? articles : openArticles
+        var clusterCounts: [UUID: Int] = [:]
+        var sameStoryClusters = Set<UUID>()
+        for article in pool {
+            guard let memory = byKey[ArticleIdentity.identityKey(for: article)],
+                  let clusterID = memory.storyClusterID else { continue }
+            clusterCounts[clusterID, default: 0] += 1
+            if memory.relationshipRaw == ContentRelationship.sameStory.rawValue {
+                sameStoryClusters.insert(clusterID)
+            }
+        }
         var captions: [UUID: String] = [:]
         for article in articles {
-            guard let caption = similarCaption(
-                matchedConsumedAt: byKey[ArticleIdentity.identityKey(for: article)]?.matchedConsumedAt,
-                now: now
-            ) else { continue }
-            captions[article.id] = caption
+            let memory = byKey[ArticleIdentity.identityKey(for: article)]
+            var lines: [String] = []
+            if let similar = similarCaption(matchedConsumedAt: memory?.matchedConsumedAt, now: now) {
+                lines.append(similar)
+            }
+            if let clusterID = memory?.storyClusterID, sameStoryClusters.contains(clusterID) {
+                let others = (clusterCounts[clusterID] ?? 0) - 1
+                if others > 0 {
+                    lines.append(moreSourcesTitle(count: others))
+                }
+            }
+            if !lines.isEmpty {
+                captions[article.id] = lines.joined(separator: "\n")
+            }
         }
         return captions
     }
