@@ -53,9 +53,15 @@ final class SettingsViewModel {
         self.context = context
     }
     func reload() {
+        reloadAccounts()
+        guard let context else { return }
+        feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+    }
+
+    /// Accounts only. A sync or a connect does not need the export list.
+    func reloadAccounts() {
         guard let context else { return }
         accounts = (try? context.fetch(FetchDescriptor<SyncAccount>())) ?? []
-        feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
     }
     func sync() async {
         guard !isSyncing, !isDisconnecting else { return }
@@ -68,7 +74,7 @@ final class SettingsViewModel {
         do {
             try await freshRSSService.sync(account: account, in: context, progress: progress)
             presentStatus("FreshRSS is up to date")
-            reload()
+            reloadAccounts()
         } catch {
             guard UserFacingFailure.shouldSurface(error) else { return }
             presentStatus("Couldn’t refresh", message: UserFacingFailure.message(for: error, fallback: "Try again in a moment."))
@@ -82,7 +88,7 @@ final class SettingsViewModel {
         do {
             try await freshRSSService.disconnect(account: account, in: context)
             presentStatus("FreshRSS disconnected")
-            reload()
+            reloadAccounts()
         } catch {
             presentStatus("Couldn’t disconnect", message: UserFacingFailure.message(for: error, fallback: "FreshRSS is still connected."))
         }
@@ -95,7 +101,6 @@ final class SettingsViewModel {
             UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
                 presentStatus("Sources already loaded", message: "All seeded sources are already loaded.")
-                reload()
                 return
             }
             LibraryChange.noteStructureChanged()
@@ -126,7 +131,6 @@ final class SettingsViewModel {
             let result = try FeedSeedService().applyCuratedReadingPack(in: context)
             if result.inserted == 0 && result.updated == 0 {
                 presentStatus("Reading pack already loaded", message: "AI reading pack already loaded.")
-                reload()
                 return
             }
             let loaded = result.inserted
@@ -290,7 +294,6 @@ final class SettingsViewModel {
         do {
             try await feedService.refreshAll(in: context, progress: progress)
             progress.finish()
-            reload()
         } catch {
             progress.finish()
             if UserFacingFailure.shouldSurface(error) {
@@ -309,7 +312,6 @@ final class SettingsViewModel {
             try await feedService.refreshAll(in: context, progress: progress)
             progress.finish()
             presentStatus("Imported \(importedCount) source\(importedCount == 1 ? "" : "s")")
-            reload()
         } catch {
             progress.finish()
             guard UserFacingFailure.shouldSurface(error) else { return }

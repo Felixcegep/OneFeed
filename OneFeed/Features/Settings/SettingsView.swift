@@ -72,7 +72,7 @@ struct SettingsView: View {
             commitGeminiKeyOnLeave()
         }
         .sheet(isPresented: $viewModel.isConnectingFreshRSS) {
-            FreshRSSConnectView(existingAccount: viewModel.freshRSS, onConnected: { viewModel.reload() })
+            FreshRSSConnectView(existingAccount: viewModel.freshRSS, onConnected: { viewModel.reloadAccounts() })
         }
         .confirmationDialog("Disconnect FreshRSS? Your locally stored articles will remain available.", isPresented: $viewModel.isConfirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { Task { await viewModel.disconnect() } }
