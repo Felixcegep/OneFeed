@@ -40,7 +40,7 @@ struct ArticleRetentionService {
         guard days > 0 else { return 0 }
         let cutoff = now.addingTimeInterval(-TimeInterval(days) * 86_400)
         let saved = ArticleState.saved.rawValue
-        let keptIDs = Set((try context.fetch(FetchDescriptor<DailyDeckItem>())).compactMap(\.article?.id))
+        let keptIDs = Set((try context.fetch(FetchDescriptor<DailyDeckItem>())).compactMap { $0.resolvedArticleID() })
         var descriptor = FetchDescriptor<Article>(predicate: #Predicate { article in
             article.publishedAt < cutoff && article.stateRawValue != saved && article.isRemoteStarred == false
         })

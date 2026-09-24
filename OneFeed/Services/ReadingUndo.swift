@@ -175,7 +175,7 @@ enum ReadingUndo {
         let remoteID = article.remoteID
         let pending = remoteID.map { pendingMutations(remoteID: $0, in: context) } ?? []
         if let deck = try? DailyDeckService().todayDeck(in: context),
-           let item = deck.items.first(where: { $0.article?.id == article.id }) {
+           let item = deck.items.first(where: { $0.resolvedArticleID() == article.id }) {
             deckItemID = item.id
             deckStatusRaw = item.statusRawValue
             if item.status == .current {

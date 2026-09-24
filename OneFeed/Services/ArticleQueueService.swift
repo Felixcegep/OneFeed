@@ -141,7 +141,7 @@ struct ArticleQueueService {
     /// Saved deck items leave Today. A current item promotes the next queued item, the same way `DailyDeckService.advance` does.
     private func parkOnTodayDeck(_ article: Article, in context: ModelContext) throws {
         guard let deck = try DailyDeckService().todayDeck(in: context) else { return }
-        let matches = deck.items.filter { $0.article?.id == article.id }
+        let matches = deck.items.filter { $0.resolvedArticleID() == article.id }
         guard !matches.isEmpty else { return }
 
         let wasCurrent = matches.contains { $0.status == .current }
@@ -151,7 +151,7 @@ struct ArticleQueueService {
         guard wasCurrent else { return }
 
         let nextItem = deck.items
-            .filter { $0.status == .queued && $0.article?.id != article.id }
+            .filter { $0.status == .queued && $0.resolvedArticleID() != article.id }
             .sorted { $0.position < $1.position }
             .first
         if let nextItem {

@@ -127,13 +127,13 @@ final class CurrentViewModel {
     @discardableResult
     func finish(_ article: Article, as state: ArticleState) -> Bool {
         guard let context else { return false }
-        if let item = try? deckService.currentItem(in: context), item.article?.id == article.id {
+        if let item = try? deckService.currentItem(in: context), item.resolvedArticleID() == article.id {
             return transition(to: state)
         }
         do {
             try ArticleActions.apply(state, to: article, in: context)
             if let deck = try deckService.todayDeck(in: context),
-               let item = deck.items.first(where: { $0.article?.id == article.id }) {
+               let item = deck.items.first(where: { $0.resolvedArticleID() == article.id }) {
                 item.status = state
                 try context.save()
             }

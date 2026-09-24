@@ -139,8 +139,9 @@ nonisolated enum ArticleIdentity {
                 let keeper = preferred(in: alive)
                 for duplicate in alive where duplicate.id != keeper.id {
                     absorb(duplicate, into: keeper)
-                    for item in deckItems where item.article?.id == duplicate.id {
+                    for item in deckItems where item.resolvedArticleID() == duplicate.id {
                         item.article = keeper
+                        item.linkedArticleID = keeper.id
                     }
                     context.delete(duplicate)
                     removedIDs.insert(duplicate.id)

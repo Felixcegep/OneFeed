@@ -54,7 +54,7 @@ enum ArticleActions {
 
     private static func syncTodayDeck(_ article: Article, to state: ArticleState, in context: ModelContext) throws {
         guard let deck = try? DailyDeckService().todayDeck(in: context),
-              let item = deck.items.first(where: { $0.article?.id == article.id })
+              let item = deck.items.first(where: { $0.resolvedArticleID() == article.id })
         else { return }
         item.status = state
         let stillHasCurrent = deck.items.contains { $0.status == .current && $0.article?.isStored == true }

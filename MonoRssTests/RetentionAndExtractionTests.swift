@@ -114,6 +114,35 @@ struct RetentionAndExtractionTests {
         #expect(remaining.map(\.guid) == ["deck"])
     }
 
+    @Test func purgeKeepsADeckStoryByTheStoredArticleID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let deckArticle = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(deckArticle)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: deckArticle, deck: deck)
+        context.insert(item)
+        try context.save()
+        #expect(item.linkedArticleID == deckArticle.id)
+        item.article = nil
+        try context.save()
+
+        let removed = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
+        #expect(removed == 0)
+        let remaining = try context.fetch(FetchDescriptor<Article>())
+        #expect(remaining.map(\.guid) == ["deck"])
+        #expect(remaining.first?.contentHTML?.contains("word") == true)
+    }
+
     @Test func firstImportCutoffIsSevenDaysThenFollowsRetention() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let first = ArticleRetentionService.ingestCutoff(isFirstPopulate: true, now: now)

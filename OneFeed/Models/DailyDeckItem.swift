@@ -9,6 +9,8 @@ final class DailyDeckItem {
     var statusRawValue: String
 
     var article: Article?
+    /// Stored article id so a refresh can recognize the row without opening the page.
+    var linkedArticleID: UUID?
     var deck: DailyDeck?
 
     var status: ArticleState {
@@ -27,6 +29,15 @@ final class DailyDeckItem {
         self.position = position
         self.statusRawValue = status.rawValue
         self.article = article
+        self.linkedArticleID = article?.id
         self.deck = deck
+    }
+
+    /// The article id already stored on the row. An older row remembers it on first lookup.
+    func resolvedArticleID() -> UUID? {
+        if let linkedArticleID { return linkedArticleID }
+        guard let id = article?.id else { return nil }
+        linkedArticleID = id
+        return id
     }
 }

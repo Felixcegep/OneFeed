@@ -176,7 +176,7 @@ struct DailyDeckService {
         var appended: [DailyDeckItem] = []
         let room = max(0, maxItems - live.count)
         if room > 0 {
-            let taken = Set(live.compactMap { $0.article?.id })
+            let taken = Set(live.compactMap { $0.resolvedArticleID() })
             let placements = try storyPlacements(in: context)
             let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
             let selected = selectCandidates(
@@ -226,7 +226,7 @@ struct DailyDeckService {
         }
         guard !hasOpenStory else { return }
 
-        let taken = Set(deck.items.compactMap { $0.article?.id })
+        let taken = Set(deck.items.compactMap { $0.resolvedArticleID() })
         let placements = try storyPlacements(in: context)
         let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
         let selected = selectCandidates(
