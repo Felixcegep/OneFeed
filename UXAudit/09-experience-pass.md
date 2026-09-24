@@ -117,6 +117,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A follow-up summary that started during another was dropped | Today | Medium | Enrichment waited for the current pass and did not look at the newer story | The latest request runs once after the pass that was already going | Code review |
 | Opening two files at once imported them on top of each other | Queue | High | Each open started its own import on the same library | A second import waits and runs after the first. A second drop on Queue is ignored until the first drop finishes | Code review |
 | An empty folder said there was nothing there | Feed | Medium | The empty state described the absence and not what happens next | It says new stories from that folder will land there | Code review |
+| The librarian field sat above a gap while the keyboard was up | Librarian | Medium | A 96-point tab-bar spacer stayed under the composer after the keyboard opened | That spacer leaves while the field is focused, so the composer sits on the keyboard | Code review |
 
 ## Still open
 
