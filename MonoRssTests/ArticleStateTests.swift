@@ -9,6 +9,73 @@ struct ArticleStateTests {
         try InMemoryStore.makeContext()
     }
 
+    @Test func nextStorySkipsTheSameSourceBeforeTheOlderCopy() throws {
+        let context = try context()
+        let feedA = Feed(title: "A", feedURL: URL(string: "https://a.test/rss")!)
+        let feedB = Feed(title: "B", feedURL: URL(string: "https://b.test/rss")!)
+        context.insert(feedA)
+        context.insert(feedB)
+        let current = Article(guid: "current", title: "Current", publishedAt: .now.addingTimeInterval(-30), state: .current, feed: feedA)
+        let olderSame = Article(guid: "older-same", title: "Older", publishedAt: .now.addingTimeInterval(-20), feed: feedA)
+        let other = Article(guid: "other", title: "Other", publishedAt: .now.addingTimeInterval(-10), feed: feedB)
+        let newerSame = Article(guid: "newer-same", title: "Newer", publishedAt: .now, feed: feedA)
+        context.insert(current)
+        context.insert(olderSame)
+        context.insert(other)
+        context.insert(newerSame)
+
+        let replacement = try ArticleQueueService().transition(current, to: .read, in: context)
+        #expect(replacement?.guid == "other")
+        #expect(olderSame.state == .queued)
+        #expect(newerSame.state == .queued)
+    }
+
+    @Test func choosingTheNextStoryKeepsBodiesOnDisk() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        setup.insert(feed)
+        let body = "<p>" + String(repeating: "word ", count: 400) + "</p>"
+        let current = Article(guid: "current", title: "Current", contentHTML: body, state: .current, feed: feed)
+        let next = Article(
+            guid: "next",
+            title: "Next",
+            url: URL(string: "https://source.test/next"),
+            publishedAt: .now.addingTimeInterval(10),
+            summary: "Next blurb",
+            contentHTML: body,
+            imageURL: URL(string: "https://source.test/next.jpg"),
+            feed: feed
+        )
+        let later = Article(
+            guid: "later",
+            title: "Later",
+            publishedAt: .now.addingTimeInterval(20),
+            contentHTML: body,
+            feed: feed
+        )
+        setup.insert(current)
+        setup.insert(next)
+        setup.insert(later)
+        try setup.save()
+
+        let context = ModelContext(container)
+        let currentValue = ArticleState.current.rawValue
+        let storedCurrent = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == currentValue })).first
+        )
+        let replacement = try ArticleQueueService().transition(storedCurrent, to: .skipped, in: context)
+        #expect(replacement?.guid == "next")
+        #expect(replacement?.summary == "Next blurb")
+        #expect(replacement?.imageURL == URL(string: "https://source.test/next.jpg"))
+        #expect(replacement?.contentHTML == body)
+        let laterID = later.id
+        let storedLater = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == laterID })).first
+        )
+        #expect(storedLater.contentHTML == body)
+    }
+
     @Test func duplicateCurrentArticlesAreRepairedToOneCurrent() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
@@ -105,7 +172,7 @@ struct ArticleStateTests {
         )
         article.completedAt = finished
         context.insert(article)
-        NotInterestedLog.record(article, in: context)
+        try NotInterestedLog.record(article, in: context)
         let unrelated = NotInterestedEntry(
             articleTitle: "Something else",
             articleURL: "https://source.test/other",
@@ -126,5 +193,26 @@ struct ArticleStateTests {
         #expect(article.completedAt == finished)
         let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
         #expect(entries.map(\.articleGUID) == ["other-guid"])
+    }
+
+    @Test func moveToQueueClearsNotInterestedWhenAlreadySaved() throws {
+        let context = try context()
+        let article = Article(
+            guid: "saved-aside",
+            title: "Already queued",
+            url: URL(string: "https://source.test/saved-aside"),
+            state: .saved,
+            notInterested: true
+        )
+        context.insert(article)
+        try NotInterestedLog.record(article, in: context)
+        try context.save()
+
+        try ArticleQueueService().moveToQueue(article, in: context)
+
+        #expect(article.state == .saved)
+        #expect(!article.notInterested)
+        let entries = try context.fetch(FetchDescriptor<NotInterestedEntry>())
+        #expect(entries.isEmpty)
     }
 }

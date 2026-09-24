@@ -29,6 +29,7 @@ struct ReaderView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.legibilityWeight) private var legibilityWeight
     @AppStorage(AppPreferenceKey.readerFont) private var fontChoice = ReaderFontChoice.serif.rawValue
     @AppStorage(AppPreferenceKey.readerTextSize) private var textSize = ReaderTextSize.standard.rawValue
     @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
@@ -38,24 +39,25 @@ struct ReaderView: View {
     @State private var isPresentingBrowser = false
     @State private var showingFocusSheet = false
     @State private var showingTakeaway = false
+    @State private var takeawayError: String?
+    @State private var filingError: String?
     @State private var pendingReadFinish = false
-    @State private var savePulse = 0
-    @State private var donePulse = 0
-    @State private var skipPulse = 0
     @State private var decision: ArticleState?
     @State private var showingSummaryPrompt = false
+    @State private var didOfferSummary = false
     @State private var showingAPIKeySheet = false
     @State private var showingVideoChat = false
     @State private var geminiKey = ""
     @State private var geminiKeyFollowUp: GeminiKeyFollowUp?
     @State private var openVideoChatAfterKey = false
-    let onFinish: (ArticleState) -> Void
+    /// Persists the decision and dismisses when it returns true. False leaves the reader open.
+    let onFinish: (ArticleState) -> Bool
     var onClose: (() -> Void)?
     var onPutInQueue: (() -> Void)?
 
     init(
         article: Article,
-        onFinish: @escaping (ArticleState) -> Void,
+        onFinish: @escaping (ArticleState) -> Bool,
         onClose: (() -> Void)? = nil,
         onPutInQueue: (() -> Void)? = nil
     ) {
@@ -93,14 +95,15 @@ struct ReaderView: View {
             }
             #endif
             .overlay {
-                if let decision {
-                    OneFeedDecisionCurtain(state: decision)
+                ZStack {
+                    if let decision {
+                        OneFeedDecisionCurtain(state: decision)
+                            .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: decision)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isExtracting)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: viewModel.isSummarizing)
-            .animation(reduceMotion ? nil : OneFeedMotion.page, value: mode)
+            .interactiveDismissDisabled(decision != nil)
             .onChange(of: viewModel.hasAISummary) { _, ready in
                 if ready, article.contentKind == "youtube" {
                     mode = .reader
@@ -109,16 +112,17 @@ struct ReaderView: View {
             #if os(macOS)
             .toolbar(.hidden)
             #endif
-            .task {
+            .task(id: article.id) {
                 await viewModel.enrichReadableHTML()
-                if viewModel.shouldOfferYouTubeSummary {
-                    showingSummaryPrompt = true
-                }
+                guard !Task.isCancelled, !didOfferSummary, viewModel.shouldOfferYouTubeSummary else { return }
+                didOfferSummary = true
+                showingSummaryPrompt = true
             }
             #if os(iOS)
             .toolbar {
                 ToolbarItem(placement: .oneFeedLeading) {
-                    Button("Close", systemImage: "xmark") { dismiss() }
+                    Button("Close", systemImage: "xmark") { closeReader() }
+                        .disabled(decision != nil)
                         .accessibilityHint("Closes the reader without changing this article")
                 }
                 ToolbarItem(placement: .principal) {
@@ -127,22 +131,15 @@ struct ReaderView: View {
                     }
                 }
                 ToolbarItem(placement: .oneFeedTrailing) {
-                    HStack(spacing: 10) {
-                        if viewModel.isExtracting || viewModel.isSummarizing {
-                            OneFeedMarkPulse(isActive: true, size: 18)
-                                .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
-                        }
-                        if showsReadingOptions {
-                            readingOptionsMenu
-                        }
+                    if showsReadingOptions {
+                        readingOptionsControl
+                    } else if viewModel.isExtracting || viewModel.isSummarizing {
+                        readerActivityMark
                     }
                 }
             }
             .oneFeedInlineTitle()
             #endif
-            .sensoryFeedback(.success, trigger: savePulse)
-            .sensoryFeedback(.success, trigger: donePulse)
-            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.55), trigger: skipPulse)
             .sheet(isPresented: $isPresentingBrowser) {
                 if let url = viewModel.article.url {
                     ArticleBrowserView(url: url)
@@ -163,10 +160,26 @@ struct ReaderView: View {
                 get: { viewModel.summaryError != nil && !viewModel.isSummarizing },
                 set: { if !$0 { viewModel.summaryError = nil } }
             )) {
-                Button("Try again") { Task { await viewModel.summarizeYouTube() } }
+                Button("Try again") { viewModel.beginSummary() }
                 Button("OK", role: .cancel) { viewModel.summaryError = nil }
             } message: {
                 Text(viewModel.summaryError ?? "")
+            }
+            .alert("Couldn’t keep this article", isPresented: Binding(
+                get: { viewModel.bodyError != nil },
+                set: { if !$0 { viewModel.bodyError = nil } }
+            )) {
+                Button("OK", role: .cancel) { viewModel.bodyError = nil }
+            } message: {
+                Text(viewModel.bodyError ?? "")
+            }
+            .alert("Couldn’t file that", isPresented: Binding(
+                get: { filingError != nil },
+                set: { if !$0 { filingError = nil } }
+            )) {
+                Button("OK", role: .cancel) { filingError = nil }
+            } message: {
+                Text(filingError ?? "")
             }
             .sheet(isPresented: $showingFocusSheet) {
                 ReaderFocusSheet(mode: $focusMode, intensity: $focusIntensity)
@@ -177,7 +190,17 @@ struct ReaderView: View {
                     finish(.read)
                 }
             }) {
-                ReadingTakeawaySheet(article: article)
+                ReadingTakeawaySheet(article: article) { message in
+                    takeawayError = message
+                }
+            }
+            .alert("Couldn’t save that note", isPresented: Binding(
+                get: { takeawayError != nil },
+                set: { if !$0 { takeawayError = nil } }
+            )) {
+                Button("OK", role: .cancel) { takeawayError = nil }
+            } message: {
+                Text(takeawayError ?? "")
             }
             .sheet(isPresented: $showingAPIKeySheet, onDismiss: {
                 guard openVideoChatAfterKey else { return }
@@ -192,7 +215,7 @@ struct ReaderView: View {
                     guard GeminiAPIKeyStore.load() != nil else { return }
                     switch followUp {
                     case .summarize:
-                        Task { await viewModel.summarizeYouTube() }
+                        viewModel.beginSummary()
                     case .ask:
                         openVideoChatAfterKey = true
                     case nil:
@@ -216,6 +239,10 @@ struct ReaderView: View {
     }
 
     private var article: Article { viewModel.article }
+
+    private var queueIsFilled: Bool {
+        decision == .saved || article.state == .saved
+    }
 
     #if os(iOS)
     /// Standard sizes keep five equal slots. Accessibility sizes stack a full-width
@@ -256,9 +283,10 @@ struct ReaderView: View {
             .accessibilityHint("Marks this article done")
 
             readerSecondaryAction(
-                "Queue",
-                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: "Adds this to Queue"
+                queueIsFilled ? "In Queue" : "Queue",
+                systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                hint: queueIsFilled ? "Already in Queue" : "Adds this to Queue",
+                disabled: article.state == .saved
             ) {
                 finish(.saved)
             }
@@ -279,9 +307,10 @@ struct ReaderView: View {
         HStack(spacing: 0) {
             readerBarItem(
                 "Queue",
-                systemImage: decision == .saved ? "square.stack.fill" : "square.stack",
-                hint: "Adds this to Queue",
-                accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
+                systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                hint: queueIsFilled ? "Already in Queue" : "Adds this to Queue",
+                accessibilityLabel: queueIsFilled ? "In Queue" : "Queue",
+                disabled: article.state == .saved
             ) {
                 finish(.saved)
             }
@@ -297,7 +326,12 @@ struct ReaderView: View {
                 beginFinishRead()
             }
             ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
-                ReaderBarItemLabel(title: "Share", systemImage: "square.and.arrow.up")
+                ReaderBarItemLabel(
+                    title: "Share",
+                    systemImage: "square.and.arrow.up",
+                    spokenLabel: "Share",
+                    spokenHint: "Shares this article"
+                )
             }
             .buttonStyle(ReaderBarPressStyle())
             .disabled(shareURL == nil || decision != nil)
@@ -314,6 +348,7 @@ struct ReaderView: View {
         _ title: String,
         systemImage: String,
         hint: String,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -322,7 +357,7 @@ struct ReaderView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .buttonStyle(DecisionActionStyle())
-        .disabled(decision != nil)
+        .disabled(decision != nil || disabled)
         .accessibilityLabel(title)
         .accessibilityHint(hint)
     }
@@ -333,23 +368,45 @@ struct ReaderView: View {
         hint: String,
         emphasized: Bool = false,
         accessibilityLabel: String? = nil,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ReaderBarItemLabel(title: title, systemImage: systemImage, emphasized: emphasized)
+            ReaderBarItemLabel(
+                title: title,
+                systemImage: systemImage,
+                emphasized: emphasized,
+                spokenLabel: accessibilityLabel ?? title,
+                spokenHint: hint
+            )
         }
         .buttonStyle(ReaderBarPressStyle())
-        .disabled(decision != nil)
-        .accessibilityLabel(accessibilityLabel ?? title)
-        .accessibilityHint(hint)
+        .disabled(decision != nil || disabled)
         .frame(maxWidth: .infinity)
     }
     #endif
 
     private func finishNotInterested() {
+        guard decision == nil else { return }
         ReadingUndo.begin(article, in: modelContext)
-        NotInterestedLog.record(article, in: modelContext)
-        finish(.skipped)
+        let wasMarked = article.notInterested
+        let alreadyFiled = !NotInterestedLog.entries(matching: article, in: modelContext).isEmpty
+        let entry: NotInterestedEntry
+        do {
+            entry = try NotInterestedLog.record(article, in: modelContext)
+        } catch {
+            filingError = UserFacingFailure.message(for: error, fallback: "Couldn’t file that as not interested.")
+            return
+        }
+        finish(.skipped) {
+            guard NotInterestedFiling.clearsMark(skipLanded: article.state == .skipped) else { return }
+            article.notInterested = wasMarked
+            if alreadyFiled {
+                if !wasMarked { try? modelContext.save() }
+            } else {
+                try? NotInterestedLog.delete(entry, in: modelContext)
+            }
+        }
     }
 
     private func beginFinishRead() {
@@ -358,18 +415,18 @@ struct ReaderView: View {
         showingTakeaway = true
     }
 
-    private func finish(_ state: ArticleState) {
+    private func finish(_ state: ArticleState, onFailed: (() -> Void)? = nil) {
         guard decision == nil else { return }
+        if state == .saved, article.state == .saved { return }
         decision = state
-        switch state {
-        case .saved: savePulse += 1
-        case .read: donePulse += 1
-        case .skipped: skipPulse += 1
-        default: break
-        }
         Task { @MainActor in
             await OneFeedMotion.holdBeforeDismiss(reduceMotion: reduceMotion, for: state)
-            onFinish(state)
+            guard onFinish(state) else {
+                decision = nil
+                onFailed?()
+                return
+            }
+            OneFeedMotion.acknowledge(state)
         }
     }
 
@@ -458,6 +515,30 @@ struct ReaderView: View {
                 #endif
         }
         .accessibilityLabel("Reading options")
+        .accessibilityValue(ReaderFocusMode(rawValue: focusMode)?.label ?? "Smart")
+        #if os(macOS)
+        .menuStyle(.borderlessButton)
+        #endif
+    }
+
+    /// The loading mark covers this control instead of pushing it aside.
+    private var readingOptionsControl: some View {
+        readingOptionsMenu
+            .frame(minWidth: 44, minHeight: 44)
+            .overlay {
+                if viewModel.isExtracting || viewModel.isSummarizing {
+                    readerActivityMark
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : viewModel.isExtracting ? "Loading" : "Reading options")
+    }
+
+    private var readerActivityMark: some View {
+        OneFeedMarkPulse(isActive: true, size: 18)
+            .frame(minWidth: 44, minHeight: 44)
+            .allowsHitTesting(false)
+            .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
     }
 
     #if os(macOS)
@@ -472,6 +553,7 @@ struct ReaderView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(decision != nil)
             .frame(minWidth: 44, minHeight: 44)
             .contentShape(Rectangle())
             .keyboardShortcut(.cancelAction)
@@ -489,15 +571,9 @@ struct ReaderView: View {
             Spacer(minLength: 8)
 
             if showsReadingOptions {
-                readingOptionsMenu
-                    .menuStyle(.borderlessButton)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-
-            if viewModel.isExtracting || viewModel.isSummarizing {
-                OneFeedMarkPulse(isActive: true, size: 18)
-                    .accessibilityLabel(viewModel.isSummarizing ? "Summarizing" : "Loading")
+                readingOptionsControl
+            } else if viewModel.isExtracting || viewModel.isSummarizing {
+                readerActivityMark
             }
         }
         .padding(.horizontal, 16)
@@ -517,13 +593,13 @@ struct ReaderView: View {
             HStack(spacing: 0) {
                 readerBarButton(
                     "Queue",
-                    systemImage: "square.stack",
-                    help: "Add this to Queue",
-                    accessibilityLabel: (decision == .saved || article.state == .saved) ? "In Queue" : "Queue"
+                    systemImage: queueIsFilled ? "square.stack.fill" : "square.stack",
+                    help: queueIsFilled ? "Already in Queue" : "Add this to Queue",
+                    accessibilityLabel: queueIsFilled ? "In Queue" : "Queue"
                 ) {
                     finish(.saved)
                 }
-                .disabled(decision != nil)
+                .disabled(decision != nil || article.state == .saved)
                 readerBarButton("Skip", systemImage: "forward", help: "Skip this article. Hold for Not interested.") {
                     finish(.skipped)
                 }
@@ -539,10 +615,15 @@ struct ReaderView: View {
                 beginFinishRead()
             }
             .disabled(decision != nil)
-            .frame(width: 88)
+            .frame(minWidth: 88)
             HStack(spacing: 0) {
                 ShareLink(item: shareURL ?? URL(fileURLWithPath: "/")) {
-                    ReaderBarGlyph(title: "Share", systemImage: "square.and.arrow.up")
+                    ReaderBarGlyph(
+                        title: "Share",
+                        systemImage: "square.and.arrow.up",
+                        spokenLabel: "Share",
+                        spokenHint: "Shares this article"
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(shareURL == nil)
@@ -576,19 +657,23 @@ struct ReaderView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ReaderBarGlyph(title: title, systemImage: systemImage, emphasized: emphasized)
+            ReaderBarGlyph(
+                title: title,
+                systemImage: systemImage,
+                emphasized: emphasized,
+                spokenLabel: accessibilityLabel ?? title,
+                spokenHint: help
+            )
         }
         .buttonStyle(ReaderBarPressStyle())
         .help(help)
-        .accessibilityLabel(accessibilityLabel ?? title)
-        .accessibilityHint(help)
     }
     #endif
 
     @ViewBuilder
     private var articleCanvas: some View {
         if article.contentKind == "pdf", mode == .website {
-            if let url = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+            if let url = viewModel.importedFileURL {
                 PDFReaderPane(url: url)
             } else {
                 missingImportedFile
@@ -597,14 +682,22 @@ struct ReaderView: View {
             inAppWebsite(url)
         } else {
             ReaderWebContent(
-                html: viewModel.documentHTML(
+                loadID: viewModel.readerLoadID(
                     fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
-                    textSize: ReaderTextSize(rawValue: textSize) ?? .standard
+                    textSize: ReaderTextSize(rawValue: textSize) ?? .standard,
+                    boldText: legibilityWeight == .bold
                 ),
+                loadHTML: {
+                    await viewModel.loadDocumentHTML(
+                        fontChoice: ReaderFontChoice(rawValue: fontChoice) ?? .serif,
+                        textSize: ReaderTextSize(rawValue: textSize) ?? .standard,
+                        boldText: legibilityWeight == .bold
+                    )
+                },
+                metaLine: viewModel.readerMetaLine,
                 title: article.title,
                 articleID: article.id,
-                baseURL: viewModel.documentBaseURL,
-                showingFocusSheet: $showingFocusSheet
+                baseURL: viewModel.documentBaseURL
             )
         }
     }
@@ -627,7 +720,7 @@ struct ReaderView: View {
 
     private var showsModePicker: Bool {
         if article.contentKind == "pdf" {
-            return ImportedDocumentStore.shared.resolvedFileURL(for: article) != nil
+            return viewModel.importedFileURL != nil
         }
         return !article.isImportedDocument && article.url != nil
     }
@@ -638,7 +731,7 @@ struct ReaderView: View {
     }
 
     private var shareURL: URL? {
-        if let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) {
+        if let file = viewModel.importedFileURL {
             return file
         }
         let scheme = article.url?.scheme?.lowercased()
@@ -652,17 +745,67 @@ struct ReaderView: View {
         return scheme == "http" || scheme == "https"
     }
 
-    private static func initialMode(for article: Article) -> ReaderDisplayMode {
+    /// Times `initialMode` read `contentHTML` on the open article. A saved body does not.
+    static var liveModeBodyReads = 0
+
+    static func initialMode(for article: Article) -> ReaderDisplayMode {
         if article.contentKind == "pdf" {
-            return article.readableHTML == nil ? .website : .reader
+            return hasReadableDocument(article) ? .reader : .website
         }
         if article.isImportedDocument { return .reader }
         if article.contentKind == "youtube" {
-            let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return summary.isEmpty ? .website : .reader
+            return youtubeOpensInReader(summary: article.aiSummary) ? .reader : .website
         }
-        if article.readableHTML == nil, article.url != nil { return .website }
+        if !hasReadableDocument(article), article.url != nil { return .website }
         return .reader
+    }
+
+    /// A video with any visible summary opens in the reader. Stops at the first character, so a long summary is not copied just to choose the mode.
+    static func youtubeOpensInReader(summary: String?) -> Bool {
+        ContentClassifier.hasVisibleText(summary)
+    }
+
+    /// True when the stored body has visible text. Stops at the first character.
+    /// A saved article is read on a short-lived context so the open article stays a fault.
+    private static func hasReadableDocument(_ article: Article) -> Bool {
+        let summary = article.summary
+        if usesLiveBody(article) {
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+        guard let container = article.modelContext?.container else {
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+        switch storedHTML(id: article.id, container: container) {
+        case .found(let html):
+            return ContentClassifier.hasVisibleText(html ?? summary)
+        case .missing:
+            liveModeBodyReads += 1
+            return ContentClassifier.hasVisibleText(article.contentHTML ?? summary)
+        }
+    }
+
+    private static func usesLiveBody(_ article: Article) -> Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
+
+    private enum StoredHTML {
+        case found(String?)
+        case missing
+    }
+
+    private static func storedHTML(id: UUID, container: ModelContainer) -> StoredHTML {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return .missing }
+        return .found(stored.contentHTML)
     }
 
     private var playbackURL: URL? {
@@ -682,7 +825,7 @@ struct ReaderView: View {
             geminiKeyFollowUp = .summarize
             showingAPIKeySheet = true
         } else {
-            Task { await viewModel.summarizeYouTube() }
+            viewModel.beginSummary()
         }
     }
 
@@ -710,6 +853,8 @@ private struct ReaderBarItemLabel: View {
     let title: String
     let systemImage: String
     var emphasized = false
+    var spokenLabel: String?
+    var spokenHint: String?
     @ScaledMetric(relativeTo: .body) private var iconSize = 32.0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -736,7 +881,8 @@ private struct ReaderBarItemLabel: View {
         .frame(minHeight: 52)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityLabel(spokenLabel ?? title)
+        .accessibilityHint(spokenHint ?? "")
     }
 }
 
@@ -745,6 +891,9 @@ private struct ReaderBarGlyph: View {
     let title: String
     let systemImage: String
     var emphasized = false
+    var spokenLabel: String?
+    var spokenHint: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 5) {
@@ -753,7 +902,9 @@ private struct ReaderBarGlyph: View {
                 .symbolRenderingMode(.hierarchical)
             Text(title)
                 .font(.caption2.weight(.medium))
-                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(emphasized ? OneFeedTheme.plaster : OneFeedTheme.ink)
         .padding(.horizontal, 10)
@@ -773,9 +924,27 @@ private struct ReaderBarGlyph: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenLabel ?? title)
+        .accessibilityHint(spokenHint ?? "")
     }
 }
 #endif
+
+/// Returns when the page stops loading, or after the opening-cover timeout.
+/// The first pause is 80ms so a page that is already ready does not apply focus on the same frame.
+/// Later pauses are 160ms so a slow page does not wake the reader on every frame.
+private func waitForPageSettled(_ page: WebPage) async {
+    let clock = ContinuousClock()
+    let start = clock.now
+    var poll = 0
+    while !Task.isCancelled {
+        try? await Task.sleep(for: ReaderFocus.pageSettlePause(after: poll))
+        if !page.isLoading { return }
+        if clock.now - start > .seconds(8) { return }
+        poll += 1
+    }
+}
 
 private struct WebsiteReaderPane: View {
     let url: URL
@@ -784,6 +953,7 @@ private struct WebsiteReaderPane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page: WebPage
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
+    @State private var allowCover = false
 
     init(url: URL, title: String, isVideo: Bool = false) {
         self.url = url
@@ -795,7 +965,7 @@ private struct WebsiteReaderPane: View {
         _page = State(initialValue: WebPage(configuration: configuration))
     }
 
-    private var showCover: Bool { !hasCommitted }
+    private var showCover: Bool { !hasCommitted && allowCover }
 
     var body: some View {
         WebView(page)
@@ -804,31 +974,45 @@ private struct WebsiteReaderPane: View {
             .webViewBackForwardNavigationGestures(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                if showCover {
-                    OneFeedLoadingCover(
-                        title: title,
-                        status: isVideo ? "Opening the video" : "Opening the site"
-                    )
+                ZStack {
+                    if showCover {
+                        OneFeedLoadingCover(
+                            title: title,
+                            status: isVideo ? "Opening the video" : "Opening the site"
+                        )
+                        .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             .onChange(of: page.isLoading) { _, loading in
                 if !loading { hasCommitted = true }
             }
             .task(id: url) {
+                allowCover = false
+                async let cover: Void = revealCoverIfStillWaiting()
                 _ = page.load(URLRequest(url: url))
-                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                await waitForPageSettled(page)
                 hasCommitted = true
+                allowCover = false
+                _ = await cover
             }
+    }
+
+    private func revealCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, !hasCommitted else { return }
+        allowCover = true
     }
 }
 
 private struct ReaderWebContent: View {
-    let html: String
+    let loadID: String
+    let loadHTML: () async -> String
+    let metaLine: String
     let title: String
     let articleID: UUID
     var baseURL: URL = ReaderWebWarmup.blankURL
-    @Binding var showingFocusSheet: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppPreferenceKey.readerFocusMode) private var focusMode = ReaderFocusMode.smart.rawValue
@@ -836,9 +1020,23 @@ private struct ReaderWebContent: View {
     @AppStorage(AppPreferenceKey.readerFocusZoneY) private var focusZoneY = ReaderFocus.defaultZoneY
     @State private var page = ReaderWebWarmup.makeReaderPage()
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
+    @State private var allowCover = false
     @State private var didRestoreTrail = false
+    @State private var lastPersistedTrail: ReadingTrail?
+    /// The page already applied a zone the reader dragged. Skip the echo that would reconfigure focus mid-scroll.
+    @State private var ignoreNextZoneApply = false
+    /// Latest focus change wins. A drag does not stack a configure for every step.
+    @State private var focusApply: Task<Void, Never>?
+    /// One byline update at a time. A later length replaces one already waiting.
+    @State private var metaTask: Task<Void, Never>?
+    @State private var pendingMeta: String?
+    /// One reading-position snapshot at a time. A second request runs after the first.
+    @State private var trailTask: Task<Void, Never>?
+    @State private var trailAgain = false
+    /// True while the current page is being saved before a new page replaces it.
+    @State private var replacingPage = false
 
-    private var showCover: Bool { !hasCommitted }
+    private var showCover: Bool { !hasCommitted && allowCover }
     private var resolvedMode: ReaderFocusMode {
         ReaderFocusMode(rawValue: focusMode) ?? .smart
     }
@@ -849,81 +1047,153 @@ private struct ReaderWebContent: View {
             .webViewTextSelection(.enabled)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay {
-                if showCover {
-                    OneFeedLoadingCover(title: title, status: "Laying the page")
+                ZStack {
+                    if showCover {
+                        OneFeedLoadingCover(title: title, status: "Laying the page")
+                            .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             }
-            .overlay(alignment: .bottom) {
-                if !showCover {
-                    focusDot
-                }
-            }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showCover)
             .onChange(of: page.isLoading) { _, loading in
-                if !loading {
-                    hasCommitted = true
-                    Task { await applyFocus(restore: !didRestoreTrail) }
-                }
+                if !loading { hasCommitted = true }
             }
             .onChange(of: focusMode) { _, _ in
-                Task { await applyFocus(restore: false) }
+                scheduleFocusApply()
             }
             .onChange(of: focusIntensity) { _, _ in
-                Task { await applyFocus(restore: false) }
+                scheduleFocusApply()
             }
             .onChange(of: focusZoneY) { _, _ in
-                Task { await applyFocus(restore: false) }
+                if ignoreNextZoneApply {
+                    ignoreNextZoneApply = false
+                    return
+                }
+                scheduleFocusApply()
+            }
+            .onChange(of: metaLine) { _, line in
+                scheduleMeta(line)
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
-                    Task { await persistTrail() }
+                    scheduleTrailPersist()
                 }
             }
             .onDisappear {
-                Task { await persistTrail() }
+                focusApply?.cancel()
+                metaTask?.cancel()
+                pendingMeta = nil
+                scheduleTrailPersist()
             }
-            .task(id: html) {
+            .task(id: loadID) {
+                if hasCommitted, didRestoreTrail {
+                    await persistTrailBeforeReplace()
+                }
                 didRestoreTrail = false
+                lastPersistedTrail = nil
+                ignoreNextZoneApply = false
+                let html = await loadHTML()
+                guard !Task.isCancelled else { return }
+                allowCover = false
+                async let cover: Void = revealCoverIfStillWaiting()
                 page.load(html: html, baseURL: baseURL)
-                try? await Task.sleep(for: ReaderWebWarmup.openingCoverTimeout)
+                await waitForPageSettled(page)
                 hasCommitted = true
+                allowCover = false
+                _ = await cover
                 await applyFocus(restore: !didRestoreTrail)
             }
-            .task {
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(2.5))
-                    await persistTrail()
+                    try? await Task.sleep(for: ReaderFocus.trailSnapshotInterval)
+                    if Task.isCancelled { return }
+                    scheduleTrailPersist()
                 }
             }
     }
 
-    private var focusDot: some View {
-        Button {
-            showingFocusSheet = true
-        } label: {
-            Group {
-                if resolvedMode == .off {
-                    Circle()
-                        .strokeBorder(OneFeedTheme.ink.opacity(0.45), lineWidth: 1.5)
-                } else {
-                    Circle()
-                        .fill(OneFeedTheme.ink)
-                }
+    private func revealCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, !hasCommitted else { return }
+        allowCover = true
+    }
+
+    private func scheduleMeta(_ line: String) {
+        pendingMeta = line
+        guard metaTask == nil else { return }
+        metaTask = Task {
+            while !Task.isCancelled, let line = pendingMeta {
+                pendingMeta = nil
+                await updateMeta(line)
             }
-            .frame(width: 7, height: 7)
-            .frame(width: 44, height: 28)
-            .padding(.top, 16)
-            .contentShape(Rectangle())
+            metaTask = nil
+            if let line = pendingMeta, !Task.isCancelled {
+                scheduleMeta(line)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Reading focus")
-        .accessibilityValue(resolvedMode.label)
-        .accessibilityHint("Opens focus options")
-        .padding(.bottom, 2)
+    }
+
+    /// Saves the place, then lets the caller load the next page.
+    /// A snapshot already running finishes first. One later snapshot runs after it.
+    private func persistTrailBeforeReplace() async {
+        replacingPage = true
+        defer {
+            replacingPage = false
+            trailAgain = false
+        }
+        if trailTask == nil {
+            await persistTrail()
+            return
+        }
+        trailAgain = true
+        while let running = trailTask {
+            await running.value
+        }
+        guard trailAgain else { return }
+        trailAgain = false
+        await persistTrail()
+    }
+
+    private func scheduleTrailPersist() {
+        if replacingPage {
+            trailAgain = true
+            return
+        }
+        if trailTask != nil {
+            trailAgain = true
+            return
+        }
+        trailTask = Task {
+            await persistTrail()
+            trailTask = nil
+            if trailAgain, !Task.isCancelled {
+                trailAgain = false
+                scheduleTrailPersist()
+            }
+        }
+    }
+
+    @MainActor
+    private func updateMeta(_ line: String) async {
+        _ = try? await page.callJavaScript(
+            "var meta = document.querySelector('.meta'); if (meta) { meta.textContent = text; }",
+            arguments: ["text": line]
+        )
+    }
+
+    private func scheduleFocusApply() {
+        focusApply?.cancel()
+        focusApply = Task {
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            await applyFocus(restore: false)
+        }
     }
 
     @MainActor
     private func applyFocus(restore: Bool) async {
+        guard !Task.isCancelled else { return }
         let trail = restore ? ReadingTrailStore.load(articleID: articleID) : nil
         if restore { didRestoreTrail = true }
         let cfg = ReaderFocus.configuration(
@@ -947,10 +1217,18 @@ private struct ReaderWebContent: View {
         guard let trail = ReaderFocus.snapshot(from: value, articleID: articleID, fallbackZoneY: focusZoneY) else {
             return
         }
+        if let last = lastPersistedTrail,
+           last.blockIndex == trail.blockIndex,
+           last.anchor == trail.anchor,
+           abs(last.scrollRatio - trail.scrollRatio) < 0.002,
+           abs(last.zoneY - trail.zoneY) < 0.002 {
+            return
+        }
+        lastPersistedTrail = trail
         ReadingTrailStore.save(trail)
-        let zone = ReaderFocus.clampZone(trail.zoneY)
-        if abs(zone - focusZoneY) > 0.002 {
-            focusZoneY = zone
+        if abs(trail.zoneY - focusZoneY) > 0.002 {
+            ignoreNextZoneApply = true
+            focusZoneY = trail.zoneY
         }
     }
 }

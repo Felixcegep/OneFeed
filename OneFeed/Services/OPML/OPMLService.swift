@@ -72,10 +72,27 @@ struct OPMLImportPreview: Equatable, Sendable {
 struct OPMLService {
     /// Reads the document and reports what import would change. Does not insert.
     func previewDocument(_ data: Data, in context: ModelContext) throws -> OPMLImportPreview {
-        let outlines = try Self.parse(data)
-        let feeds = try context.fetch(FetchDescriptor<Feed>())
-        var known: [(url: URL, folders: Set<String>)] = feeds.map { feed in
-            (feed.feedURL, Set(feed.memberships.map { $0.lowercased() }))
+        try preview(outlines: Self.parse(data), in: context)
+    }
+
+    /// Matches already-parsed outlines against the library. The file parse stays off this call.
+    func preview(outlines: [OPMLFeedOutline], in context: ModelContext) throws -> OPMLImportPreview {
+        try Self.preview(outlines, in: context.container)
+    }
+
+    /// Matches outlines against sources read on a short-lived context, so the open screen does not fetch every feed.
+    nonisolated static func preview(_ outlines: [OPMLFeedOutline], in container: ModelContainer) throws -> OPMLImportPreview {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Feed>()
+        descriptor.propertiesToFetch = [\.feedURL, \.folderNames, \.folderName]
+        let feeds = try context.fetch(descriptor)
+        return preview(outlines, known: feeds.map { ($0.feedURL, $0.memberships) })
+    }
+
+    nonisolated static func preview(_ outlines: [OPMLFeedOutline], known feeds: [(URL, [String])]) -> OPMLImportPreview {
+        var known: [(url: URL, folders: Set<String>)] = feeds.map { url, folders in
+            (url, Set(folders.map { $0.lowercased() }))
         }
         var newSourceCount = 0
         var alreadyPresentCount = 0
@@ -115,29 +132,7 @@ struct OPMLService {
 
     /// Insert path shared by a fresh parse and by a preview already held in memory.
     func importOutlines(_ outlines: [OPMLFeedOutline], in context: ModelContext) throws -> (newSources: Int, folderMembershipsAdded: Int) {
-        var inserted = 0
-        var memberships = 0
-        for outline in outlines {
-            let feedURL = outline.feedURL
-            let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
-            if let existing = try context.fetch(descriptor).first {
-                if let folder = outline.folderName, existing.addFolder(folder) {
-                    memberships += 1
-                }
-                continue
-            }
-            context.insert(Feed(
-                title: outline.title,
-                feedURL: feedURL,
-                folderName: outline.folderName
-            ))
-            inserted += 1
-            if FeedMembership.normalized(outline.folderName) != nil {
-                memberships += 1
-            }
-        }
-        try context.save()
-        return (inserted, memberships)
+        try OPMLImport.apply(outlines, in: context)
     }
 
     func exportDocument(feeds: [Feed]) -> OPMLDocument {
@@ -169,7 +164,7 @@ struct OPMLService {
         return OPMLDocument(data: Data(xml.utf8))
     }
 
-    static func parse(_ data: Data) throws -> [OPMLFeedOutline] {
+    nonisolated static func parse(_ data: Data) throws -> [OPMLFeedOutline] {
         let parser = OPMLOutlineParser()
         let xmlParser = XMLParser(data: data)
         xmlParser.delegate = parser
@@ -190,12 +185,41 @@ struct OPMLService {
     }
 }
 
+/// Writes an OPML preview onto whatever store context it is given.
+nonisolated enum OPMLImport {
+    static func apply(_ outlines: [OPMLFeedOutline], in context: ModelContext) throws -> (newSources: Int, folderMembershipsAdded: Int) {
+        var inserted = 0
+        var memberships = 0
+        for outline in outlines {
+            let feedURL = outline.feedURL
+            let descriptor = FetchDescriptor<Feed>(predicate: #Predicate { $0.feedURL == feedURL })
+            if let existing = try context.fetch(descriptor).first {
+                if let folder = outline.folderName, existing.addFolder(folder) {
+                    memberships += 1
+                }
+                continue
+            }
+            context.insert(Feed(
+                title: outline.title,
+                feedURL: feedURL,
+                folderName: outline.folderName
+            ))
+            inserted += 1
+            if FeedMembership.normalized(outline.folderName) != nil {
+                memberships += 1
+            }
+        }
+        try context.save()
+        return (inserted, memberships)
+    }
+}
+
 enum OPMLServiceError: LocalizedError {
     case invalidDocument
     var errorDescription: String? { "That file is not a valid OPML document." }
 }
 
-private final class OPMLOutlineParser: NSObject, XMLParserDelegate {
+nonisolated private final class OPMLOutlineParser: NSObject, XMLParserDelegate {
     private enum Frame {
         case folder(String)
         case feed

@@ -1,6 +1,6 @@
 import Foundation
 
-enum FolderEmoji {
+nonisolated enum FolderEmoji {
     private static let defaults: [String: String] = [
         "must read": "📌",
         "builders": "🧱",

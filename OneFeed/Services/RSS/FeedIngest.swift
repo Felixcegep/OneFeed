@@ -36,7 +36,10 @@ extension LibraryIngestActor {
                             loaded: nil,
                             cancelled: error.isCancellation,
                             transient: error.isTransientNetwork,
-                            errorDescription: error.localizedDescription
+                            errorDescription: UserFacingFailure.message(
+                                for: error,
+                                fallback: "The source returned an unexpected response."
+                            )
                         )
                     }
                 }
@@ -314,9 +317,8 @@ extension LibraryIngestActor {
 
     private func isEmptyFeed(_ feed: Feed) -> Bool {
         let feedID = feed.id
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
-        descriptor.fetchLimit = 1
-        return (try? modelContext.fetch(descriptor))?.isEmpty ?? true
+        let descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.feed?.id == feedID })
+        return (try? modelContext.fetchCount(descriptor)) == 0
     }
 
     private func articlesMissingYouTubeDuration(limit: Int) -> [Article] {
@@ -325,7 +327,8 @@ extension LibraryIngestActor {
         var targets: [Article] = []
         var seen = Set<UUID>()
         for item in deckItems {
-            guard let article = item.article, article.isStored else { continue }
+            guard let id = item.resolvedArticleID(),
+                  let article = DailyDeckService.lightweightArticle(id: id, in: modelContext) else { continue }
             guard article.contentKind == "youtube", article.durationSeconds <= 0 else { continue }
             if seen.insert(article.id).inserted {
                 targets.append(article)
@@ -340,6 +343,8 @@ extension LibraryIngestActor {
         )
         descriptor.fetchLimit = max(limit * 2, 16)
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
+        descriptor.propertiesToFetch = [\.id, \.guid, \.url, \.videoID, \.contentKind, \.durationSeconds, \.estimatedReadingMinutes]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let extra = ((try? modelContext.fetch(descriptor)) ?? []).filter { article in
             article.isStored && !seen.contains(article.id)
         }

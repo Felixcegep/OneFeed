@@ -1,7 +1,17 @@
 import SwiftData
 import SwiftUI
 
-enum FeedBrowseDestination: Hashable {
+/// Loads cluster captions away from the list, and skips the update when nothing changed.
+private func refreshedStoryPlacements(
+    from container: ModelContainer,
+    current: [String: StoryPlacement]
+) async -> [String: StoryPlacement]? {
+    let placements = await DailyDeckService.loadStoryPlacements(from: container)
+    guard !Task.isCancelled, placements != current else { return nil }
+    return placements
+}
+
+enum FeedBrowseDestination: Hashable, Sendable {
     case unread
     case folder(FeedFolderID)
 
@@ -15,12 +25,20 @@ enum FeedBrowseDestination: Hashable {
 
 struct FoldersView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-        sort: \Article.publishedAt,
-        order: .reverse
-    ) private var openQuery: [Article]
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @Query private var openQuery: [Article]
+
+    init() {
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        _openQuery = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        ))
+    }
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
@@ -29,45 +47,54 @@ struct FoldersView: View {
     @State private var isEditingFolders = false
     @State private var openFolderID: FeedFolderID?
     @State private var folderQuery = ""
+    @State private var appliedFolderQuery = ""
     @State private var folderAddError: String?
+    @State private var sourceSaveError: String?
     @State private var isAddingAddress = false
     @State private var showingNewFolder = false
     @State private var newFolderName = ""
     @State private var folderOrderTick = 0
+    @State private var storyPlacements: [String: StoryPlacement] = [:]
+    @State private var placementTick = 0
+    /// Folder rows stay put while refresh progress updates. Rebuilt off the main thread when sources, stories, or order change.
+    @State private var folderSummaries: [FolderSummary] = []
+    @State private var folderDirectoryReady = false
+    @State private var editingFolderCache = EditingFolderCache()
     @FocusState private var focusedFolderName: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.scenePhase) private var scenePhase
 
-    /// Full-screen cover only while refreshing with no folder rows and no articles yet.
-    private var showsSourceRefreshCover: Bool {
-        refresh.isRefreshing && !hasFolderRows && openQuery.isEmpty && !ReaderWebWarmup.skipsOpeningCover
-    }
-
-    private var hasFolderRows: Bool {
-        if isEditingFolders {
-            return !FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds).isEmpty
-        }
-        return !FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery).isEmpty
+    /// Sources for the folder list. A later refresh does not replace this until membership changes.
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true)
     }
 
     var body: some View {
-        let directory = FeedRootDirectory(feeds: feeds, articles: openQuery)
         let _ = iconTick
         let _ = folderOrderTick
-        List {
+        let _ = feedTick
+        let summaries = isEditingFolders ? [] : folderSummaries
+        let editingGroups = isEditingFolders ? editingFolderCache.groups(from: feeds) : []
+        return List {
             Section {
                 if isEditingFolders {
-                    if FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds).isEmpty {
+                    if editingGroups.isEmpty {
                         emptySourceInvite
                     }
-                    ForEach(editingRows) { row in
+                    ForEach(editingRows(in: editingGroups)) { row in
                         editingRow(row)
                     }
                     newFolderRow
-                } else if directory.summaries.isEmpty {
+                } else if LibraryHold.showsExplanation(
+                    hasStoredRows: !feeds.isEmpty,
+                    ready: folderDirectoryReady,
+                    hasPlannedRows: !summaries.isEmpty
+                ) {
                     emptySourceInvite
                 } else {
-                    ForEach(directory.summaries) { summary in
+                    ForEach(folderDirectoryReady ? summaries : folderNames) { summary in
                         folderRow(summary)
                     }
                 }
@@ -85,21 +112,19 @@ struct FoldersView: View {
             }
         }
         .oneFeedGroupedListStyle()
-        .overlay {
-            if showsSourceRefreshCover {
-                OneFeedLoadingCover(
-                    title: refresh.progress.primaryText,
-                    status: refresh.progress.coverStatus,
-                    canvas: OneFeedTheme.plaster
-                )
-            }
-        }
-        .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsSourceRefreshCover)
+        .debouncedSearch(folderQuery, into: $appliedFolderQuery)
+        .modifier(FeedListRefreshChrome(
+            refresh: refresh,
+            hasSources: !feeds.isEmpty,
+            hasArticles: !openQuery.isEmpty,
+            isEditing: isEditingFolders,
+            reduceMotion: reduceMotion
+        ))
         .navigationTitle("Feed")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .navigationSubtitle(refresh.statusText)
-        .refreshProgressBanner(refresh.progress)
         .toolbar {
             ToolbarItem(placement: .oneFeedPinnedTrailing) {
                 Button("Add Source", systemImage: "plus") { showingAddSource = true }
@@ -119,13 +144,35 @@ struct FoldersView: View {
             }
         }
         .refreshable { await refresh.refresh(in: modelContext) }
+        .onAppear { refresh.noteVisibleDay() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refresh.noteVisibleDay() }
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true) { next in
+                if feedBox.apply(next, includesEnabled: true) {
+                    feedTick += 1
+                }
+            }
+        }
         .task {
             refresh.adoptLatestFetch(from: feeds)
             if ProcessInfo.processInfo.arguments.contains("-uiTestingNotInterested") {
                 toolbarDestination = .notInterested
             }
         }
-        .sheet(isPresented: $showingAddSource) { AddSourceView() }
+        .task(id: openQueryEdge) {
+            await reloadStoryPlacements()
+        }
+        .task(id: directoryEdge) {
+            await reloadFolderSummaries()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
+            Task { await reloadStoryPlacements() }
+        }
+        .sheet(isPresented: $showingAddSource) {
+            AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
+        }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
                 iconTick += 1
@@ -146,6 +193,28 @@ struct FoldersView: View {
         } message: {
             Text(refresh.presentedError ?? "")
         }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { sourceSaveError != nil },
+            set: { if !$0 { sourceSaveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { sourceSaveError = nil }
+        } message: {
+            Text(sourceSaveError ?? "")
+        }
+    }
+
+    private func reloadStoryPlacements() async {
+        guard let placements = await refreshedStoryPlacements(from: modelContext.container, current: storyPlacements) else { return }
+        storyPlacements = placements
+        placementTick &+= 1
+    }
+
+    /// Same folders as the counted list, with the unread badge still hidden.
+    private var folderNames: [FolderSummary] {
+        FolderDirectoryCount.names(
+            feeds: feeds.map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) },
+            folderOrder: FolderStore.knownNames()
+        )
     }
 
     private func folderRow(_ summary: FolderSummary) -> some View {
@@ -182,8 +251,82 @@ struct FoldersView: View {
         }
     }
 
+    private func reloadFolderSummaries() async {
+        let edge = directoryEdge
+        let feedSnaps = feeds.map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) }
+        let placements = storyPlacements
+        let order = FolderStore.knownNames()
+        let onScreen = FolderDirectoryCount.countsOnTheOpenScreen(storyCount: openQuery.count)
+        let openSnaps: [FolderStorySnap] = onScreen ? openQuery.map { article in
+            FolderStorySnap(
+                feedID: article.feed?.id,
+                publishedAt: article.publishedAt,
+                videoID: article.videoID,
+                url: article.url,
+                guid: article.guid,
+                id: article.id,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
+        } : []
+        if onScreen {
+            publishFolderSummaries(FolderDirectoryCount.summaries(
+                feeds: feedSnaps,
+                stories: openSnaps,
+                placements: placements,
+                folderOrder: order
+            ))
+        }
+        let container = modelContext.container
+        let summaries = await Task.detached(priority: .userInitiated) {
+            let stories = onScreen ? openSnaps : FolderDirectoryCount.storySnaps(in: container)
+            return FolderDirectoryCount.summaries(
+                feeds: feedSnaps,
+                stories: stories,
+                placements: placements,
+                folderOrder: order
+            )
+        }.value
+        guard !Task.isCancelled, edge == directoryEdge else { return }
+        publishFolderSummaries(summaries)
+    }
+
+    private func publishFolderSummaries(_ summaries: [FolderSummary]) {
+        guard !showsSameFolderSummaries(summaries, as: folderSummaries) else {
+            folderDirectoryReady = true
+            return
+        }
+        folderSummaries = summaries
+        folderDirectoryReady = true
+    }
+
+    private func showsSameFolderSummaries(_ next: [FolderSummary], as current: [FolderSummary]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { lhs, rhs in
+            lhs.folderID == rhs.folderID && lhs.unreadCount == rhs.unreadCount && lhs.feedCount == rhs.feedCount
+        }
+    }
+
+    /// Every open story, plus each source. A refresh tick does not regroup the folders.
+    private var directoryEdge: Int {
+        var token = folderOrderTick
+        token = token &* 31 &+ openQueryEdge
+        token = token &* 31 &+ placementTick
+        for feed in feeds {
+            token = token &* 31 &+ feed.id.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+        }
+        return token
+    }
+
+    private var openQueryEdge: Int {
+        ListIdentity.token(ids: openQuery.lazy.map(\.id))
+    }
+
+    /// The folders already on screen. Moving one does not count every open story again.
     private func displayedFolderNames() -> [String] {
-        FeedFolderGrouping.folderSummaries(feeds: feeds, articles: openQuery).compactMap { summary in
+        folderSummaries.compactMap { summary in
             if case .named(let name) = summary.folderID { return name }
             return nil
         }
@@ -253,10 +396,11 @@ struct FoldersView: View {
     }
 
     /// Occupied folders, plus remembered empty ones, with the open folder's sources and add field.
-    private var editingRows: [SourceEditRow] {
+    private func editingRows(in groups: [FeedFolderGroup]) -> [SourceEditRow] {
         var rows: [SourceEditRow] = []
-        let query = trimmedFolderQuery
-        for group in FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds) {
+        let live = trimmedFolderQuery
+        let query = appliedFolderQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        for group in groups {
             rows.append(.folder(group))
             guard openFolderID == group.folderID else { continue }
             for feed in group.feeds {
@@ -266,8 +410,8 @@ struct FoldersView: View {
             for feed in folderSearchResults(in: folderName, query: query) {
                 rows.append(.suggestion(feed, folderName: folderName))
             }
-            if folderQueryIsAddress(query) {
-                rows.append(.addURL(query: query, folderName: folderName))
+            if folderQueryIsAddress(live) {
+                rows.append(.addURL(query: live, folderName: folderName))
             }
             rows.append(.field(folderName))
             if let folderAddError {
@@ -317,6 +461,10 @@ struct FoldersView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(group.name)
+            .accessibilityValue(isOpen ? "Expanded" : "Collapsed")
+            .accessibilityHint(isOpen ? "Collapses this folder" : "Shows the sources in this folder")
         }
         .oneFeedDirectoryRow()
         .contextMenu {
@@ -485,15 +633,26 @@ struct FoldersView: View {
     }
 
     private func removeFromFolder(_ feed: Feed, folderName: String) {
-        feed.removeFolder(folderName)
+        guard feed.removeFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            feed.addFolder(folderName)
+            sourceSaveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     private func fileExisting(_ feed: Feed, in folderName: String) {
-        feed.addFolder(folderName)
+        guard feed.addFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            feed.removeFolder(folderName)
+            sourceSaveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+            return
+        }
         folderQuery = ""
         folderAddError = nil
     }
@@ -518,8 +677,11 @@ struct FoldersView: View {
                 }
                 folderAddError = nil
             } catch {
+                let message = RefreshFailure.message(for: error, fallback: "Couldn’t add that source.")
                 if openFolderID == .named(folderName) {
-                    folderAddError = error.localizedDescription
+                    folderAddError = message
+                } else {
+                    sourceSaveError = message
                 }
             }
             isAddingAddress = false
@@ -532,6 +694,33 @@ struct FoldersView: View {
         } else {
             withAnimation(OneFeedMotion.list, updates)
         }
+    }
+}
+
+/// Editing rows reuse folder groups until a source or a remembered folder name changes.
+private final class EditingFolderCache {
+    private var edge = Int.min
+    private var cached: [FeedFolderGroup] = []
+
+    func groups(from feeds: [Feed]) -> [FeedFolderGroup] {
+        let next = Self.edge(of: feeds)
+        if next == edge { return cached }
+        cached = FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+        edge = next
+        return cached
+    }
+
+    private static func edge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+        }
+        for name in FolderStore.knownNames() {
+            token = token &* 31 &+ name.hashValue
+        }
+        return token
     }
 }
 
@@ -573,66 +762,249 @@ private enum FeedToolbarDestination: Hashable, Identifiable {
     var id: Self { self }
 }
 
-private struct FeedRootDirectory {
-    let summaries: [FolderSummary]
+/// Progress ticks stay on this chrome. The folder list does not read the progress line, so a refresh does not rebuild the rows.
+private struct FeedListRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    var hasSources: Bool
+    var hasArticles: Bool
+    var isEditing: Bool
+    var reduceMotion: Bool
 
-    init(feeds: [Feed], articles: [Article]) {
-        let open = FeedFolderGrouping.openArticles(from: articles)
-        summaries = FeedFolderGrouping.folderSummaries(feeds: feeds, openArticles: open)
+    private var showsCover: Bool {
+        refresh.isRefreshing && !hasSources && !hasArticles && !isEditing && !ReaderWebWarmup.skipsOpeningCover
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                ZStack {
+                    if showsCover {
+                        OneFeedLoadingCover(
+                            title: refresh.progress.primaryText,
+                            status: refresh.progress.coverStatus,
+                            canvas: OneFeedTheme.plaster
+                        )
+                        .transition(.opacity)
+                    }
+                }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsCover)
+            }
+            .refreshProgressBanner(refresh.progress)
+    }
+}
+
+/// Progress ticks stay on this chrome. The story list does not read the progress line, so a refresh does not regroup the rows.
+private struct StoryListRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    @Environment(\.modelContext) private var modelContext
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(refresh.progress)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                        Task { await refresh.refresh(in: modelContext) }
+                    }
+                }
+            }
     }
 }
 
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
-    @Query private var memories: [ContentMemory]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
-    @State private var searchText = ""
+    @State private var storyError: String?
+    @State private var appliedSearch = ""
     @State private var expandedClusterIDs: Set<UUID> = []
+    @State private var storyPlacements: [String: StoryPlacement] = [:]
+    @State private var placementTick = 0
+    /// Story rows stay grouped while the open article changes. Rebuilt off the main thread when the query, stories, or clusters change.
+    @State private var displayedStoryRows: [FeedStoryRow] = []
+    @State private var storyListReady = false
+    @State private var storyHoldRevealed = false
+    @State private var refresh = BrowseRefresh()
 
     init(destination: FeedBrowseDestination) {
         self.destination = destination
-        _articles = Query(
-            filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-            sort: \Article.publishedAt,
-            order: .reverse
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        _articles = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        ))
+    }
+
+    private func reloadStoryList() async {
+        let edge = storyEdge
+        let destination = destination
+        let feedsByID = Dictionary(feeds.map { ($0.id, FolderFeedSnap(id: $0.id, memberships: $0.memberships)) }, uniquingKeysWith: { first, _ in first })
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searching = !query.isEmpty
+        let placements = storyPlacements
+        let expanded = expandedClusterIDs
+        let now = Date()
+        let onScreen = StoryListPlan.rowsOnTheOpenScreen(storyCount: articles.count, isSearching: searching)
+        let openSnaps = onScreen ? articles.map { storyListSnap($0, searching: false) } : []
+        if onScreen {
+            publishStoryRows(StoryListPlan.rows(
+                destination: destination,
+                feeds: feedsByID,
+                stories: openSnaps,
+                placements: placements,
+                expanded: expanded,
+                query: "",
+                now: now
+            ))
+        }
+        let container = modelContext.container
+        let plans = await Task.detached(priority: .userInitiated) {
+            let stories = onScreen ? openSnaps : StoryListPlan.snaps(searching: searching, in: container)
+            return StoryListPlan.rows(
+                destination: destination,
+                feeds: feedsByID,
+                stories: stories,
+                placements: placements,
+                expanded: expanded,
+                query: query,
+                now: now
+            )
+        }.value
+        guard !Task.isCancelled, edge == storyEdge else { return }
+        publishStoryRows(plans)
+    }
+
+    private func storyListSnap(_ article: Article, searching: Bool) -> StoryListSnap {
+        StoryListSnap(
+            id: article.id,
+            feedID: article.feed?.id,
+            feedTitle: searching ? article.feed?.title : nil,
+            publishedAt: article.publishedAt,
+            title: searching ? article.title : "",
+            aiSummary: searching ? ContentClassifier.cardExcerptSample(article.aiSummary) : nil,
+            summary: searching ? ContentClassifier.cardExcerptSample(article.summary) : nil,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
         )
     }
 
-    private var items: [Article] {
-        let candidates: [Article] = switch destination {
-        case .unread: FeedFolderGrouping.openArticles(from: articles)
-        case .folder(let folderID):
-            FeedFolderGrouping.folderArticleGroups(from: articles)
-                .first(where: { $0.folderID == folderID })?
-                .articles ?? []
+    private func publishStoryRows(_ plans: [StoryRowPlan]) {
+        let byID = Dictionary(articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rows = plans.compactMap { plan -> FeedStoryRow? in
+            switch plan.kind {
+            case .article(let id, let caption):
+                guard let article = byID[id], article.isStored else { return nil }
+                return FeedStoryRow(id: plan.id, kind: .article(article, caption: caption))
+            case .moreSources(let clusterID, let count):
+                return FeedStoryRow(id: plan.id, kind: .moreSources(clusterID: clusterID, count: count))
+            }
         }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return candidates }
-        return candidates.filter {
-            $0.title.localizedStandardContains(query)
-                || ($0.feed?.title.localizedStandardContains(query) ?? false)
-                || ($0.displayExcerpt?.localizedStandardContains(query) ?? false)
+        guard !showsSameStoryRows(rows, as: displayedStoryRows) else {
+            storyListReady = true
+            return
+        }
+        displayedStoryRows = rows
+        storyListReady = true
+    }
+
+    private func showsSameStoryRows(_ next: [FeedStoryRow], as current: [FeedStoryRow]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { storyRowToken($0) == storyRowToken($1) }
+    }
+
+    private func storyRowToken(_ row: FeedStoryRow) -> String {
+        switch row.kind {
+        case .article(let article, let caption):
+            return "a:\(article.id.uuidString):\(caption ?? "")"
+        case .moreSources(let clusterID, let count):
+            return "m:\(clusterID.uuidString):\(count)"
         }
     }
 
-    private var storyRows: [FeedStoryRow] {
-        StoryGrouping.rows(
-            from: items.filter(\.isStored),
-            memories: memories,
-            expandedClusterIDs: expandedClusterIDs
-        )
+    /// Stories already loaded for this folder. Collapse and similar-story rows still arrive with the plan.
+    private var provisionalStories: [Article] {
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return articles.filter { article in
+            guard article.isStored else { return false }
+            guard StoryListPlan.belongs(
+                feedID: article.feed?.id,
+                memberships: article.feed?.memberships,
+                to: destination
+            ) else { return false }
+            guard !query.isEmpty else { return true }
+            if article.title.localizedStandardContains(query) { return true }
+            return article.feed?.title.localizedStandardContains(query) == true
+        }
+    }
+
+    private var storyHoldWaiting: Bool {
+        !storyListReady && !provisionalStories.isEmpty
+    }
+
+    /// Search, expansion, and every story id. Opening a story does not regroup the rows.
+    private func reloadStoryPlacements() async {
+        guard let placements = await refreshedStoryPlacements(from: modelContext.container, current: storyPlacements) else { return }
+        storyPlacements = placements
+        placementTick &+= 1
+    }
+
+    private var storyEdge: Int {
+        var token = appliedSearch.hashValue
+        token = token &* 31 &+ articleEdge
+        token = token &* 31 &+ placementTick
+        token = token &* 31 &+ expandedClusterIDs.count
+        switch destination {
+        case .unread: token = token &* 31 &+ 1
+        case .folder(let id): token = token &* 31 &+ String(describing: id).hashValue
+        }
+        for id in expandedClusterIDs {
+            token ^= id.hashValue
+        }
+        for feed in feeds {
+            token = token &* 31 &+ feed.id.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+        }
+        return token
+    }
+
+    private var articleEdge: Int {
+        ListIdentity.token(ids: articles.lazy.map(\.id))
+    }
+
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: false)
     }
 
     var body: some View {
-        OneFeedReadingSplit(article: $selectedArticle) {
-            collectionColumn
+        let _ = feedTick
+        return OneFeedReadingSplit(article: $selectedArticle) {
+            OneFeedSearchHost("Search articles", applied: $appliedSearch) {
+                collectionColumn
+            }
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
                 selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
+                return true
             }, onClose: {
                 selectedArticle = nil
             })
@@ -640,19 +1012,53 @@ struct ArticleCollectionView: View {
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
         .readingUndoBanner()
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
     }
 
     private var collectionColumn: some View {
         Group {
-            if storyRows.isEmpty {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: storyListReady,
+                    provisionalHasRows: !provisionalStories.isEmpty,
+                    plannedHasRows: !displayedStoryRows.isEmpty
+                ),
+                ready: storyListReady,
+                hasPlannedRows: !displayedStoryRows.isEmpty
+            ) {
                 EmptyLibraryState(
                     title: emptyTitle,
                     systemImage: emptyImage,
-                    description: emptyDescription
+                    description: emptyDescription,
+                    actionTitle: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Refresh" : nil,
+                    action: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? { Task { await refresh.refresh(in: modelContext) } }
+                        : nil
                 )
+            } else if !storyListReady {
+                if LibraryHold.showsStoredRows(waiting: storyHoldWaiting, revealed: storyHoldRevealed) {
+                    List {
+                        ForEach(provisionalStories) { article in
+                            articleButton(article, caption: nil)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                    .refreshable { await refresh.refresh(in: modelContext) }
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
-                    ForEach(storyRows) { row in
+                    ForEach(displayedStoryRows) { row in
                         switch row.kind {
                         case .article(let article, let caption):
                             articleButton(article, caption: caption)
@@ -662,13 +1068,47 @@ struct ArticleCollectionView: View {
                     }
                 }
                 .oneFeedGroupedListStyle()
+                .refreshable { await refresh.refresh(in: modelContext) }
             }
         }
         .navigationTitle(destination.title)
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
-        .searchable(text: $searchText, prompt: "Search articles")
+        .modifier(StoryListRefreshChrome(refresh: refresh))
+        .background {
+            FeedMembershipWatch(includesEnabled: false) { next in
+                if feedBox.apply(next, includesEnabled: false) {
+                    feedTick += 1
+                }
+            }
+        }
+        .task { refresh.adoptLatestFetch(from: feeds) }
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { refresh.presentedError != nil },
+            set: { if !$0 { refresh.presentedError = nil } }
+        )) {
+            Button("OK", role: .cancel) { refresh.presentedError = nil }
+        } message: {
+            Text(refresh.presentedError ?? "")
+        }
+        .task(id: articleEdge) {
+            await reloadStoryPlacements()
+        }
+        .task(id: storyEdge) {
+            await reloadStoryList()
+        }
+        .task(id: storyHoldWaiting) {
+            storyHoldRevealed = false
+            guard storyHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, storyHoldWaiting else { return }
+            storyHoldRevealed = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.storyIndexDidChange)) { _ in
+            Task { await reloadStoryPlacements() }
+        }
     }
 
     private func articleButton(_ article: Article, caption: String?) -> some View {
@@ -692,16 +1132,17 @@ struct ArticleCollectionView: View {
             Text(title)
                 .font(.subheadline)
                 .foregroundStyle(OneFeedTheme.graphite)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
         .buttonStyle(DirectoryRowButtonStyle())
         .articleListRow()
         .accessibilityLabel(title)
+        .accessibilityValue(expandedClusterIDs.contains(clusterID) ? "Expanded" : "Collapsed")
+        .accessibilityHint(expandedClusterIDs.contains(clusterID) ? "Hides the other sources" : "Shows the other sources")
     }
 
     private var emptyTitle: String {
-        if !searchText.isEmpty { return "No matches" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
         return switch destination {
         case .unread: "You're caught up"
         case .folder: "Caught up"
@@ -709,7 +1150,7 @@ struct ArticleCollectionView: View {
     }
 
     private var emptyImage: String {
-        if !searchText.isEmpty { return "magnifyingglass" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "magnifyingglass" }
         return switch destination {
         case .unread: "checkmark.circle"
         case .folder: "checkmark.circle"
@@ -717,10 +1158,56 @@ struct ArticleCollectionView: View {
     }
 
     private var emptyDescription: String {
-        if !searchText.isEmpty { return "Try a different title or source name." }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Try a different title or source name." }
         return switch destination {
         case .unread: "New stories from your sources will land here."
-        case .folder: "No unread stories in this folder."
+        case .folder: "New stories from this folder will land here."
         }
+    }
+}
+
+/// Screens keep this copy. A refresh of fetch time does not publish a new copy.
+final class FeedDirectoryBox {
+    private var loaded = false
+    private var stored: [Feed] = []
+    private var edge = Int.min
+
+    func feeds(in context: ModelContext, includesEnabled: Bool, includesToday: Bool = false, includesTitle: Bool = false) -> [Feed] {
+        if !loaded {
+            stored = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
+            loaded = true
+        }
+        return stored
+    }
+
+    func apply(_ feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false, includesTitle: Bool = false) -> Bool {
+        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
+        guard !loaded || next != edge else { return false }
+        stored = feeds
+        edge = next
+        loaded = true
+        return true
+    }
+}
+
+/// Watches sources without redrawing a list on every fetch timestamp.
+struct FeedMembershipWatch: View {
+    @Query(sort: \Feed.title) private var feeds: [Feed]
+    var includesEnabled: Bool
+    var includesToday: Bool = false
+    var includesTitle: Bool = false
+    var onChange: ([Feed]) -> Void
+
+    private var edge: Int {
+        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear { onChange(feeds) }
+            .onChange(of: edge) { _, _ in onChange(feeds) }
     }
 }

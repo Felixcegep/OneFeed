@@ -139,10 +139,14 @@ final class ExperimentalLibrarianViewModel {
         defer { isWorking = false }
         do {
             for _ in 0..<8 {
+                if context.hasChanges {
+                    try? context.save()
+                }
                 let contentsJSON = try JSONSerialization.data(withJSONObject: apiContents)
+                let instruction = await librarian.systemInstruction(from: context.container)
                 let result = try await gemini.generateLibrarian(
                     contentsJSON: contentsJSON,
-                    systemInstruction: librarian.systemInstruction(in: context)
+                    systemInstruction: instruction
                 )
                 apiContents.append(result.modelContent)
                 if result.functionCalls.isEmpty {
@@ -158,7 +162,7 @@ final class ExperimentalLibrarianViewModel {
             }
             messages.append(LibrarianMessage(kind: .error("Gemini kept making changes. Stopped after eight steps.")))
         } catch {
-            messages.append(LibrarianMessage(kind: .error(error.localizedDescription)))
+            messages.append(LibrarianMessage(kind: .error(UserFacingFailure.message(for: error, fallback: "That request did not finish."))))
         }
     }
 
@@ -218,6 +222,7 @@ final class ExperimentalLibrarianViewModel {
 
 struct ExperimentalLibrarianView: View {
     var initialPrompt: String? = nil
+    var preparesReviewPrompt = false
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ExperimentalLibrarianViewModel()
     @State private var geminiKey = ""
@@ -277,9 +282,16 @@ struct ExperimentalLibrarianView: View {
         .task {
             viewModel.configure(with: modelContext)
             geminiKey = GeminiAPIKeyStore.load() ?? ""
-            if let initialPrompt, !didSendInitial, viewModel.hasAPIKey {
-                didSendInitial = true
-                await viewModel.sendSuggestion(initialPrompt)
+            if !didSendInitial, viewModel.hasAPIKey {
+                if preparesReviewPrompt {
+                    didSendInitial = true
+                    let prompt = await NotInterestedLog.reviewPrompt(from: modelContext.container)
+                    guard !Task.isCancelled else { return }
+                    await viewModel.sendSuggestion(prompt)
+                } else if let initialPrompt {
+                    didSendInitial = true
+                    await viewModel.sendSuggestion(initialPrompt)
+                }
             }
         }
         .sheet(isPresented: $showingKeySheet) {
@@ -401,11 +413,23 @@ struct ExperimentalLibrarianView: View {
         }
     }
 
+    private struct SerifLegibility: ViewModifier {
+        var enabled: Bool
+        func body(content: Content) -> some View {
+            if enabled {
+                content.oneFeedLegibleWeight()
+            } else {
+                content
+            }
+        }
+    }
+
     private func labeledCard(label: String, text: String, serif: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             GalleryLabel(text: label)
             Text(text)
                 .font(serif ? OneFeedTheme.serifBody() : .body)
+                .modifier(SerifLegibility(enabled: serif))
                 .foregroundStyle(OneFeedTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }

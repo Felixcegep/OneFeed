@@ -52,6 +52,27 @@ struct SwiftDataFreshRSSSyncTests {
         #expect(mutations.first?.1 == .unstar)
     }
 
+    @Test func aRolledBackSaveDropsTheQueuedMutation() throws {
+        let context = try context()
+        let article = Article(guid: "one", title: "One", state: .read, remoteID: "remote-one")
+        context.insert(article)
+        try context.save()
+        FreshRSSSyncService().enqueueMutation(for: article, transition: .saved, in: context)
+        #expect(try context.fetchCount(FetchDescriptor<PendingSyncMutation>()) == 1)
+        context.rollback()
+        #expect(try context.fetchCount(FetchDescriptor<PendingSyncMutation>()) == 0)
+    }
+
+    @Test func enqueueMutationIgnoresARepeatedStar() throws {
+        let context = try context()
+        let article = Article(guid: "one", title: "One", state: .read, remoteID: "remote-one")
+        context.insert(article)
+        let service = FreshRSSSyncService()
+        service.enqueueMutation(for: article, transition: .saved, in: context)
+        service.enqueueMutation(for: article, transition: .saved, in: context)
+        #expect(try context.fetchCount(FetchDescriptor<PendingSyncMutation>()) == 1)
+    }
+
     @Test func offlineBodySurvivesSwiftDataRoundTrip() throws {
         let context = try context()
         context.insert(Article(guid: "offline", title: "Offline", summary: "Cached summary", contentHTML: "<p>Cached body</p>"))
@@ -135,6 +156,7 @@ struct SwiftDataFreshRSSSyncTests {
         context.insert(article)
         let viewModel = SavedViewModel(queue: ArticleQueueService(), freshRSSService: FreshRSSSyncService())
         viewModel.configure(with: context)
+        #expect(viewModel.articles.isEmpty)
         viewModel.finishReading(article, as: .read)
 
         #expect(article.state == .read)
@@ -214,6 +236,150 @@ struct SwiftDataFreshRSSSyncTests {
 
         #expect(feeds.refreshed)
         #expect(sync.synced)
+    }
+
+    @Test func aRefreshThatStartsDuringAnotherRunsOnceAfterward() async {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let gate = RefreshGate()
+        let first = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<50 where gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        let third = Task {
+            await BackgroundRefreshCoordinator.runExclusive {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        gate.release()
+        await first.value
+        await second.value
+        await third.value
+        #expect(gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func aStaleRefreshThatJoinsAnotherDoesNotRunAgain() async {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let gate = RefreshGate()
+        let first = Task {
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: false) {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<50 where gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task {
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: false) {
+                await gate.enter()
+            }
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        gate.release()
+        await first.value
+        await second.value
+        #expect(gate.entered == 1)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func aSecondPullDuringARefreshFetchesOnceMore() async throws {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let context = try context()
+        let feeds = GatedFeedRepository()
+        let browse = BrowseRefresh(feedService: feeds, freshRSSService: RecordingFreshRSSService())
+        let first = Task { await browse.refresh(in: context) }
+        for _ in 0..<50 where feeds.gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task { await browse.refresh(in: context) }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        feeds.gate.release()
+        await first.value
+        await second.value
+        #expect(feeds.gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func aPullDuringTodaysAutomaticRefreshFetchesOnceMore() async throws {
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+        let context = try context()
+        let feeds = GatedFeedRepository()
+        let model = CurrentViewModel(
+            deckService: DailyDeckService(),
+            feedService: feeds,
+            freshRSSService: RecordingFreshRSSService()
+        )
+        model.configure(with: context)
+        let feed = Feed(title: "Example", feedURL: URL(string: "https://example.com/rss")!)
+        context.insert(feed)
+        model.startRefreshIfNeeded(feeds: [feed])
+        for _ in 0..<50 where feeds.gate.entered == 0 {
+            await Task.yield()
+        }
+        let pull = Task { await model.refresh() }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        feeds.gate.release()
+        await pull.value
+        #expect(feeds.gate.entered == 2)
+        BackgroundRefreshCoordinator.resetExclusiveRefreshForTests()
+    }
+
+    @Test func todaySkipsARefreshWhenTheFeedsOnScreenAreFresh() {
+        let now = Date()
+        let fresh = FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: now.addingTimeInterval(-60))
+        let stale = FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: now.addingTimeInterval(-20 * 60))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: now, now: now, isRefreshing: false))
+        #expect(CurrentViewModel.shouldRefresh(
+            feeds: [FeedFreshness(isEnabled: true, isRemote: false, lastFetchedAt: nil)],
+            lastSuccessfulRefresh: now,
+            now: now,
+            isRefreshing: false
+        ))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: now.addingTimeInterval(-20 * 60), now: now, isRefreshing: false))
+        #expect(CurrentViewModel.shouldRefresh(feeds: [stale], lastSuccessfulRefresh: now.addingTimeInterval(-20 * 60), now: now, isRefreshing: false))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [], lastSuccessfulRefresh: nil, now: now, isRefreshing: false))
+        #expect(!CurrentViewModel.shouldRefresh(feeds: [fresh], lastSuccessfulRefresh: nil, now: now, isRefreshing: true))
+        #expect(!CurrentViewModel.shouldRefresh(
+            feeds: [FeedFreshness(isEnabled: true, isRemote: true, lastFetchedAt: nil)],
+            lastSuccessfulRefresh: nil,
+            now: now,
+            isRefreshing: false
+        ))
+    }
+}
+
+@MainActor
+private final class RefreshGate {
+    private(set) var entered = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func enter() async {
+        entered += 1
+        guard entered == 1 else { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -312,6 +478,21 @@ private actor PagingSyncAPI: FreshRSSAPI {
     }
     func unsubscribe(streamID: String, authToken: String) async throws {}
     func recordedPages() -> [String?] { pages }
+}
+
+@MainActor
+private final class GatedFeedRepository: FeedRepository {
+    let gate = RefreshGate()
+
+    func addSource(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "http://example.test/rss")!, folderName: folderName)
+    }
+
+    func refresh(_ feed: Feed, in context: ModelContext) async throws {}
+
+    func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws {
+        await gate.enter()
+    }
 }
 
 @MainActor

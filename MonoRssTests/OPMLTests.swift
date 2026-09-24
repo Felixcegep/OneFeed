@@ -83,4 +83,49 @@ struct OPMLTests {
         let folders = Set((try context.fetch(FetchDescriptor<Feed>())).compactMap(\.folderName))
         #expect(folders == Set(FeedSeedCatalog.folderOrder))
     }
+
+    @Test func opmlParseRunsOffTheMainActor() async throws {
+        let opml = """
+        <?xml version="1.0"?><opml version="2.0"><body>
+          <outline text="Must read">
+            <outline text="One" xmlUrl="https://one.test/rss" />
+          </outline>
+        </body></opml>
+        """
+        let parsed = try await Task.detached {
+            try OPMLService.parse(Data(opml.utf8))
+        }.value
+        #expect(parsed.count == 1)
+        #expect(parsed.first?.title == "One")
+        #expect(parsed.first?.folderName == "Must read")
+    }
+
+    @Test func previewMatchesSourcesAwayFromTheOpenScreen() throws {
+        let context = try context()
+        context.insert(Feed(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Must read"))
+        try context.save()
+        let outlines = [
+            OPMLFeedOutline(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Philosophy"),
+            OPMLFeedOutline(title: "New", feedURL: URL(string: "https://new.test/rss")!, folderName: nil)
+        ]
+        let preview = try OPMLService.preview(outlines, in: context.container)
+        #expect(preview.newSourceCount == 1)
+        #expect(preview.alreadyPresentCount == 1)
+        #expect(preview.folderMembershipsToAdd == 1)
+        #expect(try context.fetch(FetchDescriptor<Feed>()).count == 1)
+    }
+
+    @Test func confirmingOPMLImportWritesSourcesOnTheIngestActor() async throws {
+        let context = try context()
+        let outlines = [
+            OPMLFeedOutline(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Must read")
+        ]
+        let applied = try await LibraryIngestActor(modelContainer: context.container).importOPML(outlines)
+        #expect(applied.newSources == 1)
+        #expect(applied.folderMembershipsAdded == 1)
+        let stored = try ModelContext(context.container).fetch(FetchDescriptor<Feed>())
+        let feed = try #require(stored.first)
+        #expect(feed.title == "One")
+        #expect(feed.folderName == "Must read")
+    }
 }

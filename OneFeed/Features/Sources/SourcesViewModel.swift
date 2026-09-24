@@ -10,23 +10,67 @@ final class SourcesViewModel {
     var isPresentingAddSource = false
     var isPresentingNewFolder = false
     var newFolderName = ""
+    var statusTitle: String?
     var statusMessage: String?
+    var saveError: String?
     private(set) var isImportingPack = false
 
-    func configure(with context: ModelContext) { self.context = context; reload() }
+    /// Keeps the context for later edits. The folder list is grouped from the feeds already on screen.
+    func configure(with context: ModelContext) {
+        self.context = context
+    }
     func reload() {
         guard let context else { return }
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
     }
 
-    var folders: [FeedFolderGroup] {
-        FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+    func presentStatus(_ title: String, message: String) {
+        statusTitle = title
+        statusMessage = message
+    }
+
+    func clearStatus() {
+        statusTitle = nil
+        statusMessage = nil
+    }
+
+    private var cachedFolderEdge = Int.min
+    private var cachedFolders: [FeedFolderGroup] = []
+
+    /// Folder groups stay put until a source or a remembered folder name changes.
+    var folders: [FeedFolderGroup] { folders(matching: feeds) }
+
+    /// Groups the feeds already loaded. The source list can draw before `reload()` fetches again.
+    func folders(matching feeds: [Feed]) -> [FeedFolderGroup] {
+        let edge = Self.folderEdge(of: feeds)
+        if edge == cachedFolderEdge { return cachedFolders }
+        cachedFolders = FeedFolderGrouping.groupsIncludingKnownEmpty(from: feeds)
+        cachedFolderEdge = edge
+        return cachedFolders
+    }
+
+    private static func folderEdge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+        }
+        for name in FolderStore.knownNames() {
+            token = token &* 31 &+ name.hashValue
+        }
+        return token
     }
 
     var folderNames: [String] { FolderStore.allNames(from: feeds) }
 
     func feeds(in folderID: FeedFolderID) -> [Feed] {
-        folders.first(where: { $0.folderID == folderID })?.feeds ?? []
+        feeds(in: folderID, from: feeds)
+    }
+
+    /// Sources in one folder from the feeds already loaded, before `reload()` fetches again.
+    func feeds(in folderID: FeedFolderID, from feeds: [Feed]) -> [Feed] {
+        folders(matching: feeds).first { $0.folderID == folderID }?.feeds ?? []
     }
 
     func createFolder() {
@@ -36,21 +80,28 @@ final class SourcesViewModel {
         newFolderName = ""
         isPresentingNewFolder = false
         LibraryChange.noteStructureChanged()
-        reload()
     }
 
     func add(_ feed: Feed, to folderName: String) {
         guard let context, feed.addFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? context.save()
-        reload()
+        do {
+            try context.save()
+        } catch {
+            feed.removeFolder(folderName)
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     func remove(_ feed: Feed, from folderName: String) {
         guard let context, feed.removeFolder(folderName) else { return }
         LibraryChange.note(feed)
-        try? context.save()
-        reload()
+        do {
+            try context.save()
+        } catch {
+            feed.addFolder(folderName)
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     func toggle(_ feed: Feed, folder folderName: String) {
@@ -68,14 +119,12 @@ final class SourcesViewModel {
             let result = try FeedSeedService().apply(in: context)
             UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
             UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
-            reload()
             LibraryChange.noteStructureChanged()
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
-                statusMessage = "All seeded sources are already loaded."
+                presentStatus("Sources already loaded", message: "All seeded sources are already loaded.")
                 isImportingPack = false
                 return
             }
-            statusMessage = "Restored \(result.inserted) source\(result.inserted == 1 ? "" : "s"). Updating…"
             Task {
                 defer { isImportingPack = false }
                 let freshRSS = SyncProvider.freshRSS.rawValue
@@ -85,14 +134,22 @@ final class SourcesViewModel {
                 }
                 do {
                     try await FeedService().refreshAll(in: context)
-                    statusMessage = "Library ready · \(result.inserted) new, \(result.updated) updated."
-                    reload()
+                    let restored = result.inserted
+                    presentStatus(
+                        "Restored \(restored) source\(restored == 1 ? "" : "s")",
+                        message: "\(result.updated) updated."
+                    )
                 } catch {
-                    statusMessage = RefreshFailure.message(for: error) ?? error.localizedDescription
+                    presentStatus(
+                        "Sources restored",
+                        message: UserFacingFailure.shouldSurface(error)
+                            ? UserFacingFailure.message(for: error, fallback: "The update did not finish.")
+                            : "The update will finish on the next refresh."
+                    )
                 }
             }
         } catch {
-            statusMessage = error.localizedDescription
+            presentStatus("Couldn’t restore sources", message: UserFacingFailure.message(for: error, fallback: "Try again."))
             isImportingPack = false
         }
     }
@@ -182,7 +239,7 @@ final class AddSourceViewModel {
                 }
                 addedCount += 1
             } catch {
-                failures.append("\(input): \(error.localizedDescription)")
+                failures.append("\(input): \(UserFacingFailure.message(for: error, fallback: "Couldn’t add that source."))")
             }
         }
 
@@ -203,6 +260,34 @@ final class AddSourceViewModel {
 }
 
 @MainActor
+/// Folder names for the source checklist. Read on a short-lived context so the open form is not the one fetching every source.
+nonisolated enum SourceFolderNames {
+    static func collected(in container: ModelContainer) -> [String] {
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Feed>()
+        descriptor.propertiesToFetch = [\.folderNames, \.folderName]
+        let feeds = (try? lookup.fetch(descriptor)) ?? []
+        return FolderStore.allNames(from: feeds)
+    }
+}
+
+/// The newest story ids for one source. The open form fetches only those rows.
+nonisolated enum SourceRecentStories {
+    static func newestIDs(feedID: UUID, limit: Int, in container: ModelContainer) -> [UUID] {
+        let matchFeed = feedID
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { $0.feed?.id == matchFeed },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        descriptor.propertiesToFetch = [\.id, \.publishedAt]
+        return ((try? lookup.fetch(descriptor)) ?? []).map(\.id)
+    }
+}
+
 @Observable
 final class SourceDetailViewModel {
     let feed: Feed
@@ -210,36 +295,134 @@ final class SourceDetailViewModel {
     private let freshRSSService: any FreshRSSSyncing
     var isConfirmingRemoval = false
     var presentedError: String?
+    var refreshError: String?
+    var saveError: String?
+    var removeError: String?
+    private(set) var isRefreshing = false
+    let progress = RefreshProgress()
     var availableFolders: [String] = []
+    private(set) var foldersReady = false
+    private(set) var isRemoving = false
+    private var blockedWordsTask: Task<Void, Never>?
+    private var pendingBlockedWords: String?
+    private var membershipKeys: Set<String>?
+    /// Builds of the folder membership set. A redraw does not increment this.
+    private(set) var membershipBuilds = 0
+    private var cachedRecentStories: [Article] = []
+    /// Loads of the newest-twenty list. A redraw does not increment this.
+    private(set) var recentStoryLoads = 0
+    /// Fetches of every source, used to build the folder name list.
+    private(set) var folderListLoads = 0
+    private var didLoadOpeningDetails = false
+    private nonisolated(unsafe) var saveObserver: NSObjectProtocol?
 
-    init(feed: Feed, context: ModelContext) {
-        self.feed = feed
-        self.context = context
-        self.freshRSSService = FreshRSSSyncService()
-        reloadFolders()
+    /// The empty folder line waits until the full list has been read. A known folder still shows immediately.
+    static func showsEmptyFolderList(ready: Bool, folderCount: Int) -> Bool {
+        ready && folderCount == 0
     }
 
-    func reloadFolders() {
-        let feeds = (try? context.fetch(FetchDescriptor<Feed>())) ?? []
-        availableFolders = FolderStore.allNames(from: feeds)
+    init(feed: Feed, context: ModelContext, freshRSSService: any FreshRSSSyncing = FreshRSSSyncService()) {
+        self.feed = feed
+        self.context = context
+        self.freshRSSService = freshRSSService
+        availableFolders = FolderStore.allNames(from: [feed])
+        saveObserver = NotificationCenter.default.addObserver(
+            forName: ModelContext.didSave,
+            object: context,
+            queue: nil
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                self?.noteStoreSaved(note)
+            }
+        }
+    }
+
+    deinit {
+        if let saveObserver {
+            NotificationCenter.default.removeObserver(saveObserver)
+        }
+    }
+
+    func loadOpeningDetails() async {
+        guard !didLoadOpeningDetails else { return }
+        didLoadOpeningDetails = true
+        let container = context.container
+        let feedID = feed.id
+        let snapshot = await Task.detached(priority: .userInitiated) {
+            (
+                SourceFolderNames.collected(in: container),
+                SourceRecentStories.newestIDs(feedID: feedID, limit: 20, in: container)
+            )
+        }.value
+        guard !Task.isCancelled else {
+            didLoadOpeningDetails = false
+            return
+        }
+        folderListLoads += 1
+        availableFolders = snapshot.0
+        foldersReady = true
+        recentStoryLoads += 1
+        cachedRecentStories = stories(for: snapshot.1)
+    }
+
+    func refresh() async {
+        guard feed.refreshesOverRSS, !isRefreshing else { return }
+        isRefreshing = true
+        progress.begin(phase: .sources, total: 1)
+        defer {
+            reloadRecentStories()
+            progress.finish()
+            isRefreshing = false
+        }
+        await BackgroundRefreshCoordinator.runExclusive {
+            do {
+                try await FeedService().refresh(self.feed, in: self.context)
+            } catch {
+                self.refreshError = RefreshFailure.message(for: error, fallback: "Couldn’t refresh this source.")
+            }
+            self.progress.finishItem()
+        }
     }
 
     func addFolder(_ name: String) {
-        feed.addFolder(name)
-        LibraryChange.note(feed)
-        try? context.save()
-        reloadFolders()
+        persist({ feed.addFolder(name) }, revert: { feed.removeFolder(name) })
+        membershipKeys = nil
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if availableFolders.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) { return }
+        availableFolders.append(trimmed)
     }
 
     func toggleFolder(_ name: String) {
-        if feed.containsFolder(name) {
-            feed.removeFolder(name)
-        } else {
-            feed.addFolder(name)
-        }
-        LibraryChange.note(feed)
-        try? context.save()
-        reloadFolders()
+        let wasMember = feed.containsFolder(name)
+        persist({
+            if wasMember {
+                feed.removeFolder(name)
+            } else {
+                feed.addFolder(name)
+            }
+        }, revert: {
+            if wasMember {
+                feed.addFolder(name)
+            } else {
+                feed.removeFolder(name)
+            }
+        })
+        membershipKeys = nil
+    }
+
+    /// Whether this source is in the folder. The set is built once until a folder check changes it.
+    func sourceIsInFolder(_ name: String) -> Bool {
+        guard let name = FeedMembership.normalized(name) else { return false }
+        return currentMemberships().contains(name.lowercased())
+    }
+
+    private func currentMemberships() -> Set<String> {
+        if let membershipKeys { return membershipKeys }
+        membershipBuilds += 1
+        let keys = Set(feed.memberships.map { $0.lowercased() })
+        membershipKeys = keys
+        return keys
     }
 
     var isEnabled: Bool {
@@ -252,41 +435,152 @@ final class SourceDetailViewModel {
     }
 
     private func updateTodayMembership(_ change: () -> Void) {
+        let enabled = feed.isEnabled
+        let included = feed.includeInToday
         change()
         LibraryChange.note(feed)
         do {
             try DailyDeckService.reconcileMembership(in: context)
         } catch {
-            try? context.save()
-        }
-    }
-    var includeVideos: Bool {
-        get { feed.includeVideos }
-        set { feed.includeVideos = newValue; LibraryChange.note(feed); try? context.save() }
-    }
-    var includeShorts: Bool {
-        get { feed.includeShorts }
-        set { feed.includeShorts = newValue; LibraryChange.note(feed); try? context.save() }
-    }
-    var blockedWords: String {
-        get { feed.blockedWords }
-        set { feed.blockedWords = newValue; LibraryChange.note(feed); try? context.save() }
-    }
-    func remove() async {
-        do {
-            try await freshRSSService.removeSubscription(feed, in: context)
-        } catch {
-            presentedError = error.localizedDescription
-            LibraryChange.noteRemovedFeed(feed)
-            context.delete(feed)
-            try? context.save()
+            context.rollback()
+            feed.isEnabled = enabled
+            feed.includeInToday = included
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
         }
     }
 
-    var recentArticles: [Article] {
-        feed.articles
-            .sorted { $0.publishedAt > $1.publishedAt }
-            .prefix(20)
-            .map { $0 }
+    var includeVideos: Bool {
+        get { feed.includeVideos }
+        set {
+            let previous = feed.includeVideos
+            persist({ feed.includeVideos = newValue }, revert: { feed.includeVideos = previous })
+        }
+    }
+    var includeShorts: Bool {
+        get { feed.includeShorts }
+        set {
+            let previous = feed.includeShorts
+            persist({ feed.includeShorts = newValue }, revert: { feed.includeShorts = previous })
+        }
+    }
+    var blockedWords: String {
+        get { pendingBlockedWords ?? feed.blockedWords }
+        set { scheduleBlockedWordsSave(newValue) }
+    }
+
+    /// Writes the words after typing pauses. Leaving the source writes immediately.
+    func commitBlockedWords() {
+        blockedWordsTask?.cancel()
+        blockedWordsTask = nil
+        guard let pending = pendingBlockedWords else { return }
+        pendingBlockedWords = nil
+        guard pending != feed.blockedWords else { return }
+        let previous = feed.blockedWords
+        feed.blockedWords = pending
+        LibraryChange.note(feed)
+        do {
+            try context.save()
+        } catch {
+            feed.blockedWords = previous
+            pendingBlockedWords = previous
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
+    }
+
+    private func persist(_ change: () -> Void, revert: () -> Void) {
+        change()
+        LibraryChange.note(feed)
+        do {
+            try context.save()
+        } catch {
+            revert()
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
+    }
+
+    private func scheduleBlockedWordsSave(_ value: String) {
+        pendingBlockedWords = value
+        blockedWordsTask?.cancel()
+        blockedWordsTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            commitBlockedWords()
+        }
+    }
+
+    @discardableResult
+    func remove() async -> Bool {
+        guard !isRemoving else { return false }
+        isRemoving = true
+        let showsLine = !progress.isActive
+        if showsLine {
+            progress.begin(phase: .sources, total: 1)
+        }
+        defer {
+            if showsLine { progress.finish() }
+            isRemoving = false
+        }
+        do {
+            try await freshRSSService.removeSubscription(feed, in: context)
+            if showsLine { progress.finishItem() }
+            return true
+        } catch {
+            context.delete(feed)
+            do {
+                try context.save()
+                LibraryChange.noteRemovedFeed(feed)
+                if showsLine { progress.finishItem() }
+                return true
+            } catch {
+                context.rollback()
+                removeError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
+                return false
+            }
+        }
+    }
+
+    /// The twenty newest stories. Typing and other redraws reuse this list.
+    /// A saved insert or delete loads it again. A refresh loads it once when it finishes.
+    var recentArticles: [Article] { cachedRecentStories }
+
+    /// An article insert or delete changes the newest list. A title or setting save does not.
+    private func noteStoreSaved(_ note: Notification) {
+        guard !isRefreshing else { return }
+        let inserted = Self.identifiers(note, .insertedIdentifiers)
+        let deleted = Self.identifiers(note, .deletedIdentifiers)
+        guard !inserted.isEmpty || !deleted.isEmpty else { return }
+        reloadRecentStories()
+    }
+
+    private static func identifiers(_ note: Notification, _ key: ModelContext.NotificationKey) -> [PersistentIdentifier] {
+        guard let value = note.userInfo?[key] else { return [] }
+        if let set = value as? Set<PersistentIdentifier> { return Array(set) }
+        if let list = value as? [PersistentIdentifier] { return list }
+        return []
+    }
+
+    private func stories(for ids: [UUID]) -> [Article] {
+        guard !ids.isEmpty else { return [] }
+        let neededIDs = ids
+        let fetched = (try? context.fetch(ArticleListFetch.rows(
+            predicate: #Predicate { neededIDs.contains($0.id) }
+        ))) ?? []
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
+
+    private func reloadRecentStories() {
+        recentStoryLoads += 1
+        cachedRecentStories = newestStories(limit: 20)
+    }
+
+    private func newestStories(limit: Int) -> [Article] {
+        let feedID = feed.id
+        var descriptor = ArticleListFetch.rows(
+            predicate: #Predicate { $0.feed?.id == feedID },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        return (try? context.fetch(descriptor)) ?? []
     }
 }

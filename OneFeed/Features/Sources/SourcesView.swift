@@ -3,61 +3,50 @@ import SwiftUI
 
 struct SourcesView: View {
     @Environment(\.modelContext) private var modelContext
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var viewModel = SourcesViewModel()
     @State private var addPreferredFolder: String?
     @State private var pickingFolder: FolderIconTarget?
     @State private var iconTick = 0
-    @State private var searchText = ""
+    @State private var appliedSearch = ""
     @State private var folderToRemove: String?
 
+    private var folderQuery: String {
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var storedFeeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
+    }
+
     private var visibleFolders: [FeedFolderGroup] {
-        guard !searchText.isEmpty else { return viewModel.folders }
-        return viewModel.folders.filter { folder in
-            folder.name.localizedStandardContains(searchText)
-                || folder.feeds.contains { $0.title.localizedStandardContains(searchText) }
+        let groups = viewModel.folders(matching: storedFeeds)
+        let query = folderQuery
+        guard !query.isEmpty else { return groups }
+        return groups.filter { folder in
+            folder.name.localizedStandardContains(query)
+                || folder.feeds.contains { $0.title.localizedStandardContains(query) }
         }
     }
 
     var body: some View {
         let _ = iconTick
-        List {
-            if visibleFolders.isEmpty {
-                Section {
-                    if searchText.isEmpty {
-                        ContentUnavailableView {
-                            Label("No folders yet", systemImage: "folder")
-                        } description: {
-                            Text("Add a source or create a folder to organize your reading.")
-                        } actions: {
-                            Button("Add Source") { presentAdd() }
-                                .buttonStyle(.borderedProminent)
-                        }
-                    } else {
-                        ContentUnavailableView.search(text: searchText)
-                    }
-                }
-                .listRowBackground(OneFeedTheme.paper)
-            } else {
-                if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
-                    Section("With sources") {
-                        ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
-                            folderLink(folder)
-                        }
-                    }
-                }
-                if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
-                    Section("Empty folders") {
-                        ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
-                            folderLink(folder)
-                        }
-                    }
+        let _ = feedTick
+        OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
+            sourcesList
+        }
+        .navigationTitle("Sources")
+        .oneFeedLargeTitle()
+        .oneFeedScrollEdge()
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesTitle: true) {
+                    feedTick += 1
                 }
             }
         }
-        .oneFeedGroupedListStyle()
-        .searchable(text: $searchText, prompt: "Folders or sources")
-        .navigationTitle("Sources")
-        .oneFeedLargeTitle()
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
@@ -86,9 +75,8 @@ struct SourcesView: View {
         }
         .sheet(isPresented: $viewModel.isPresentingAddSource, onDismiss: {
             addPreferredFolder = nil
-            viewModel.reload()
         }) {
-            AddSourceView(preferredFolder: addPreferredFolder)
+            AddSourceView(preferredFolder: addPreferredFolder, onAdded: {})
         }
         .sheet(item: $pickingFolder) { target in
             FolderEmojiPicker(folderName: target.name) { _ in
@@ -102,13 +90,21 @@ struct SourcesView: View {
         } message: {
             Text("Folders group sources. Add feeds into it next.")
         }
-        .alert("OneFeed", isPresented: Binding(
-            get: { viewModel.statusMessage != nil },
-            set: { if !$0 { viewModel.statusMessage = nil } }
+        .alert(viewModel.statusTitle ?? "Sources", isPresented: Binding(
+            get: { viewModel.statusTitle != nil },
+            set: { if !$0 { viewModel.clearStatus() } }
         )) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.statusMessage ?? "")
+        }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { viewModel.saveError != nil },
+            set: { if !$0 { viewModel.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.saveError = nil }
+        } message: {
+            Text(viewModel.saveError ?? "")
         }
         .confirmationDialog(
             "Remove empty folder?",
@@ -122,13 +118,60 @@ struct SourcesView: View {
                 Button("Remove \(folderToRemove)", role: .destructive) {
                     FolderStore.remove(folderToRemove)
                     LibraryChange.noteStructureChanged()
-                    viewModel.reload()
                     self.folderToRemove = nil
                 }
             }
         } message: {
             Text("This folder has no sources.")
         }
+    }
+
+    private var sourcesList: some View {
+        Group {
+            if visibleFolders.isEmpty {
+                if folderQuery.isEmpty {
+                    EmptyLibraryState(
+                        title: "No folders yet",
+                        systemImage: "folder",
+                        description: "Add a source or create a folder to organize your reading.",
+                        actionTitle: "Add Source",
+                        action: { presentAdd() }
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a folder or source name."
+                    )
+                }
+            } else {
+                sourcesFolderList
+            }
+        }
+    }
+
+    private var sourcesFolderList: some View {
+        List {
+                if visibleFolders.contains(where: { !$0.feeds.isEmpty }) {
+                    Section {
+                        ForEach(visibleFolders.filter { !$0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
+                        }
+                    } header: {
+                        GallerySectionHeader(text: "With sources")
+                    }
+                }
+                if visibleFolders.contains(where: { $0.feeds.isEmpty }) {
+                    Section {
+                        ForEach(visibleFolders.filter { $0.feeds.isEmpty }) { folder in
+                            folderLink(folder)
+                        }
+                    } header: {
+                        GallerySectionHeader(text: "Empty folders")
+                    }
+                }
+        }
+        .oneFeedGroupedListStyle()
     }
 
     private func folderLink(_ folder: FeedFolderGroup) -> some View {
@@ -221,43 +264,81 @@ private struct FolderFeedsView: View {
     var onAddInFolder: () -> Void
 
     @Environment(\.modelContext) private var modelContext
-    @State private var searchText = ""
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
+    @State private var appliedSearch = ""
+
+    private var storedFeeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
+    }
 
     private var otherFolders: [String] {
-        viewModel.folderNames.filter { name in
+        FolderStore.allNames(from: storedFeeds).filter { name in
             guard case .named(let current) = folderID else { return true }
             return name.caseInsensitiveCompare(current) != .orderedSame
         }
     }
 
     private var visibleFeeds: [Feed] {
-        let feeds = viewModel.feeds(in: folderID)
-        guard !searchText.isEmpty else { return feeds }
+        let feeds = viewModel.feeds(in: folderID, from: storedFeeds)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return feeds }
         return feeds.filter {
-            $0.title.localizedStandardContains(searchText)
-                || $0.feedURL.absoluteString.localizedStandardContains(searchText)
+            $0.title.localizedStandardContains(query)
+                || $0.feedURL.absoluteString.localizedStandardContains(query)
         }
     }
 
     var body: some View {
-        List {
-            if visibleFeeds.isEmpty {
-                Section {
-                    if searchText.isEmpty {
-                        ContentUnavailableView {
-                            Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
-                        } description: {
-                            Text("Add a source to start filling this folder.")
-                        } actions: {
-                            Button("Add Source") { onAddInFolder() }
-                                .buttonStyle(.borderedProminent)
-                        }
-                    } else {
-                        ContentUnavailableView.search(text: searchText)
-                    }
+        let _ = feedTick
+        OneFeedSearchHost("Sources in this folder", applied: $appliedSearch) {
+            folderFeedList
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesTitle: true) {
+                    feedTick += 1
                 }
-                .listRowBackground(OneFeedTheme.paper)
+            }
+        }
+    }
+
+    private var folderFeedList: some View {
+        Group {
+            if visibleFeeds.isEmpty {
+                if appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    EmptyLibraryState(
+                        title: "No sources yet",
+                        systemImage: "dot.radiowaves.left.and.right",
+                        description: "Add a source to start filling this folder.",
+                        actionTitle: "Add Source",
+                        action: onAddInFolder
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a source name."
+                    )
+                }
             } else {
+                folderFeedRows
+            }
+        }
+        .navigationTitle(folderID.title)
+        .oneFeedLargeTitle()
+        .oneFeedScrollEdge()
+        .background(OneFeedTheme.plaster)
+        .toolbar {
+            ToolbarItem(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { onAddInFolder() }
+            }
+        }
+    }
+
+    private var folderFeedRows: some View {
+        List {
             Section {
                 ForEach(visibleFeeds) { feed in
                     NavigationLink {
@@ -288,17 +369,8 @@ private struct FolderFeedsView: View {
                     }
                 }
             }
-            }
         }
         .oneFeedGroupedListStyle()
-        .searchable(text: $searchText, prompt: "Sources in this folder")
-        .navigationTitle(folderID.title)
-        .oneFeedLargeTitle()
-        .toolbar {
-            ToolbarItem(placement: .oneFeedTrailing) {
-                Button("Add Source", systemImage: "plus") { onAddInFolder() }
-            }
-        }
     }
 }
 
@@ -383,10 +455,12 @@ private extension View {
 private struct SourceDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @State private var viewModel: SourceDetailViewModel
     @State private var isCreatingFolder = false
     @State private var newFolderName = ""
     @State private var selectedArticle: Article?
+    @State private var storyError: String?
 
     init(feed: Feed, context: ModelContext) {
         _viewModel = State(initialValue: SourceDetailViewModel(feed: feed, context: context))
@@ -400,11 +474,12 @@ private struct SourceDetailView: View {
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
-                if viewModel.availableFolders.isEmpty {
+                if SourceDetailViewModel.showsEmptyFolderList(ready: viewModel.foldersReady, folderCount: viewModel.availableFolders.count) {
                     Text("No folders yet")
                         .foregroundStyle(OneFeedTheme.graphite)
                 }
                 ForEach(viewModel.availableFolders, id: \.self) { name in
+                    let included = viewModel.sourceIsInFolder(name)
                     Button {
                         viewModel.toggleFolder(name)
                     } label: {
@@ -412,20 +487,24 @@ private struct SourceDetailView: View {
                             Text(name)
                                 .foregroundStyle(OneFeedTheme.ink)
                             Spacer()
-                            if viewModel.feed.containsFolder(name) {
+                            if included {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(OneFeedTheme.ink)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(included ? .isSelected : [])
+                    .accessibilityValue(included ? "In this folder" : "Not in this folder")
                 }
                 Button("New Folder…") { isCreatingFolder = true }
             } header: {
-                Text("Folders")
+                GallerySectionHeader(text: "Folders")
             } footer: {
-                Text("This source can live in more than one folder. Uncheck a folder to take it out of that list.")
+                    Text("This source can live in more than one folder. Uncheck a folder to take it out of that list.")
             }
+            .listRowBackground(OneFeedTheme.paper)
             Section {
                 Toggle("Included in Feed", isOn: $viewModel.isEnabled)
                 Toggle("Included in Today", isOn: $viewModel.includeInToday)
@@ -438,19 +517,22 @@ private struct SourceDetailView: View {
                     ? "Today is a small daily stack. Videos shorter than 3 minutes are skipped unless you allow Shorts."
                     : "This source is one article or file. It opens in the reader on this device.")
             }
+            .listRowBackground(OneFeedTheme.paper)
             if viewModel.feed.refreshesOverRSS {
                 Section {
                     TextField("AI, Sponsored…", text: $viewModel.blockedWords, axis: .vertical)
                         .lineLimit(2...4)
                 } header: {
-                    Text("Blocked words")
+                    GallerySectionHeader(text: "Blocked words")
                 } footer: {
                     Text("Comma or new-line separated. Matching items never enter Today or Feed.")
                 }
+                .listRowBackground(OneFeedTheme.paper)
             }
-            if !viewModel.recentArticles.isEmpty {
-                Section(viewModel.feed.refreshesOverRSS ? "Recent" : "Read") {
-                    ForEach(viewModel.recentArticles) { article in
+            let recentStories = viewModel.recentArticles
+            if !recentStories.isEmpty {
+                Section {
+                    ForEach(recentStories) { article in
                         Button {
                             selectedArticle = article
                         } label: {
@@ -458,23 +540,65 @@ private struct SourceDetailView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                } header: {
+                    GallerySectionHeader(text: viewModel.feed.refreshesOverRSS ? "Recent" : "Read")
                 }
+                .listRowBackground(OneFeedTheme.paper)
             }
             Section {
                 Button("Remove Source", role: .destructive) { viewModel.isConfirmingRemoval = true }
+                    .disabled(viewModel.isRemoving)
             }
+            .listRowBackground(OneFeedTheme.paper)
         }
         .navigationTitle(viewModel.feed.title)
         .oneFeedInlineTitle()
         .oneFeedPaperScreen()
+        .task { await viewModel.loadOpeningDetails() }
+        .oneFeedScrollEdge()
+        .oneFeedTabBarClearance()
+        .modifier(SourceDetailRefreshChrome(viewModel: viewModel))
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { viewModel.refreshError != nil },
+            set: { if !$0 { viewModel.refreshError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.refreshError = nil }
+        } message: {
+            Text(viewModel.refreshError ?? "")
+        }
         .oneFeedArticleCover(item: $selectedArticle) { article in
             ReaderView(article: article) { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
                 selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
+                return true
             }
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { viewModel.saveError != nil },
+            set: { if !$0 { viewModel.saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.saveError = nil }
+        } message: {
+            Text(viewModel.saveError ?? "")
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Folder name", text: $newFolderName)
@@ -483,17 +607,31 @@ private struct SourceDetailView: View {
                 let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !name.isEmpty else { return }
                 FolderStore.remember(name)
-                viewModel.reloadFolders()
                 viewModel.addFolder(name)
                 newFolderName = ""
             }
         }
+        .alert("Couldn’t remove that source", isPresented: Binding(
+            get: { viewModel.removeError != nil },
+            set: { if !$0 { viewModel.removeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.removeError = nil }
+        } message: {
+            Text(viewModel.removeError ?? "")
+        }
         .confirmationDialog("Remove this source and its locally stored articles?", isPresented: $viewModel.isConfirmingRemoval, titleVisibility: .visible) {
             Button("Remove Source", role: .destructive) {
-                dismiss()
-                Task { @MainActor in await viewModel.remove() }
+                Task { @MainActor in
+                    if await viewModel.remove() {
+                        dismiss()
+                    }
+                }
             }
         }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { viewModel.commitBlockedWords() }
+        }
+        .onDisappear { viewModel.commitBlockedWords() }
     }
 
     private var addressTitle: String {
@@ -510,13 +648,16 @@ struct AddSourceView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
     @State private var viewModel = AddSourceViewModel()
     @State private var showSuccess = false
+    @State private var addTask: Task<Void, Never>?
 
-    var preferredFolder: String?
+    var preferredFolder: String? = nil
     /// Prefills the address field (e.g. from a `feed:` / Share / deep link).
     var initialAddress: String? = nil
+    /// Runs after at least one source is saved. Cancel does not call this.
+    var onAdded: () -> Void = {}
 
     var body: some View {
         NavigationStack {
@@ -531,7 +672,7 @@ struct AddSourceView: View {
                         .oneFeedSubmitGo()
                         .onSubmit { add() }
                 } header: {
-                    Text("Websites, articles, or files")
+                    GallerySectionHeader(text: "Websites, articles, or files")
                 } footer: {
                     Text("One per line. Feeds, articles, PDFs, and EPUBs can share a folder.")
                 }
@@ -550,7 +691,7 @@ struct AddSourceView: View {
                             .oneFeedAutocapitalizationWords()
                     }
                 } header: {
-                    Text("Folder")
+                    GallerySectionHeader(text: "Folder")
                 } footer: {
                     Text("Same folder for every URL in this batch.")
                 }
@@ -561,7 +702,7 @@ struct AddSourceView: View {
                         HStack(spacing: 12) {
                             OneFeedMarkPulse(isActive: true, size: 22)
                             Text(progress)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(OneFeedTheme.graphite)
                         }
                     }
                     .listRowBackground(OneFeedTheme.paper)
@@ -573,19 +714,19 @@ struct AddSourceView: View {
                 }
             }
             .overlay {
-                if showSuccess {
-                    ZStack {
+                ZStack {
+                    if showSuccess {
                         OneFeedTheme.plaster.opacity(0.97)
                         VStack(spacing: 16) {
                             OneFeedMarkBurst(size: 56)
                             GalleryLabel(text: "Added")
                         }
+                        .transition(.opacity)
                     }
-                    .ignoresSafeArea()
-                    .transition(.opacity)
                 }
+                .ignoresSafeArea()
+                .animation(reduceMotion ? nil : OneFeedMotion.decision, value: showSuccess)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.decision, value: showSuccess)
             .navigationTitle(viewModel.addresses.count > 1 ? "Add Sources" : "Add Source")
             .oneFeedInlineTitle()
             .oneFeedPaperScreen()
@@ -596,9 +737,25 @@ struct AddSourceView: View {
                         .disabled(viewModel.addresses.isEmpty || viewModel.isAdding || showSuccess)
                 }
             }
-            .sensoryFeedback(.success, trigger: showSuccess)
+            .sensoryFeedback(.success, trigger: showSuccess) { _, showing in
+                showing
+            }
+            .onDisappear { addTask?.cancel() }
+            .task(id: showSuccess) {
+                guard showSuccess else { return }
+                if !reduceMotion {
+                    try? await Task.sleep(for: .milliseconds(420))
+                }
+                guard !Task.isCancelled, showSuccess else { return }
+                if viewModel.presentedError == nil {
+                    dismiss()
+                } else {
+                    showSuccess = false
+                }
+            }
             .onAppear {
-                viewModel.configureFolders(from: Array(feeds), preferred: preferredFolder)
+                let feeds = feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
+                viewModel.configureFolders(from: feeds, preferred: preferredFolder)
                 if let initialAddress, viewModel.addressList.isEmpty {
                     viewModel.addressList = initialAddress
                 }
@@ -631,19 +788,32 @@ struct AddSourceView: View {
     }
 
     private func add() {
-        Task {
+        addTask?.cancel()
+        addTask = Task {
             guard await viewModel.add(in: modelContext) else { return }
+            onAdded()
+            guard !Task.isCancelled else { return }
             showSuccess = true
-            if !reduceMotion {
-                try? await Task.sleep(for: .milliseconds(420))
-            }
-            // Stay open if the user might paste another batch; only dismiss when one batch succeeded cleanly.
-            if viewModel.presentedError == nil {
-                dismiss()
-            } else {
-                showSuccess = false
-            }
         }
+    }
+}
+
+/// Progress ticks stay on this chrome. The source form does not read the progress line, so a refresh does not rebuild recent stories.
+private struct SourceDetailRefreshChrome: ViewModifier {
+    var viewModel: SourceDetailViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(viewModel.progress)
+            .toolbar {
+                if viewModel.feed.refreshesOverRSS {
+                    ToolbarItem(placement: .oneFeedTrailing) {
+                        OneFeedToolbarRefresh(isRefreshing: viewModel.isRefreshing) {
+                            Task { await viewModel.refresh() }
+                        }
+                    }
+                }
+            }
     }
 }
 

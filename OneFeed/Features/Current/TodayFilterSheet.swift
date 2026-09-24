@@ -8,21 +8,84 @@ struct TodayFilterSheet: View {
     #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     #endif
-    @Query(sort: \Feed.title) private var feeds: [Feed]
-    @State private var searchText = ""
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
+    @State private var appliedSearch = ""
     @State private var presentedError: String?
+    @State private var folderCache = TodayFolderCache()
+    @State private var deckNeedsUpdate = false
 
     var onUpdated: () -> Void
+    var onFailed: (String) -> Void = { _ in }
+
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesToday: true, includesTitle: true)
+    }
 
     var body: some View {
+        let _ = feedTick
         NavigationStack {
-            List {
-                if feeds.isEmpty {
-                    emptySources
-                } else if visibleFolders.isEmpty {
-                    ContentUnavailableView.search(text: searchText)
-                        .listRowBackground(Color.clear)
-                } else {
+            OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
+                filterList
+            }
+            .tint(OneFeedTheme.ink)
+            .navigationTitle("In Today")
+            .oneFeedInlineTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if commitDeckIfNeeded() { dismiss() }
+                    }
+                }
+            }
+            .alert("Couldn’t update Today", isPresented: Binding(
+                get: { presentedError != nil },
+                set: { if !$0 { presentedError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(presentedError ?? "")
+            }
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesToday: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesToday: true, includesTitle: true) {
+                    feedTick += 1
+                }
+            }
+        }
+        .oneFeedMacFormSheet()
+        .onDisappear { _ = commitDeckIfNeeded(reportFailure: true) }
+        #if os(iOS)
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
+        .presentationDragIndicator(.visible)
+        #endif
+    }
+
+    private var filterList: some View {
+        Group {
+            if feeds.isEmpty {
+                EmptyLibraryState(
+                    title: "No sources yet",
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: "Add a source in Feed, then choose whether it fills Today."
+                )
+            } else if visibleFolders.isEmpty {
+                EmptyLibraryState(
+                    title: "No matches",
+                    systemImage: "magnifyingglass",
+                    description: "Try a folder or source name."
+                )
+            } else {
+                filterRows
+            }
+        }
+        .background(OneFeedTheme.plaster)
+    }
+
+    private var filterRows: some View {
+        List {
                     ForEach(Array(visibleFolders.enumerated()), id: \.element.id) { index, folder in
                         Section {
                             if folder.offersAllSources {
@@ -40,41 +103,8 @@ struct TodayFilterSheet: View {
                         }
                         .listRowBackground(OneFeedTheme.paper)
                     }
-                }
-            }
-            .oneFeedGroupedListStyle()
-            .oneFeedSearchable($searchText, prompt: "Folders or sources")
-            .tint(OneFeedTheme.ink)
-            .navigationTitle("In Today")
-            .oneFeedInlineTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-            .alert("Couldn’t update Today", isPresented: Binding(
-                get: { presentedError != nil },
-                set: { if !$0 { presentedError = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(presentedError ?? "")
-            }
         }
-        .oneFeedMacFormSheet()
-        #if os(iOS)
-        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
-        .presentationDragIndicator(.visible)
-        #endif
-    }
-
-    private var emptySources: some View {
-        ContentUnavailableView {
-            Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
-        } description: {
-            Text("Add a source in Feed, then choose whether it fills Today.")
-        }
-        .listRowBackground(Color.clear)
+        .oneFeedGroupedListStyle()
     }
 
     private func allSourcesToggle(_ group: FeedFolderGroup) -> some View {
@@ -127,16 +157,36 @@ struct TodayFilterSheet: View {
 
     private func apply(_ included: Bool, to feeds: [Feed]) {
         do {
-            try DailyDeckService.setIncludedInToday(included, feeds: feeds, in: modelContext)
-            onUpdated()
+            try DailyDeckService.storeIncludedInToday(included, feeds: feeds, in: modelContext)
+            deckNeedsUpdate = true
         } catch {
-            presentedError = RefreshFailure.message(for: error) ?? "Try again."
+            presentedError = RefreshFailure.message(for: error, fallback: "Try again.")
+        }
+    }
+
+    /// Rebuilds Today once. Close keeps the sheet up when that rebuild fails. A swipe reports the failure on Today.
+    @discardableResult
+    private func commitDeckIfNeeded(reportFailure: Bool = false) -> Bool {
+        guard deckNeedsUpdate else { return true }
+        do {
+            try DailyDeckService.reconcileMembership(in: modelContext)
+            deckNeedsUpdate = false
+            onUpdated()
+            return true
+        } catch {
+            let message = RefreshFailure.message(for: error, fallback: "Try again.")
+            if reportFailure {
+                onFailed(message)
+            } else if presentedError == nil {
+                presentedError = message
+            }
+            return false
         }
     }
 
     private var visibleFolders: [TodayFolderFilter] {
-        let groups = FeedFolderGrouping.groups(from: feeds)
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let groups = folderCache.groups(from: feeds)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             return groups.map {
                 TodayFolderFilter(group: $0, shown: $0.feeds, offersAllSources: $0.feeds.count > 1)
@@ -154,6 +204,32 @@ struct TodayFilterSheet: View {
                 offersAllSources: folderMatches && group.feeds.count > 1
             )
         }
+    }
+}
+
+/// Folder rows stay grouped until a source is added, renamed, or moved.
+/// Turning a source on or off for Today does not rebuild them.
+final class TodayFolderCache {
+    private var edge = Int.min
+    private var cached: [FeedFolderGroup] = []
+    private(set) var loads = 0
+
+    func groups(from feeds: [Feed]) -> [FeedFolderGroup] {
+        let next = Self.edge(of: feeds)
+        if next == edge { return cached }
+        loads += 1
+        cached = FeedFolderGrouping.groups(from: feeds)
+        edge = next
+        return cached
+    }
+
+    private static func edge(of feeds: [Feed]) -> Int {
+        var token = ListIdentity.token(ids: feeds.lazy.map(\.id))
+        for feed in feeds {
+            token = token &* 31 &+ feed.title.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+        }
+        return token
     }
 }
 

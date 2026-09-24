@@ -3,80 +3,189 @@ import SwiftData
 
 struct HistoryView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "read" || $0.stateRawValue == "skipped" },
-        sort: \Article.completedAt,
-        order: .reverse
-    ) private var history: [Article]
-    @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var notInterested: [NotInterestedEntry]
+    @Query private var history: [Article]
+
+    init() {
+        let read = ArticleState.read.rawValue
+        let skipped = ArticleState.skipped.rawValue
+        _history = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == read || article.stateRawValue == skipped
+            },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        ))
+    }
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedArticle: Article?
-    @State private var searchText = ""
+    @State private var appliedSearch = ""
+    @State private var queueError: String?
+    @State private var storyError: String?
+    /// Day groups stay put while the open story changes. Rebuilt off the main thread when search or the list changes.
+    @State private var historyDays: [HistoryDay] = []
+    @State private var historyReady = false
+    @State private var historyHoldRevealed = false
+    @State private var setAside = NotInterestedCountBox()
+    @State private var setAsideTick = 0
 
     private var trimmedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Filters the history query already in memory. Search does not fetch.
-    private var visibleHistory: [Article] {
-        let query = trimmedQuery
-        guard !query.isEmpty else { return history }
-        return history.filter { article in
-            guard article.isStored else { return false }
-            return article.title.localizedCaseInsensitiveContains(query)
-                || article.readingNote.localizedCaseInsensitiveContains(query)
-                || (article.readingTakeawayLine?.localizedCaseInsensitiveContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedCaseInsensitiveContains(query)
+    private var notInterestedCount: Int {
+        _ = setAsideTick
+        return setAside.value(in: modelContext)
+    }
+
+    private var historyHoldWaiting: Bool {
+        !historyReady && historyDays.isEmpty && notInterestedCount == 0 && history.contains(where: \.isStored)
+    }
+
+    private func reloadHistoryDays() async {
+        let searching = !trimmedQuery.isEmpty
+        let onScreen = HistoryViewModel.groupsOnTheOpenScreen(storyCount: history.count, isSearching: searching)
+        if onScreen {
+            historyDays = HistoryViewModel.days(from: history)
+            historyReady = true
         }
+        let edge = historyEdge
+        let query = trimmedQuery
+        let openSnaps: [HistoryStorySnap] = onScreen ? history.compactMap { article in
+            guard article.isStored else { return nil }
+            return HistoryStorySnap(
+                id: article.id,
+                completedAt: article.completedAt,
+                publishedAt: article.publishedAt,
+                title: "",
+                readingNote: "",
+                reactionRaw: "",
+                feedTitle: nil,
+                url: nil,
+                author: nil,
+                contentKind: ""
+            )
+        } : []
+        let container = modelContext.container
+        let plans = await Task.detached(priority: .userInitiated) {
+            let snaps = onScreen ? openSnaps : HistoryViewModel.snaps(searching: searching, in: container)
+            return HistoryViewModel.dayPlans(from: snaps, query: query)
+        }.value
+        guard !Task.isCancelled, edge == historyEdge else { return }
+        let byID = Dictionary(history.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let calendar = Calendar.current
+        historyDays = plans.map { plan in
+            HistoryDay(
+                day: plan.day,
+                label: OneFeedDateLabel.historySection(plan.day, calendar: calendar),
+                articles: plan.articleIDs.compactMap { byID[$0] }.filter(\.isStored)
+            )
+        }
+        historyReady = true
     }
 
-    private var days: [HistoryDay] {
-        HistoryViewModel.days(from: visibleHistory)
+    /// Search, every story, and the calendar day. Opening a story does not regroup the days.
+    /// Coming back the next morning moves “Today” and “Yesterday” forward.
+    private var historyEdge: Int {
+        _ = scenePhase
+        var token = ListIdentity.token(ids: history.lazy.map(\.id))
+        token = token &* 31 &+ appliedSearch.hashValue
+        token = token &* 31 &+ Calendar.current.startOfDay(for: .now).hashValue
+        return token
     }
 
     var body: some View {
         OneFeedReadingSplit(article: $selectedArticle) {
-            historyColumn
+            OneFeedSearchHost("Search history", applied: $appliedSearch) {
+                historyColumn
+            }
         } reader: { article in
             ReaderView(
                 article: article,
-                onFinish: { _ in selectedArticle = nil },
+                onFinish: { state in
+                    guard article.isStored else {
+                        selectedArticle = nil
+                        return true
+                    }
+                    do {
+                        try ArticleActions.apply(state, to: article, in: modelContext)
+                    } catch {
+                        storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                        return false
+                    }
+                    selectedArticle = nil
+                    return true
+                },
                 onClose: { selectedArticle = nil },
                 onPutInQueue: {
                     putInQueue(article)
                     selectedArticle = nil
                 }
             )
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
     }
 
     private var historyColumn: some View {
         Group {
-            if trimmedQuery.isEmpty && days.isEmpty && notInterested.isEmpty {
-                EmptyLibraryState(
-                    title: "No history yet",
-                    systemImage: "clock",
-                    description: "Read and skipped pieces appear here quietly."
-                )
-            } else if !trimmedQuery.isEmpty && days.isEmpty {
-                EmptyLibraryState(
-                    title: "No matches",
-                    systemImage: "magnifyingglass",
-                    description: "Try a title, note, or source name."
-                )
+            if LibraryHold.showsExplanation(
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: historyReady,
+                    provisionalHasRows: history.contains(where: \.isStored) || notInterestedCount > 0,
+                    plannedHasRows: !historyDays.isEmpty || notInterestedCount > 0
+                ),
+                ready: historyReady,
+                hasPlannedRows: !historyDays.isEmpty || notInterestedCount > 0
+            ) {
+                if trimmedQuery.isEmpty {
+                    EmptyLibraryState(
+                        title: "No history yet",
+                        systemImage: "clock",
+                        description: "Read and skipped pieces from Today and Queue land here.",
+                        actionTitle: "Open Today",
+                        action: { NotificationCenter.default.post(name: OneFeedNotify.openToday, object: nil) }
+                    )
+                } else {
+                    EmptyLibraryState(
+                        title: "No matches",
+                        systemImage: "magnifyingglass",
+                        description: "Try a title, note, or source name."
+                    )
+                }
+            } else if !historyReady && historyDays.isEmpty && notInterestedCount == 0 {
+                if LibraryHold.showsStoredRows(
+                    waiting: history.contains(where: \.isStored),
+                    revealed: historyHoldRevealed
+                ) {
+                    List {
+                        ForEach(history.filter(\.isStored)) { article in
+                            Button { selectedArticle = article } label: {
+                                ArticleRow(article: article, status: article.historyStatus)
+                            }
+                            .buttonStyle(DirectoryRowButtonStyle())
+                            .articleListRow(isSelected: selectedArticle?.id == article.id)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
                     if trimmedQuery.isEmpty {
                         Section {
                             NavigationLink {
                                 NotInterestedView()
+                                    .onDisappear { refreshSetAsideCount() }
                             } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Not interested")
                                         .font(.body)
                                         .foregroundStyle(OneFeedTheme.ink)
-                                    Text(notInterested.isEmpty
+                                    Text(notInterestedCount == 0
                                          ? "Set aside, grouped by source"
-                                         : notInterested.count == 1 ? "1 set aside" : "\(notInterested.count) set aside")
+                                         : notInterestedCount == 1 ? "1 set aside" : "\(notInterestedCount) set aside")
                                         .font(.subheadline)
                                         .foregroundStyle(OneFeedTheme.graphite)
                                 }
@@ -86,7 +195,7 @@ struct HistoryView: View {
                         .listRowBackground(OneFeedTheme.paper)
                     }
 
-                    ForEach(days) { group in
+                    ForEach(historyDays) { group in
                         Section {
                             ForEach(group.articles.filter(\.isStored)) { article in
                                 Button { selectedArticle = article } label: {
@@ -117,15 +226,78 @@ struct HistoryView: View {
         .navigationTitle("History")
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
-        .oneFeedSearchable($searchText, prompt: "Search history")
+        .onChange(of: selectedArticle?.id) { _, id in
+            if id == nil { refreshSetAsideCount() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { refreshSetAsideCount() }
+        }
+        .task(id: historyEdge) {
+            await reloadHistoryDays()
+        }
+        .task(id: historyHoldWaiting) {
+            historyHoldRevealed = false
+            guard historyHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, historyHoldWaiting else { return }
+            historyHoldRevealed = true
+        }
+        .alert("Couldn’t put that in Queue", isPresented: Binding(
+            get: { queueError != nil },
+            set: { if !$0 { queueError = nil } }
+        )) {
+            Button("OK", role: .cancel) { queueError = nil }
+        } message: {
+            Text(queueError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
+    }
+
+    private func refreshSetAsideCount() {
+        setAside.refresh(in: modelContext)
+        setAsideTick += 1
     }
 
     private func putInQueue(_ article: Article) {
         guard article.isStored else { return }
         let motion: Animation? = OneFeedMotion.allowsMotion ? OneFeedMotion.list : nil
+        var failure: Error?
         withAnimation(motion) {
-            try? ArticleQueueService().moveToQueue(article, in: modelContext)
+            do {
+                try ArticleQueueService().moveToQueue(article, in: modelContext)
+            } catch {
+                failure = error
+            }
         }
+        if let failure {
+            queueError = UserFacingFailure.message(for: failure, fallback: "Couldn’t put that in Queue.")
+        }
+    }
+}
+
+/// History’s “N set aside” line. The count is one query, then reused until the log screen closes or the app returns.
+private final class NotInterestedCountBox {
+    private var count = 0
+    private var loaded = false
+
+    func value(in context: ModelContext) -> Int {
+        if loaded { return count }
+        count = NotInterestedLog.count(in: context)
+        loaded = true
+        return count
+    }
+
+    func refresh(in context: ModelContext) {
+        count = NotInterestedLog.count(in: context)
+        loaded = true
     }
 }

@@ -29,8 +29,8 @@ nonisolated enum GoogleDriveOAuthError: Error, Equatable, LocalizedError, Sendab
             String(localized: "Google Drive sign-in could not be verified.")
         case .notSignedIn:
             String(localized: "Google Drive is not linked.")
-        case .tokenExchangeFailed(let message):
-            String(localized: "Google Drive sign-in failed. \(message)")
+        case .tokenExchangeFailed:
+            String(localized: "Google Drive sign-in failed. Try again.")
         }
     }
 }

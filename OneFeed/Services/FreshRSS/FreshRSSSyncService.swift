@@ -86,7 +86,7 @@ final class FreshRSSSyncService {
         } catch {
             try? await SwiftDataIngest.actor(from: context).setFreshRSSSyncError(
                 accountID: accountID,
-                message: error.localizedDescription
+                message: UserFacingFailure.message(for: error, fallback: "Couldn’t reach FreshRSS.")
             )
             throw error
         }
@@ -102,8 +102,12 @@ final class FreshRSSSyncService {
         default: kind = nil
         }
         guard let kind else { return }
+        let kindRaw = kind.rawValue
+        let descriptor = FetchDescriptor<PendingSyncMutation>(predicate: #Predicate {
+            $0.remoteArticleID == remoteID && $0.kindRawValue == kindRaw
+        })
+        if let pending = try? context.fetch(descriptor), !pending.isEmpty { return }
         context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: kind))
-        try? context.save()
     }
 
     /// Drops mutations for `remoteID` that were not already pending. Rows in `ids` stay.
@@ -113,19 +117,15 @@ final class FreshRSSSyncService {
             predicate: #Predicate { $0.remoteArticleID == remoteID }
         )
         let rows = (try? context.fetch(descriptor)) ?? []
-        var removed = false
         for row in rows where !ids.contains(row.id) {
             context.delete(row)
-            removed = true
         }
-        if removed { try? context.save() }
     }
 
     /// Queues a local markUnread. No network call.
     func enqueueCompensatingUnread(for article: Article, in context: ModelContext) {
         guard let remoteID = article.remoteID else { return }
         context.insert(PendingSyncMutation(remoteArticleID: remoteID, kind: .markUnread))
-        try? context.save()
     }
 
     func addSubscription(from input: String, folderName: String? = nil, in context: ModelContext) async throws -> Feed {
@@ -308,17 +308,22 @@ extension LibraryIngestActor {
         let article = existing ?? Article(guid: snapshot.guid, title: snapshot.title, feed: feed)
         let isNew = existing == nil
         if isNew { modelContext.insert(article) }
+        let replacementHTML = snapshot.contentHTML.flatMap { remoteHTML in
+            FreshRSSBodyLength.replacement(
+                article: article,
+                remoteHTML: remoteHTML,
+                isNew: isNew,
+                remoteMinutes: snapshot.consumeMinutes
+            )
+        }
         article.guid = snapshot.guid
         article.title = snapshot.title
         article.url = snapshot.url
         article.author = snapshot.author
         article.publishedAt = snapshot.publishedAt ?? article.publishedAt
         article.summary = snapshot.summary
-        if let remoteHTML = snapshot.contentHTML {
-            let existingHTML = article.contentHTML ?? ""
-            if remoteHTML.count >= existingHTML.count {
-                article.contentHTML = remoteHTML
-            }
+        if let replacementHTML {
+            article.contentHTML = replacementHTML
         }
         if let minutes = snapshot.consumeMinutes, minutes > 0 {
             article.estimatedReadingMinutes = max(article.estimatedReadingMinutes, minutes)
@@ -368,6 +373,68 @@ extension LibraryIngestActor {
 }
 
 extension FreshRSSSyncService: FreshRSSSyncing {}
+
+/// Decides whether a remote body replaces the stored one without faulting a saved article.
+enum FreshRSSBodyLength {
+    /// Reads of `contentHTML` on the article being synced. A saved body is measured elsewhere.
+    static var liveHTMLReads = 0
+
+    static func replacement(article: Article, remoteHTML: String, isNew: Bool, remoteMinutes: Int?) -> String? {
+        switch FreshRSSBodyChoice.choice(
+            isNew: isNew,
+            storedMinutes: article.estimatedReadingMinutes,
+            remoteMinutes: remoteMinutes
+        ) {
+        case .replace:
+            return remoteHTML
+        case .keep:
+            return nil
+        case .compareLengths:
+            return remoteHTML.count >= count(article) ? remoteHTML : nil
+        }
+    }
+
+    private static func count(_ article: Article) -> Int {
+        if usesLiveHTML(article) {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        guard let container = article.modelContext?.container else {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let matchID = article.id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else {
+            liveHTMLReads += 1
+            return article.contentHTML?.count ?? 0
+        }
+        return stored.contentHTML?.count ?? 0
+    }
+
+    private static func usesLiveHTML(_ article: Article) -> Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
+}
+
+/// A longer stored read stays on disk during sync. Equal estimates still compare the text.
+enum FreshRSSBodyChoice: Equatable {
+    case replace
+    case keep
+    case compareLengths
+
+    static func choice(isNew: Bool, storedMinutes: Int, remoteMinutes: Int?) -> FreshRSSBodyChoice {
+        if isNew { return .replace }
+        if let remoteMinutes, remoteMinutes > 0, storedMinutes > remoteMinutes { return .keep }
+        return .compareLengths
+    }
+}
 
 enum FreshRSSSyncError: LocalizedError {
     case missingCredentials

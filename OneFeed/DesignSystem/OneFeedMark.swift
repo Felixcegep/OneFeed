@@ -46,6 +46,27 @@ enum OneFeedMotion {
         }
         try? await Task.sleep(for: .milliseconds(milliseconds))
     }
+
+    /// Plays only after the story write succeeds. A failed finish stays silent.
+    static func acknowledge(_ state: ArticleState) {
+        #if os(iOS)
+        switch state {
+        case .saved, .read:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .skipped:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.55)
+        default:
+            break
+        }
+        #elseif os(macOS)
+        switch state {
+        case .saved, .read, .skipped:
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        default:
+            break
+        }
+        #endif
+    }
 }
 
 /// The OneFeed RSS mark, recast in attention on plaster.
@@ -75,26 +96,25 @@ struct OneFeedMark: View {
     }
 }
 
-/// Thinking pulse: 1200ms scale 1.0 → 1.15. Frozen when inactive or Reduce Motion.
+/// Thinking pulse: scale 1.0 → 1.15 and back. Still when inactive or Reduce Motion.
 struct OneFeedMarkPulse: View {
     var isActive: Bool
     var size: CGFloat = 28
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expanded = false
+
+    private var animates: Bool { isActive && !reduceMotion }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion)) { timeline in
-            OneFeedMark(size: size)
-                .scaleEffect((isActive && !reduceMotion) ? Self.pulseScale(at: timeline.date) : 1)
-        }
-        .accessibilityLabel(isActive ? "Updating" : "")
-        .accessibilityAddTraits(isActive ? .updatesFrequently : [])
-    }
-
-    private static func pulseScale(at date: Date) -> CGFloat {
-        let period = 1.2
-        let cycle = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)
-        let wave = 0.5 - 0.5 * cos(2 * Double.pi * (cycle / period))
-        return CGFloat(1.0 + 0.15 * wave)
+        OneFeedMark(size: size)
+            .scaleEffect(animates && expanded ? 1.15 : 1)
+            .animation(animates ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) : .easeOut(duration: 0.2), value: expanded)
+            .onAppear { expanded = animates }
+            .onChange(of: animates) { _, active in
+                expanded = active
+            }
+            .accessibilityLabel(isActive ? "Updating" : "")
+            .accessibilityAddTraits(isActive ? .updatesFrequently : [])
     }
 }
 
@@ -160,6 +180,7 @@ struct OneFeedBrandLockup: View {
             VStack(spacing: 6) {
                 Text("OneFeed")
                     .font(OneFeedTheme.serifDisplay(24))
+                    .oneFeedLegibleWeight()
                     .foregroundStyle(OneFeedTheme.ink)
                 if showsTagline {
                     GalleryLabel(text: "One article at a time")
@@ -218,17 +239,18 @@ struct OneFeedDecisionCurtain: View {
         .ignoresSafeArea()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(caption)
-        .onAppear {
+        .task {
             if reduceMotion {
                 visible = true
                 showCaption = true
-                return
-            }
-            withAnimation(OneFeedMotion.decision) { visible = true }
-            Task { @MainActor in
+            } else {
+                withAnimation(OneFeedMotion.decision) { visible = true }
                 try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
                 withAnimation(OneFeedMotion.overlay) { showCaption = true }
             }
+            guard !caption.isEmpty else { return }
+            AccessibilityNotification.Announcement(caption).post()
         }
     }
 

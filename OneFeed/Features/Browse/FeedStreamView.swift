@@ -28,15 +28,23 @@ private struct FeedDayGroup: Identifiable {
 
 struct FeedStreamView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-        sort: \Article.publishedAt,
-        order: .reverse
-    ) private var articles: [Article]
+    @Query private var articles: [Article]
+
+    init() {
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        _articles = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        ))
+    }
     @Query(sort: \Feed.title) private var feeds: [Feed]
     @State private var refresh = BrowseRefresh()
     @State private var selectedArticle: Article?
-    @State private var search = ""
+    @State private var storyError: String?
+    @State private var appliedSearch = ""
     @State private var selectedFolder: FeedFolderID?
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
@@ -54,12 +62,12 @@ struct FeedStreamView: View {
                 return allowed.contains(feedID)
             }
         }
-        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return open }
         return open.filter {
-            $0.title.localizedCaseInsensitiveContains(query)
-                || ($0.feed?.title.localizedCaseInsensitiveContains(query) ?? false)
-                || ($0.displayExcerpt?.localizedCaseInsensitiveContains(query) ?? false)
+            $0.title.localizedStandardContains(query)
+                || ($0.feed?.title.localizedStandardContains(query) ?? false)
+                || ($0.displayExcerpt?.localizedStandardContains(query) ?? false)
         }
     }
 
@@ -68,14 +76,94 @@ struct FeedStreamView: View {
     }
 
     var body: some View {
+        OneFeedSearchHost("Search articles", applied: $appliedSearch) {
+            streamColumn
+        }
+        .background(OneFeedTheme.plaster.ignoresSafeArea())
+        .navigationTitle("Feed")
+        .oneFeedLargeTitle()
+        .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
+        .modifier(FeedStreamRefreshChrome(refresh: refresh))
+        .toolbar {
+            ToolbarItemGroup(placement: .oneFeedTrailing) {
+                Button("Add Source", systemImage: "plus") { showingAddSource = true }
+                Menu {
+                    Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
+                        toolbarDestination = .sources
+                    }
+                    Button("Settings", systemImage: "gearshape") {
+                        toolbarDestination = .settings
+                    }
+                    Button("History", systemImage: "clock") {
+                        toolbarDestination = .history
+                    }
+                    Button("Folders", systemImage: "folder") {
+                        toolbarDestination = .folders
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("More")
+            }
+        }
+        .navigationDestination(item: $toolbarDestination) { destination in
+            switch destination {
+            case .sources: SourcesView()
+            case .settings: SettingsView()
+            case .history: HistoryView()
+            case .folders: FoldersView()
+            }
+        }
+        .refreshable { await refresh.refresh(in: modelContext) }
+        .sheet(isPresented: $showingAddSource) {
+            AddSourceView(onAdded: { Task { await refresh.refresh(in: modelContext) } })
+        }
+        .oneFeedArticleCover(item: $selectedArticle) { article in
+            ReaderView(article: article) { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                do {
+                    try ArticleActions.apply(state, to: article, in: modelContext)
+                } catch {
+                    storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                    return false
+                }
+                selectedArticle = nil
+                return true
+            }
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .alert("Couldn’t refresh", isPresented: Binding(
+            get: { refresh.presentedError != nil },
+            set: { if !$0 { refresh.presentedError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(refresh.presentedError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
+    }
+
+    private var streamColumn: some View {
         Group {
             if visible.isEmpty && folderSummaries.count <= 1 {
                 EmptyLibraryState(
                     title: emptyTitle,
-                    systemImage: search.isEmpty ? "sparkles" : "magnifyingglass",
+                    systemImage: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "sparkles" : "magnifyingglass",
                     description: emptyDescription,
-                    actionTitle: search.isEmpty ? "Add a source" : nil,
-                    action: search.isEmpty ? { showingAddSource = true } : nil
+                    actionTitle: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Add a source" : nil,
+                    action: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? { showingAddSource = true } : nil
                 )
             } else {
                 ScrollView {
@@ -84,7 +172,7 @@ struct FeedStreamView: View {
                         if visible.isEmpty {
                             EmptyLibraryState(
                                 title: emptyTitle,
-                                systemImage: search.isEmpty ? "sparkles" : "magnifyingglass",
+                                systemImage: appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "sparkles" : "magnifyingglass",
                                 description: emptyDescription
                             )
                             .frame(maxWidth: .infinity, minHeight: 240)
@@ -128,65 +216,6 @@ struct FeedStreamView: View {
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
                 .clipped()
             }
-        }
-        .background(OneFeedTheme.plaster.ignoresSafeArea())
-        .navigationTitle("Feed")
-        .oneFeedLargeTitle()
-        .oneFeedPaperToolbar()
-        .oneFeedScrollEdge()
-        .refreshProgressBanner(refresh.progress)
-        .oneFeedSearchable($search, prompt: "Search articles")
-        .toolbar {
-            ToolbarItemGroup(placement: .oneFeedTrailing) {
-                OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
-                    Task { await refresh.refresh(in: modelContext) }
-                }
-                Button("Add Source", systemImage: "plus") { showingAddSource = true }
-                Menu {
-                    Button("Sources", systemImage: "dot.radiowaves.left.and.right") {
-                        toolbarDestination = .sources
-                    }
-                    Button("Settings", systemImage: "gearshape") {
-                        toolbarDestination = .settings
-                    }
-                    Button("History", systemImage: "clock") {
-                        toolbarDestination = .history
-                    }
-                    Button("Folders", systemImage: "folder") {
-                        toolbarDestination = .folders
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                }
-                .accessibilityLabel("More")
-            }
-        }
-        .navigationDestination(item: $toolbarDestination) { destination in
-            switch destination {
-            case .sources: SourcesView()
-            case .settings: SettingsView()
-            case .history: HistoryView()
-            case .folders: FoldersView()
-            }
-        }
-        .refreshable { await refresh.refresh(in: modelContext) }
-        .sheet(isPresented: $showingAddSource) { AddSourceView() }
-        .oneFeedArticleCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { state in
-                selectedArticle = nil
-                guard article.isStored else { return }
-                ArticleActions.apply(state, to: article, in: modelContext)
-            }
-            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
-            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
-        }
-        .alert("Couldn’t refresh", isPresented: Binding(
-            get: { refresh.presentedError != nil },
-            set: { if !$0 { refresh.presentedError = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(refresh.presentedError ?? "")
         }
     }
 
@@ -239,13 +268,13 @@ struct FeedStreamView: View {
     }
 
     private var emptyTitle: String {
-        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "No matches" }
         if selectedFolder != nil { return "Nothing in this folder" }
         return "Nothing new"
     }
 
     private var emptyDescription: String {
-        if !search.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if !appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Try a source name or a different phrase."
         }
         if selectedFolder != nil {
@@ -276,5 +305,23 @@ struct FeedStreamView: View {
             FeedDayGroup(kind: .yesterday, articles: yesterday),
             FeedDayGroup(kind: .earlier, articles: earlier)
         ].filter { !$0.articles.isEmpty }
+    }
+}
+
+/// Progress ticks stay on this chrome. The stream does not read the progress line.
+private struct FeedStreamRefreshChrome: ViewModifier {
+    var refresh: BrowseRefresh
+    @Environment(\.modelContext) private var modelContext
+
+    func body(content: Content) -> some View {
+        content
+            .refreshProgressBanner(refresh.progress)
+            .toolbar {
+                ToolbarItem(placement: .oneFeedTrailing) {
+                    OneFeedToolbarRefresh(isRefreshing: refresh.isRefreshing) {
+                        Task { await refresh.refresh(in: modelContext) }
+                    }
+                }
+            }
     }
 }

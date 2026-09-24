@@ -359,9 +359,7 @@ final class FeedService {
     }
 
     private func existingArticle(url: URL, in context: ModelContext) -> Article? {
-        let key = ArticleIdentity.normalizedURLString(url)
-        let articles = (try? context.fetch(FetchDescriptor<Article>())) ?? []
-        return articles.first { ArticleIdentity.normalizedURLString($0.url) == key }
+        ArticleIdentity.storedArticle(matching: url, in: context)
     }
 
     private func fetchDocument(_ url: URL) async throws -> Data {

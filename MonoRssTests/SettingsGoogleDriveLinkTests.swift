@@ -1,10 +1,47 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import OneFeed
 
 @Suite(.serialized)
 @MainActor
 struct SettingsGoogleDriveLinkTests {
+    @Test func openingSettingsDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        context.insert(Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!))
+        try context.save()
+        let model = SettingsViewModel()
+        model.configure(with: context)
+        #expect(model.feeds.isEmpty)
+        #expect(model.accounts.isEmpty)
+        model.reload()
+        #expect(model.feeds.map(\.title) == ["Swift"])
+    }
+
+    @Test func restoringAnAlreadyLoadedCatalogDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        _ = try FeedSeedService().apply(in: context)
+        let model = SettingsViewModel()
+        model.configure(with: context)
+        model.seedAllCatalogSources()
+        #expect(model.feeds.isEmpty)
+        #expect(model.statusTitle == "Sources already loaded")
+    }
+
+    @Test func syncingFreshRSSDoesNotFetchEveryFeed() async throws {
+        let context = try InMemoryStore.makeContext()
+        context.insert(Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!))
+        context.insert(SyncAccount(provider: .freshRSS, serverURL: URL(string: "https://rss.test")!, username: "reader"))
+        try context.save()
+        let model = SettingsViewModel(freshRSSService: IdleSettingsSync(), feedService: IdleSettingsFeeds())
+        model.configure(with: context)
+        model.reloadAccounts()
+        #expect(model.feeds.isEmpty)
+        await model.sync()
+        #expect(model.feeds.isEmpty)
+        #expect(model.statusTitle == "FreshRSS is up to date")
+    }
+
     @Test func openingExistingFileLinksWithoutHashAndRequestsManualSync() async throws {
         let drive = SettingsDriveFake()
         drive.existingFile = GoogleDriveFile(id: "file-1", name: "", md5Checksum: "ignore")
@@ -114,4 +151,29 @@ private final class SettingsDriveFake: GoogleDriveAPIClienting, @unchecked Senda
         didAskForAccountEmail = true
         return email
     }
+}
+
+@MainActor
+private final class IdleSettingsSync: FreshRSSSyncing {
+    func connect(serverURL: URL, username: String, password: String, in context: ModelContext) async throws -> SyncAccount {
+        SyncAccount(provider: .freshRSS, serverURL: serverURL, username: username)
+    }
+    func disconnect(account: SyncAccount, in context: ModelContext) async throws {}
+    func sync(account: SyncAccount, in context: ModelContext, progress: RefreshProgress?) async throws {}
+    func enqueueMutation(for article: Article, transition: ArticleState, in context: ModelContext) {}
+    func addSubscription(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "https://source.test/rss")!)
+    }
+    func removeSubscription(_ feed: Feed, in context: ModelContext) async throws {}
+    func subscribeLocalFeeds(in context: ModelContext) async throws {}
+}
+
+@MainActor
+private final class IdleSettingsFeeds: FeedRepository {
+    func addSource(from input: String, folderName: String?, in context: ModelContext) async throws -> Feed {
+        Feed(title: input, feedURL: URL(string: "https://source.test/rss")!)
+    }
+    func refresh(_ feed: Feed, in context: ModelContext) async throws {}
+    func refreshAll(in context: ModelContext, progress: RefreshProgress?) async throws {}
+    func backfillYouTubeDurations(in context: ModelContext) async {}
 }

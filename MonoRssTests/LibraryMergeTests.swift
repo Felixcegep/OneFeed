@@ -409,6 +409,92 @@ struct LibraryMergeTests {
         #expect(document.feeds.count == 1)
         #expect(document.feeds[0].resolvedFolderNames == ["Security"])
     }
+
+    @Test func applyingTheCurrentStoryUsesTheStoredDeckID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let html = "<p>\(String(repeating: "word ", count: 80))</p>"
+        let article = Article(
+            guid: "current",
+            title: "Current",
+            url: URL(string: "https://source.test/current"),
+            contentHTML: html,
+            state: .queued,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .queued, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+        let key = ArticleIdentity.libraryKey(url: article.url, guid: article.guid, id: article.id)
+
+        var document = LibraryDocument.empty()
+        document.currentArticleKey = key
+        try LibraryMerge.applyCurrent(document, to: context)
+
+        #expect(item.status == .current)
+        #expect(article.state == .current)
+        #expect(article.contentHTML == html)
+    }
+
+    @Test func listAndLibraryFetchesLeaveThePageOut() throws {
+        #expect(ArticleListFetch.rowColumns.contains { $0 == \Article.contentHTML } == false)
+        #expect(ArticleListFetch.rowColumns.contains { $0 == \Article.videoChatJSON } == false)
+        #expect(ArticleListFetch.libraryColumns.contains { $0 == \Article.contentHTML } == false)
+        #expect(ArticleListFetch.libraryColumns.contains { $0 == \Article.videoChatJSON } == false)
+
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let marker = "BODYMARKER-NOT-IN-LIBRARY"
+        let article = Article(
+            guid: "story",
+            title: "Story",
+            url: URL(string: "https://source.test/story"),
+            summary: "A short blurb",
+            contentHTML: "<p>\(marker)</p>",
+            state: .queued,
+            readingNote: "Keep this note",
+            feed: feed
+        )
+        article.videoChatJSON = Data(marker.utf8)
+        context.insert(article)
+        try context.save()
+
+        let listed = try context.fetch(ArticleListFetch.rows())
+        #expect(listed.first?.title == "Story")
+        #expect(listed.first?.estimatedReadingMinutes == article.estimatedReadingMinutes)
+        #expect(listed.first?.feed?.title == "Source")
+
+        let snapshot = try LibraryMerge.snapshot(from: context)
+        let encoded = try snapshot.encoded()
+        let text = String(decoding: encoded, as: UTF8.self)
+        #expect(text.contains(marker) == false)
+        #expect(snapshot.articles.first?.readingNote == "Keep this note")
+
+        var document = LibraryDocument.empty()
+        document.articles = [
+            LibraryArticle(
+                key: "url:https://source.test/story",
+                feedURL: "https://source.test/rss",
+                guid: "story",
+                title: "Renamed",
+                url: "https://source.test/story",
+                state: .queued,
+                completedAt: nil,
+                isRemoteStarred: false,
+                updatedAt: .now
+            )
+        ]
+        try LibraryMerge.apply(document, to: context)
+        #expect(article.title == "Renamed")
+        #expect(article.contentHTML?.contains(marker) == true)
+    }
 }
 
 private extension LibraryDocument {

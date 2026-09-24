@@ -8,32 +8,74 @@ final class ReadingUndoCenter {
     static let shared = ReadingUndoCenter()
 
     private(set) var offer: Offer?
+    var undoError: String?
     private var dismissTask: Task<Void, Never>?
 
     struct Offer: Identifiable {
         let id = UUID()
-        let title: String
-        let undo: () -> Void
+        var title: String
+        var strongerTitle: String?
+        let undo: () -> Bool
+        var stronger: (() -> Bool)?
     }
 
-    func present(title: String, undo: @escaping () -> Void) {
+    func present(
+        title: String,
+        strongerTitle: String? = nil,
+        stronger: (() -> Bool)? = nil,
+        undo: @escaping () -> Bool
+    ) {
         dismissTask?.cancel()
-        let shown = Offer(title: title, undo: undo)
+        let shown = Offer(
+            title: title,
+            strongerTitle: strongerTitle,
+            undo: undo,
+            stronger: stronger
+        )
         offer = shown
+        scheduleDismiss(of: shown.id)
+    }
+
+    @discardableResult
+    func performUndo() -> Bool {
+        guard let current = offer else { return false }
+        guard current.undo() else {
+            undoError = String(localized: "Couldn’t put that story back.")
+            scheduleDismiss(of: current.id)
+            return false
+        }
+        offer = nil
+        dismissTask?.cancel()
+        return true
+    }
+
+    /// Skip can become Not interested. Undo still restores the story from before the skip.
+    @discardableResult
+    func performStronger() -> Bool {
+        guard let current = offer, let action = current.stronger else { return false }
+        guard action() else {
+            undoError = String(localized: "Couldn’t file that as not interested.")
+            scheduleDismiss(of: current.id)
+            return false
+        }
+        guard var updated = offer else { return true }
+        updated.stronger = nil
+        updated.strongerTitle = nil
+        updated.title = String(localized: "Not interested")
+        offer = updated
+        scheduleDismiss(of: updated.id)
+        return true
+    }
+
+    private func scheduleDismiss(of id: UUID) {
+        dismissTask?.cancel()
         dismissTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            if offer?.id == shown.id {
+            if offer?.id == id {
                 offer = nil
             }
         }
-    }
-
-    func performUndo() {
-        let action = offer?.undo
-        offer = nil
-        dismissTask?.cancel()
-        action?()
     }
 }
 
@@ -84,10 +126,28 @@ enum ReadingUndo {
                 .map(\.id)
         }
         let marked = article.notInterested && !snapshot.notInterested
+        let articleID = article.id
+        let stronger: (() -> Bool)? = marked ? nil : {
+            guard let article = storedArticle(id: articleID, in: context) else { return false }
+            do {
+                try NotInterestedLog.record(article, in: context)
+                return true
+            } catch {
+                return false
+            }
+        }
         ReadingUndoCenter.shared.present(
-            title: marked ? String(localized: "Not interested") : String(localized: "Skipped")
+            title: marked ? String(localized: "Not interested") : String(localized: "Skipped"),
+            strongerTitle: marked ? nil : String(localized: "Not interested"),
+            stronger: stronger
         ) {
-            restore(snapshot, in: context)
+            do {
+                try restore(snapshot, in: context)
+                return true
+            } catch {
+                context.rollback()
+                return false
+            }
         }
     }
 
@@ -115,17 +175,17 @@ enum ReadingUndo {
         let remoteID = article.remoteID
         let pending = remoteID.map { pendingMutations(remoteID: $0, in: context) } ?? []
         if let deck = try? DailyDeckService().todayDeck(in: context),
-           let item = deck.items.first(where: { $0.article?.id == article.id }) {
+           let item = deck.items.first(where: { $0.resolvedArticleID() == article.id }) {
             deckItemID = item.id
             deckStatusRaw = item.statusRawValue
             if item.status == .current {
                 let next = deck.items
-                    .filter { $0.status == .queued && $0.article?.isStored == true }
+                    .filter { $0.status == .queued && $0.articleExists(in: context) }
                     .sorted { $0.position < $1.position }
                     .first
                 promotedItemID = next?.id
                 promotedStatusRaw = next?.statusRawValue
-                if let nextArticle = next?.article {
+                if let id = next?.resolvedArticleID(), let nextArticle = DailyDeckService.lightweightArticle(id: id, in: context) {
                     promotedArticleID = nextArticle.id
                     promotedStateRaw = nextArticle.stateRawValue
                     promotedCompletedAt = nextArticle.completedAt
@@ -157,7 +217,7 @@ enum ReadingUndo {
         )
     }
 
-    private static func restore(_ snapshot: FinishSnapshot, in context: ModelContext) {
+    private static func restore(_ snapshot: FinishSnapshot, in context: ModelContext) throws {
         guard let article = storedArticle(id: snapshot.articleID, in: context) else { return }
         article.stateRawValue = snapshot.stateRaw
         article.completedAt = snapshot.completedAt
@@ -187,7 +247,7 @@ enum ReadingUndo {
         }
         LibraryChange.note(article)
         reconcileRemoteQueue(snapshot, article: article, in: context)
-        try? context.save()
+        try context.save()
         let current = (try? DailyDeckService().currentItem(in: context))?.article
         WidgetSnapshotStore.write(article: current ?? article)
     }
@@ -255,35 +315,84 @@ struct ReadingUndoBanner: ViewModifier {
     var onApplied: () -> Void = {}
     @State private var center = ReadingUndoCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     func body(content: Content) -> some View {
         content
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let offer = center.offer {
-                    bar(offer)
-                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                ZStack {
+                    if let offer = center.offer {
+                        bar(offer)
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
+                .onChange(of: undoAnnouncement) { _, message in
+                    guard !message.isEmpty else { return }
+                    AccessibilityNotification.Announcement(message).post()
                 }
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: center.offer?.id)
+            .alert("Couldn’t update that story", isPresented: Binding(
+                get: { center.undoError != nil },
+                set: { if !$0 { center.undoError = nil } }
+            )) {
+                Button("OK", role: .cancel) { center.undoError = nil }
+            } message: {
+                Text(center.undoError ?? "")
+            }
+    }
+
+    private var undoAnnouncement: String {
+        guard let offer = center.offer else { return "" }
+        if let strongerTitle = offer.strongerTitle {
+            return "\(offer.title). Undo, or \(strongerTitle)."
+        }
+        return "\(offer.title). Undo available."
     }
 
     private func bar(_ offer: ReadingUndoCenter.Offer) -> some View {
-        HStack(spacing: 12) {
-            Text(offer.title)
-                .font(.subheadline.weight(.medium))
+        let title = Text(offer.title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(OneFeedTheme.ink)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: false, vertical: true)
+        let actions = HStack(spacing: 8) {
+            if let strongerTitle = offer.strongerTitle {
+                Button(strongerTitle) {
+                    if center.performStronger() {
+                        onApplied()
+                    }
+                }
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(OneFeedTheme.ink)
-                .lineLimit(1)
-            Spacer(minLength: 8)
+                .frame(minHeight: 44)
+                .accessibilityHint("Files this story as not interested. Undo still puts it back.")
+            }
             Button("Undo") {
-                center.performUndo()
-                onApplied()
+                if center.performUndo() {
+                    onApplied()
+                }
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(OneFeedTheme.plaster)
             .padding(.horizontal, 14)
-            .frame(minHeight: 36)
+            .frame(minHeight: 44)
             .background(OneFeedTheme.ink, in: Capsule())
             .accessibilityHint("Puts the story back")
+        }
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    title
+                    actions
+                }
+            } else {
+                HStack(spacing: 12) {
+                    title
+                    Spacer(minLength: 8)
+                    actions
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

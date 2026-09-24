@@ -447,6 +447,52 @@ struct ImportedDocumentTests {
         try ZipArchive.storedArchive(entries: entries).write(to: url)
         return url
     }
+
+    @Test func aSecondImportWaitsUntilTheFirstFinishes() async {
+        DocumentImportLane.resetForTests()
+        let gate = ImportOverlapGate()
+        let first = Task {
+            try await DocumentImportLane.run { await gate.enter() }
+        }
+        for _ in 0..<50 where gate.entered == 0 {
+            await Task.yield()
+        }
+        let second = Task {
+            try await DocumentImportLane.run { await gate.enter() }
+        }
+        for _ in 0..<20 {
+            await Task.yield()
+        }
+        gate.release()
+        _ = try? await first.value
+        _ = try? await second.value
+        #expect(gate.entered == 2)
+        #expect(gate.maxInFlight == 1)
+        DocumentImportLane.resetForTests()
+    }
+}
+
+@MainActor
+private final class ImportOverlapGate {
+    private(set) var entered = 0
+    private(set) var maxInFlight = 0
+    private var inFlight = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func enter() async {
+        inFlight += 1
+        maxInFlight = max(maxInFlight, inFlight)
+        entered += 1
+        if entered == 1 {
+            await withCheckedContinuation { continuation = $0 }
+        }
+        inFlight -= 1
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private final class SourceImportURLProtocol: URLProtocol, @unchecked Sendable {

@@ -67,6 +67,25 @@ enum OneFeedTheme {
     }
 }
 
+/// Point-size fonts ignore Bold Text. Semantic styles already follow it.
+private struct OneFeedLegibleWeight: ViewModifier {
+    @Environment(\.legibilityWeight) private var legibilityWeight
+
+    func body(content: Content) -> some View {
+        if legibilityWeight == .bold {
+            content.fontWeight(.semibold)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func oneFeedLegibleWeight() -> some View {
+        modifier(OneFeedLegibleWeight())
+    }
+}
+
 /// Editorial labels: compact, scalable, and readable against paper or plaster.
 struct GalleryLabel: View {
     let text: String
@@ -141,7 +160,6 @@ struct PrimaryActionStyle: ButtonStyle {
             .background(OneFeedTheme.ink.opacity(isEnabled ? 1 : 0.35), in: Capsule())
             .scaleEffect((reduceMotion || !configuration.isPressed) ? 1 : 0.97)
             .animation(reduceMotion ? nil : OneFeedMotion.press, value: configuration.isPressed)
-            .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.55), trigger: configuration.isPressed)
     }
 }
 
@@ -188,21 +206,25 @@ struct DecisionActionStyle: ButtonStyle {
 /// Display-only attribution for subscribed stories and standalone saved links.
 enum ArticlePresentation {
     static func sourceName(for article: Article) -> String {
-        if let title = article.feed?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+        sourceName(feedTitle: article.feed?.title, url: article.url, author: article.author, contentKind: article.contentKind)
+    }
+
+    nonisolated static func sourceName(feedTitle: String?, url: URL?, author: String?, contentKind: String) -> String {
+        if let title = feedTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             return title
         }
-        if let host = article.url?.host(),
-           let scheme = article.url?.scheme?.lowercased(),
+        if let host = url?.host(),
+           let scheme = url?.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
             return host
         }
-        if article.contentKind == "epub" {
-            if let author = article.author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
+        if contentKind == "epub" {
+            if let author = author?.trimmingCharacters(in: .whitespacesAndNewlines), !author.isEmpty {
                 return author
             }
             return String(localized: "EPUB")
         }
-        if article.contentKind == "pdf" {
+        if contentKind == "pdf" {
             return String(localized: "PDF")
         }
         return String(localized: "Saved link")
@@ -212,6 +234,8 @@ enum ArticlePresentation {
 struct ArticleRow: View {
     let article: Article
     var status: String? = nil
+    /// Heard when the similar-story line is not drawn on the row yet.
+    var spokenStatus: String? = nil
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
@@ -260,12 +284,16 @@ struct ArticleRow: View {
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    thumbnailPlaceholder
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
+                        imageFailed = true
+                    }
+                    .frame(width: 64, height: 64)
+                    .clipped()
                 }
-                .frame(width: 64, height: 64)
-                .clipped()
             }
         }
         .padding(.leading, isCurrent ? 10 : 0)
@@ -284,16 +312,24 @@ struct ArticleRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
         .accessibilityHint("Opens this article")
+        .modifier(LateCaptionValue(SpokenCaption.value(spoken: spokenStatus, visible: status)))
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
+    }
+
+    private var thumbnailPlaceholder: some View {
+        RoundedRectangle(cornerRadius: OneFeedTheme.radius, style: .continuous)
+            .fill(OneFeedTheme.warm1)
+            .frame(width: 64, height: 64)
+            .accessibilityHidden(true)
     }
 
     private var meta: String {
         var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
-        parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
+        parts.append(OneFeedDateLabel.monthAndDay(article.publishedAt))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
         return parts.joined(separator: "  ·  ")
     }
@@ -302,18 +338,32 @@ struct ArticleRow: View {
 /// Photograph on paper, then authored serif. The crop is the work.
 struct FeaturedStory: View {
     let article: Article
+    var status: String? = nil
+    /// Heard when the similar-story line is not drawn on the card yet.
+    var spokenStatus: String? = nil
+    /// Set when the excerpt was already prepared off the main thread. A nil value then means the card has no preview.
+    var preparedExcerpt: String? = nil
+    var usesPreparedExcerpt = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var imageFailed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, fadesIn: true) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    RoundedRectangle(cornerRadius: OneFeedTheme.cardRadius, style: .continuous)
+                        .fill(OneFeedTheme.warm1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: OneFeedTheme.featuredHeight)
+                        .accessibilityHidden(true)
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.cardRadius, maxPixel: 1200, fadesIn: true) {
+                        imageFailed = true
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: OneFeedTheme.featuredHeight)
+                    .clipped()
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: OneFeedTheme.featuredHeight)
-                .clipped()
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -323,7 +373,7 @@ struct FeaturedStory: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                if let excerpt = article.displayExcerpt {
+                if let excerpt = usesPreparedExcerpt ? preparedExcerpt : article.displayExcerpt {
                     Text(excerpt)
                         .font(.subheadline)
                         .foregroundStyle(OneFeedTheme.graphite)
@@ -334,6 +384,12 @@ struct FeaturedStory: View {
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
                     .fixedSize(horizontal: false, vertical: true)
+                if let status {
+                    Text(status)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(OneFeedTheme.graphite)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 10) {
                     Label(openTitle, systemImage: openSymbol)
@@ -361,13 +417,14 @@ struct FeaturedStory: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(article.isCurrentReading ? .isSelected : [])
         .accessibilityHint("Opens this article")
+        .modifier(LateCaptionValue(SpokenCaption.value(spoken: spokenStatus, visible: status)))
         .onChange(of: article.imageURL) { _, _ in
             imageFailed = false
         }
     }
 
     private var byline: String {
-        var parts = [article.publishedAt.formatted(.dateTime.month(.abbreviated).day().year())]
+        var parts = [OneFeedDateLabel.monthDayAndYear(article.publishedAt)]
         if let duration = article.timedDurationPhrase { parts.append(duration) }
         return parts.joined(separator: "  ·  ")
     }
@@ -396,17 +453,39 @@ struct FeaturedStory: View {
     }
 }
 
+/// Applies a late caption for VoiceOver without replacing the row’s value when there is nothing new to say.
+private struct LateCaptionValue: ViewModifier {
+    var text: String?
+
+    func body(content: Content) -> some View {
+        if let text {
+            content.accessibilityValue(text)
+        } else {
+            content
+        }
+    }
+}
+
 struct ArticleThumbnail: View {
     let url: URL
     var cornerRadius: CGFloat = 10
+    var maxPixel: Int = 192
     var fadesIn = false
     var onUnavailable: (() -> Void)? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var image: CGImage?
     @State private var revealed = false
 
-    init(url: URL, cornerRadius: CGFloat = 10, fadesIn: Bool = false, onUnavailable: (() -> Void)? = nil) {
+    init(
+        url: URL,
+        cornerRadius: CGFloat = 10,
+        maxPixel: Int = 192,
+        fadesIn: Bool = false,
+        onUnavailable: (() -> Void)? = nil
+    ) {
         self.url = url
         self.cornerRadius = cornerRadius
+        self.maxPixel = maxPixel
         self.fadesIn = fadesIn
         self.onUnavailable = onUnavailable
     }
@@ -414,26 +493,28 @@ struct ArticleThumbnail: View {
     var body: some View {
         Color.clear
             .overlay {
-                AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                            .opacity((fadesIn && !revealed && !reduceMotion) ? 0 : 1)
-                            .onAppear { reveal() }
-                    case .failure:
-                        Color.clear
-                            .task { onUnavailable?() }
-                    default:
-                        Color.clear
-                    }
+                if let image {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                        .opacity((fadesIn && !revealed && !reduceMotion) ? 0 : 1)
                 }
             }
             .clipped()
             .clipShape(.rect(cornerRadius: cornerRadius, style: .continuous))
-            .onChange(of: url) { _, _ in
-                revealed = false
-            }
             .accessibilityHidden(true)
+            .task(id: url) {
+                revealed = false
+                let loaded = await ThumbnailCache.shared.image(for: url, maxPixel: maxPixel)
+                guard !Task.isCancelled else { return }
+                if let loaded {
+                    image = loaded
+                    reveal()
+                } else {
+                    image = nil
+                    onUnavailable?()
+                }
+            }
     }
 
     private func reveal() {
@@ -611,22 +692,23 @@ struct ArticleRatingGlyphs: View {
 struct ArticleRatingControl: View {
     let article: Article
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.modelContext) private var modelContext
+    @State private var saveError: String?
 
     var body: some View {
         if article.isStored {
             HStack(spacing: 2) {
                 ForEach(1...5, id: \.self) { star in
                     Button {
-                        guard article.isStored else { return }
+                        let next = article.rating == star ? 0 : star
                         withAnimation(reduceMotion ? nil : OneFeedMotion.press) {
-                            article.setRating(article.rating == star ? 0 : star)
-                            try? article.modelContext?.save()
+                            saveRating(next)
                         }
                     } label: {
                         Image(systemName: star <= article.rating ? "star.fill" : "star")
                             .font(.body)
                             .foregroundStyle(star <= article.rating ? OneFeedTheme.ink : OneFeedTheme.sand)
-                            .contentTransition(.symbolEffect(.replace))
+                            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -637,7 +719,45 @@ struct ArticleRatingControl: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel(article.rating == 0 ? "Rating" : "Rated \(article.rating) of 5")
+            .alert("Couldn’t save that rating", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
         }
+    }
+
+    private func saveRating(_ stars: Int) {
+        do {
+            try ArticleActions.rate(article, stars: stars, in: modelContext)
+        } catch {
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that rating.")
+        }
+    }
+}
+
+/// An empty library explains itself on the first frame. Rows that are already stored wait for their plan.
+enum LibraryHold {
+    static func showsExplanation(hasStoredRows: Bool, ready: Bool, hasPlannedRows: Bool) -> Bool {
+        if !hasStoredRows { return true }
+        return ready && !hasPlannedRows
+    }
+
+    /// A ready plan already knows whether rows exist. The provisional scan runs only while that plan is still outstanding.
+    static func storedRowsAreKnown(
+        planReady: Bool,
+        provisionalHasRows: @autoclosure () -> Bool,
+        plannedHasRows: Bool
+    ) -> Bool {
+        planReady || provisionalHasRows() || plannedHasRows
+    }
+
+    /// Rows already in memory stay hidden for a moment, then appear if the plan is still running.
+    static func showsStoredRows(waiting: Bool, revealed: Bool) -> Bool {
+        waiting && revealed
     }
 }
 
@@ -769,5 +889,65 @@ extension View {
             #if os(macOS)
             .alternatingRowBackgrounds(.disabled)
             #endif
+    }
+}
+
+/// Month-and-day labels for list rows. The same calendar day is formatted once.
+enum OneFeedDateLabel {
+    private static var monthDay: [Date: String] = [:]
+    private static var monthDayYear: [Date: String] = [:]
+    private static var longDate: [Date: String] = [:]
+
+    static func monthAndDay(_ date: Date) -> String {
+        label(for: date, in: &monthDay) { $0.formatted(.dateTime.month(.abbreviated).day()) }
+    }
+
+    static func monthDayAndYear(_ date: Date) -> String {
+        label(for: date, in: &monthDayYear) { $0.formatted(.dateTime.month(.abbreviated).day().year()) }
+    }
+
+    static func longDate(_ date: Date) -> String {
+        label(for: date, in: &longDate) { $0.formatted(date: .long, time: .omitted) }
+    }
+
+    /// Today and Yesterday stay words. An older year keeps the year so two Januaries do not share a label.
+    static func historySection(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        if calendar.component(.year, from: date) == calendar.component(.year, from: now) {
+            return monthAndDay(date)
+        }
+        return monthDayAndYear(date)
+    }
+
+    /// Same-day reads stay one phrase, so a caption does not grow from “1 minute ago” to “2 hours ago”.
+    static func readWhen(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "earlier today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "yesterday"
+        }
+        return monthAndDay(date)
+    }
+
+    /// A clock time on the same day. The string does not get longer as minutes pass.
+    static func syncStamp(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        if calendar.isDate(date, inSameDayAs: now) {
+            return date.formatted(date: .omitted, time: .shortened)
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Yesterday"
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private static func label(for date: Date, in store: inout [Date: String], make: (Date) -> String) -> String {
+        let day = Calendar.current.startOfDay(for: date)
+        if let cached = store[day] { return cached }
+        let value = make(date)
+        if store.count > 512 { store.removeAll(keepingCapacity: true) }
+        store[day] = value
+        return value
     }
 }

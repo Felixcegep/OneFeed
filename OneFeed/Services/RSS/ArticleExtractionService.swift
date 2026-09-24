@@ -42,34 +42,90 @@ nonisolated struct ArticleExtractionPolicy: Sendable {
 final class ArticleExtractionService {
     private let session: URLSession
     private let extractor: any ArticleExtracting
-    private let maxBytes = 1_048_576
 
     init(session: URLSession = .shared, extractor: any ArticleExtracting = SwiftReadabilityExtractor()) {
         self.session = session
         self.extractor = extractor
     }
 
-    func extractedHTML(for article: Article, policy: ArticleExtractionPolicy = ArticleExtractionPolicy()) async -> String? {
-        let existing = article.contentHTML ?? article.summary
-        if ProcessInfo.processInfo.arguments.contains("-uiTesting") { return existing }
-        guard policy.shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return existing }
-        guard let url = article.url else { return existing }
+    func extractedHTML(for article: Article, policy: ArticleExtractionPolicy = ArticleExtractionPolicy(), alreadyEligible: Bool = false) async -> String? {
+        if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+            return article.contentHTML ?? article.summary
+        }
+        if !alreadyEligible {
+            let articleID = article.id
+            if let container = article.modelContext?.container {
+                let shouldFetch = await Task.detached(priority: .utility) {
+                    Self.shouldFetchStoredArticle(id: articleID, policy: policy, in: container)
+                }.value
+                guard shouldFetch else { return nil }
+            } else {
+                let existing = article.contentHTML ?? article.summary
+                let kind = article.contentKind
+                let shouldFetch = await Task.detached(priority: .utility) {
+                    policy.shouldFetchPage(rssHTML: existing, kind: kind)
+                }.value
+                guard shouldFetch else { return existing }
+            }
+        }
+        let articleID = article.id
+        let existing: String?
+        if let container = article.modelContext?.container {
+            existing = await Task.detached(priority: .utility) {
+                Self.storedBodyFallback(id: articleID, in: container)
+            }.value
+        } else {
+            existing = article.contentHTML ?? article.summary
+        }
+        guard let url = article.url else { return nil }
+        let session = self.session
+        let extractor = self.extractor
+        let downloaded = await Self.downloadedArticle(url: url, session: session, extractor: extractor)
+        guard let downloaded, downloaded != existing else { return nil }
+        return downloaded
+    }
+
+    /// Downloads and extracts a page. Returns nil when the page cannot replace the stored body.
+    nonisolated static func downloadedArticle(
+        url: URL,
+        session: URLSession,
+        extractor: any ArticleExtracting
+    ) async -> String? {
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
         do {
             let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return existing }
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
             let pageURL = http.url ?? url
-            let slice = Data(data.prefix(maxBytes))
-            let extractor = self.extractor
+            let slice = Data(data.prefix(1_048_576))
+            let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
             return await Task.detached(priority: .utility) {
-                let html = String(data: slice, encoding: .utf8) ?? String(decoding: slice, as: UTF8.self)
-                return extractor.extract(fromHTML: html, pageURL: pageURL) ?? existing
+                extractor.extract(fromHTML: html, pageURL: pageURL)
             }.value
         } catch {
-            return existing
+            return nil
         }
+    }
+
+    /// Reads the stored teaser on another context so a failed download can keep it without copying it on the caller.
+    nonisolated static func storedBodyFallback(id articleID: UUID, in container: ModelContainer) -> String? {
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return nil }
+        return stored.contentHTML ?? stored.summary
+    }
+
+    /// Reads the stored body on another context so a full article is not copied before the fetch decision.
+    nonisolated static func shouldFetchStoredArticle(id articleID: UUID, policy: ArticleExtractionPolicy = ArticleExtractionPolicy(), in container: ModelContainer) -> Bool {
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else { return false }
+        return policy.shouldFetchPage(rssHTML: stored.contentHTML ?? stored.summary, kind: stored.contentKind)
     }
 
     /// Full-text only the current Today card and the next couple — not the whole library.
@@ -83,19 +139,20 @@ final class ArticleExtractionService {
             .compactMap(\.article)
         var bodies: [ExtractedBody] = []
         for article in targets {
-            let existing = article.contentHTML
-            if let html = await extractedHTML(for: article) {
-                if html != existing {
-                    article.contentHTML = html
-                    article.refreshEstimatedReadingMinutes()
-                    bodies.append(
-                        ExtractedBody(
-                            articleID: article.id,
-                            html: article.contentHTML ?? html,
-                            estimatedMinutes: article.estimatedReadingMinutes
-                        )
+            guard let html = await extractedHTML(for: article) else { continue }
+            if html != article.contentHTML {
+                let minutes = await Task.detached(priority: .utility) {
+                    ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+                }.value
+                article.contentHTML = html
+                article.raiseReadingEstimate(minutes)
+                bodies.append(
+                    ExtractedBody(
+                        articleID: article.id,
+                        html: html,
+                        estimatedMinutes: article.estimatedReadingMinutes
                     )
-                }
+                )
             }
         }
         try? await LibraryIngestActor(modelContainer: context.container).persistExtractedBodies(bodies)

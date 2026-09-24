@@ -68,6 +68,29 @@ struct DailyDeckTests {
         #expect(second.items.count == 1)
     }
 
+    @Test func finishedDeckRefillsWhenNewStoriesArrive() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let firstArticle = Article(guid: "one", title: "One", publishedAt: .now.addingTimeInterval(-120), feed: feed)
+        context.insert(firstArticle)
+
+        let service = DailyDeckService()
+        let deck = try service.generateIfNeeded(in: context)
+        let item = try #require(deck.items.first)
+        _ = try service.advance(item: item, to: .read, in: context)
+        #expect(try service.remainingArticles(in: context).isEmpty)
+
+        let secondArticle = Article(guid: "two", title: "Two", publishedAt: .now, feed: feed)
+        context.insert(secondArticle)
+        let refilled = try service.generateIfNeeded(in: context)
+        let open = try service.remainingArticles(in: context)
+
+        #expect(refilled.id == deck.id)
+        #expect(open.map(\.guid) == ["two"])
+        #expect(open.first?.state == .current)
+    }
+
     @Test func advanceMovesToNextItemAndMarksFirstDone() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
@@ -147,6 +170,35 @@ struct DailyDeckTests {
         #expect(try DailyDeckService.todayDeck(in: context)?.items.count == 1)
     }
 
+    @Test func todayFilterStoresTheSwitchAndRebuildsTheDeckOnce() throws {
+        let context = try context()
+        let keep = Feed(title: "Keep", feedURL: URL(string: "https://keep.test/rss")!)
+        let drop = Feed(title: "Drop", feedURL: URL(string: "https://drop.test/rss")!)
+        context.insert(keep)
+        context.insert(drop)
+        let keptHTML = "<p>" + String(repeating: "word ", count: 500) + "</p>"
+        let kept = Article(
+            guid: "keep",
+            title: "Keep",
+            publishedAt: .now.addingTimeInterval(-60),
+            contentHTML: keptHTML,
+            feed: keep
+        )
+        let dropped = Article(guid: "drop", title: "Drop", publishedAt: .now, feed: drop)
+        context.insert(kept)
+        context.insert(dropped)
+        _ = try DailyDeckService().generateIfNeeded(in: context)
+
+        try DailyDeckService.storeIncludedInToday(false, feeds: [drop], in: context)
+        #expect(drop.includeInToday == false)
+        #expect(try DailyDeckService().remainingArticles(in: context).map(\.guid) == ["drop", "keep"])
+
+        try DailyDeckService.reconcileMembership(in: context)
+        #expect(try DailyDeckService().remainingArticles(in: context).map(\.guid) == ["keep"])
+        #expect(kept.state == .current)
+        #expect(kept.contentHTML == keptHTML)
+    }
+
     @Test func turningASourceOnFillsAnOpenSlot() throws {
         let context = try context()
         let first = Feed(title: "First", feedURL: URL(string: "https://first.test/rss")!)
@@ -189,5 +241,62 @@ struct DailyDeckTests {
         #expect(items.contains { $0.article?.guid == "done" && $0.status == .read })
         #expect(items.contains { $0.article?.guid == "waiting" && $0.status == .current })
         #expect(items.map(\.position) == Array(1...items.count))
+    }
+
+    @Test func todayListUsesTheStoredArticleID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now,
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        let open = try DailyDeckService().remainingArticles(in: context)
+        #expect(open.map(\.guid) == ["deck"])
+        #expect(open.first?.title == "Deck")
+        let current = try DailyDeckService().currentItem(in: context)
+        #expect(current?.resolvedArticleID() == article.id)
+    }
+
+    @Test func finishingTodayUpdatesTheStoryByItsStoredID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now,
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        _ = try DailyDeckService().advance(item: item, to: .read, in: context)
+
+        let stored = try #require(context.fetch(FetchDescriptor<Article>()).first)
+        #expect(stored.state == .read)
+        #expect(stored.contentHTML?.contains("word") == true)
+        #expect(item.status == .read)
     }
 }

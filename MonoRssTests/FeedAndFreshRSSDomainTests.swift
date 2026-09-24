@@ -162,6 +162,24 @@ struct FeedAndFreshRSSDomainTests {
         #expect(groups[2].feeds.map(\.title) == ["Ars"])
     }
 
+    @Test func todayFilterKeepsFolderGroupsWhenASourceJoinsToday() {
+        let philosophy = Feed(title: "Acephale", feedURL: URL(string: "https://a.test/rss")!, folderName: "Philosophy")
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let cache = TodayFolderCache()
+        let first = cache.groups(from: [philosophy, development])
+        let loads = cache.loads
+        philosophy.includeInToday = false
+        let second = cache.groups(from: [philosophy, development])
+        #expect(cache.loads == loads)
+        #expect(second.map(\.name) == first.map(\.name))
+        development.folderNames = ["Philosophy"]
+        development.folderName = "Philosophy"
+        let moved = cache.groups(from: [philosophy, development])
+        #expect(cache.loads == loads + 1)
+        #expect(moved.map(\.name) == ["Philosophy"])
+        #expect(moved[0].feeds.map(\.title) == ["Acephale", "Swift"])
+    }
+
     @Test func folderArticleGroupsKeepNewestUnreadCardsPerFolder() {
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
         let philosophy = Feed(title: "Acephale", feedURL: URL(string: "https://a.test/rss")!, folderName: "Philosophy")
@@ -235,6 +253,299 @@ struct FeedAndFreshRSSDomainTests {
         #expect(summaries.map(\.name) == ["Development", "Quiet"])
         #expect(summaries[0].unreadCount == 1)
         #expect(summaries[1].unreadCount == 0)
+    }
+
+    @Test func folderUnreadCountCollapsesSameStoryInsideOneFolder() {
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let other = Feed(title: "News", feedURL: URL(string: "https://n.test/rss")!, folderName: "Development")
+        let newest = Article(guid: "1", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: development)
+        let copy = Article(guid: "2", title: "Copy", url: URL(string: "https://n.test/2"), publishedAt: .now.addingTimeInterval(-30), state: .queued, feed: other)
+        let cluster = UUID()
+        let placements = [
+            ArticleIdentity.identityKey(for: newest): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: copy): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+        ]
+
+        let summaries = FeedFolderGrouping.folderSummaries(feeds: [development, other], articles: [newest, copy], placements: placements)
+        #expect(summaries.map(\.unreadCount) == [1])
+        let counted = FolderDirectoryCount.summaries(
+            feeds: [development, other].map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) },
+            stories: [newest, copy].map(folderStorySnap),
+            placements: placements,
+            folderOrder: []
+        )
+        #expect(counted.map(\.name) == summaries.map(\.name))
+        #expect(counted.map(\.unreadCount) == summaries.map(\.unreadCount))
+        #expect(counted.map(\.feedCount) == summaries.map(\.feedCount))
+    }
+
+    @Test func aLongLibraryCountsFoldersAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let queued = Article(guid: "open", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: feed)
+        let read = Article(guid: "read", title: "Finished", url: URL(string: "https://c.test/read"), publishedAt: .now, state: .read, feed: feed)
+        context.insert(feed)
+        context.insert(queued)
+        context.insert(read)
+        try context.save()
+        let copied = FolderDirectoryCount.storySnaps(in: context.container)
+        #expect(copied.map(\.id) == [queued.id])
+        #expect(copied.first?.feedID == feed.id)
+        #expect(copied.first?.guid == "open")
+    }
+
+    @Test func aFeedRefreshDoesNotChangeTheFolderEdge() {
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://example.com/rss")!)
+        let before = FeedMembershipEdge.token(of: [feed], includesEnabled: true)
+        let stories = FeedMembershipEdge.token(of: [feed], includesEnabled: false)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 10)
+        feed.etag = "abc"
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true) == before)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) == stories)
+        feed.isEnabled = false
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true) != before)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) == stories)
+        feed.setMemberships(["News"])
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) != before)
+        let today = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 20)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) == today)
+        feed.includeInToday = false
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) != today)
+        let sources = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 30)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) == sources)
+        feed.title = "Renamed"
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) != sources)
+        let filter = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true, includesTitle: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 40)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true, includesTitle: true) == filter)
+    }
+
+    @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)
+        let snaps = [development, loose].map { FolderFeedSnap(id: $0.id, memberships: $0.memberships) }
+        let names = FolderDirectoryCount.names(feeds: snaps, folderOrder: ["Development"])
+        #expect(names.map(\.name) == ["Development", "Unfiled"])
+        #expect(names.map(\.unreadCount) == [0, 0])
+        #expect(FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 0))
+        #expect(FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 200))
+        #expect(!FolderDirectoryCount.countsOnTheOpenScreen(storyCount: 201))
+        #expect(names.map(\.folderID) == FolderDirectoryCount.summaries(
+            feeds: snaps,
+            stories: [],
+            placements: [:],
+            folderOrder: ["Development"]
+        ).map(\.folderID))
+        #expect(StoryListPlan.belongs(feedID: development.id, memberships: development.memberships, to: .folder(.named("Development"))))
+        #expect(StoryListPlan.belongs(feedID: loose.id, memberships: loose.memberships, to: .folder(.named("Development"))) == false)
+        #expect(StoryListPlan.belongs(feedID: loose.id, memberships: loose.memberships, to: .folder(.unfiled)))
+        #expect(StoryListPlan.belongs(feedID: nil, memberships: nil, to: .folder(.unfiled)))
+        #expect(StoryListPlan.belongs(feedID: development.id, memberships: nil, to: .folder(.unfiled)))
+    }
+
+    @Test func sourceFoldersAppearFromTheFeedsAlreadyLoaded() {
+        let model = SourcesViewModel()
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let folders = model.folders(matching: [development])
+        #expect(folders.contains { $0.name == "Development" && $0.feeds.map(\.title) == ["Swift"] })
+        #expect(model.feeds.isEmpty)
+    }
+
+    @Test func openingSourcesDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        context.insert(Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!))
+        try context.save()
+        let model = SourcesViewModel()
+        model.configure(with: context)
+        #expect(model.feeds.isEmpty)
+        model.reload()
+        #expect(model.feeds.map(\.title) == ["Swift"])
+    }
+
+    @Test func movingASourceDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!)
+        context.insert(feed)
+        try context.save()
+        let model = SourcesViewModel()
+        model.configure(with: context)
+        model.add(feed, to: "Development")
+        #expect(model.feeds.isEmpty)
+        #expect(feed.containsFolder("Development"))
+        model.remove(feed, from: "Development")
+        #expect(model.feeds.isEmpty)
+        #expect(!feed.containsFolder("Development"))
+    }
+
+    @Test func restoringSourcesDoesNotFetchEveryFeed() throws {
+        let context = try InMemoryStore.makeContext()
+        _ = try FeedSeedService().apply(in: context)
+        let model = SourcesViewModel()
+        model.configure(with: context)
+        model.importAllSeededSources()
+        #expect(model.feeds.isEmpty)
+        #expect(model.isImportingPack == false)
+    }
+
+    @Test func aFolderListsSourcesBeforeTheSourceFetch() {
+        let model = SourcesViewModel()
+        let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
+        let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)
+        let loaded = [development, loose]
+        #expect(model.feeds(in: .named("Development"), from: loaded).map(\.title) == ["Swift"])
+        #expect(model.feeds(in: .unfiled, from: loaded).map(\.title) == ["Loose"])
+        #expect(model.feeds.isEmpty)
+    }
+
+    private func folderStorySnap(_ article: Article) -> FolderStorySnap {
+        FolderStorySnap(
+            feedID: article.feed?.id,
+            publishedAt: article.publishedAt,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            id: article.id,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
+    @Test func feedRowsDropCopiesAndKeepASimilarCaption() {
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!)
+        let newest = Article(guid: "1", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, state: .queued, feed: feed)
+        let copy = Article(guid: "2", title: "Copy", url: URL(string: "https://c.test/2"), publishedAt: .now.addingTimeInterval(-30), state: .queued, feed: feed)
+        let similar = Article(guid: "3", title: "Related", url: URL(string: "https://c.test/3"), publishedAt: .now.addingTimeInterval(-60), state: .queued, feed: feed)
+        let cluster = UUID()
+        let readAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let placements = [
+            ArticleIdentity.identityKey(for: newest): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: copy): StoryPlacement(relationshipRaw: ContentRelationship.sameStory.rawValue, storyClusterID: cluster),
+            ArticleIdentity.identityKey(for: similar): StoryPlacement(relationshipRaw: ContentRelationship.related.rawValue, matchedConsumedAt: readAt),
+        ]
+
+        let now = Date()
+        let rows = StoryGrouping.rows(from: [newest, copy, similar], placements: placements, expandedClusterIDs: [], now: now)
+        let plans = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: feed.memberships)],
+            stories: [newest, copy, similar].map(storyListSnap),
+            placements: placements,
+            expanded: [],
+            query: "",
+            now: now
+        )
+        #expect(plans.map(\.id) == rows.map(\.id))
+        #expect(StoryListPlan.rowsOnTheOpenScreen(storyCount: 3, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 0, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 201, isSearching: false))
+        #expect(!StoryListPlan.rowsOnTheOpenScreen(storyCount: 3, isSearching: true))
+        #expect(rows.count == 3)
+        guard case .article(let primary, _) = rows[0].kind else {
+            Issue.record("Expected the newest story first")
+            return
+        }
+        #expect(primary.title == "New")
+        guard case .moreSources(_, let count) = rows[1].kind else {
+            Issue.record("Expected the other source on its own row")
+            return
+        }
+        #expect(count == 1)
+        guard case .article(let related, let caption) = rows[2].kind else {
+            Issue.record("Expected the related story to stay visible")
+            return
+        }
+        #expect(related.title == "Related")
+        #expect(caption?.hasPrefix("Similar to something you read") == true)
+        guard case .article(_, let planCaption) = plans[2].kind else {
+            Issue.record("Expected the planned related story")
+            return
+        }
+        #expect(planCaption == caption)
+    }
+
+    @Test func aLongFeedCopiesStoriesAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!)
+        let queued = Article(guid: "open", title: "New", url: URL(string: "https://c.test/1"), publishedAt: .now, summary: "A blurb", state: .queued, feed: feed)
+        let read = Article(guid: "read", title: "Finished", url: URL(string: "https://c.test/read"), publishedAt: .now, state: .read, feed: feed)
+        context.insert(feed)
+        context.insert(queued)
+        context.insert(read)
+        try context.save()
+        let copied = StoryListPlan.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id) == [queued.id])
+        #expect(copied.first?.title == "")
+        #expect(copied.first?.summary == nil)
+        let found = StoryListPlan.snaps(searching: true, in: context.container)
+        #expect(found.first?.title == "New")
+        #expect(found.first?.feedTitle == "Swift")
+        #expect(found.first?.summary == "A blurb")
+    }
+
+    private func storyListSnap(_ article: Article) -> StoryListSnap {
+        StoryListSnap(
+            id: article.id,
+            feedID: article.feed?.id,
+            feedTitle: article.feed?.title,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            aiSummary: article.aiSummary,
+            summary: article.summary,
+            videoID: article.videoID,
+            url: article.url,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
+    @Test func feedSearchMatchesTheSummarySample() {
+        let feed = Feed(title: "Aeon", feedURL: URL(string: "https://aeon.co/feed")!)
+        let article = Article(
+            guid: "glacier",
+            title: "A quiet title",
+            summary: "<p>A unique glacier note sits in the feed blurb.</p>",
+            state: .queued,
+            feed: feed
+        )
+        var sampled = storyListSnap(article)
+        sampled.summary = ContentClassifier.cardExcerptSample(article.summary)
+        let hits = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [sampled],
+            placements: [:],
+            expanded: [],
+            query: "glacier"
+        )
+        #expect(hits.count == 1)
+        let byTitle = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [storyListSnap(article)],
+            placements: [:],
+            expanded: [],
+            query: "quiet"
+        )
+        #expect(byTitle.count == 1)
+        var untitled = storyListSnap(article)
+        untitled.title = ""
+        untitled.feedTitle = nil
+        untitled.summary = nil
+        untitled.aiSummary = nil
+        let open = StoryListPlan.rows(
+            destination: .unread,
+            feeds: [feed.id: FolderFeedSnap(id: feed.id, memberships: [])],
+            stories: [untitled],
+            placements: [:],
+            expanded: [],
+            query: ""
+        )
+        #expect(open.count == 1)
     }
 
     @Test func parserReadsEnclosureAndYouTubeItem() throws {
@@ -352,6 +663,9 @@ struct FeedAndFreshRSSDomainTests {
         #expect(ContentClassifier.proseExcerpt("Article URL: https://dfarq.homeip.net/nec-v20") == nil)
         #expect(ContentClassifier.proseExcerpt("https://example.test/story") == nil)
         #expect(ContentClassifier.proseExcerpt("<p>A short claim about isolation.</p>") == "A short claim about isolation.")
+        let lead = "<p>The opening claim stays on the card.</p>"
+        let tail = String(repeating: "<p>later</p>", count: 20_000)
+        #expect(ContentClassifier.proseExcerpt(lead + tail) == "The opening claim stays on the card.")
     }
 
     @Test func skipShortYouTubeDetectsShortsPathAndHashTag() {
@@ -596,6 +910,50 @@ struct FeedAndFreshRSSDomainTests {
             aiSummary: "The video explains why 1/137 shows up in physics."
         )
         #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+        #expect(article.displayExcerpt == "The video explains why 1/137 shows up in physics.")
+        #expect(ContentClassifier.cardExcerpt(aiSummary: article.aiSummary, summary: article.summary) == article.displayExcerpt)
+        article.aiSummary = nil
+        #expect(article.displayExcerpt == "Feed blurb")
+        #expect(ContentClassifier.cardExcerpt(aiSummary: nil, summary: "<p>Feed blurb</p>") == "Feed blurb")
+    }
+
+    @Test @MainActor func listDateLabelReusesTheSameCalendarDay() {
+        let morning = Date(timeIntervalSince1970: 1_700_000_000)
+        let later = morning.addingTimeInterval(3 * 60 * 60)
+        #expect(OneFeedDateLabel.monthAndDay(morning) == OneFeedDateLabel.monthAndDay(later))
+        #expect(OneFeedDateLabel.monthDayAndYear(morning) == OneFeedDateLabel.monthDayAndYear(later))
+        #expect(OneFeedDateLabel.longDate(morning) == OneFeedDateLabel.longDate(later))
+        #expect(OneFeedDateLabel.monthAndDay(morning).isEmpty == false)
+    }
+
+    @Test func historySectionKeepsTheYearWhenTheDayIsNotThisYear() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 12))!
+        let today = calendar.startOfDay(for: now)
+        let thisYear = calendar.date(from: DateComponents(year: 2026, month: 1, day: 3))!
+        let lastYear = calendar.date(from: DateComponents(year: 2025, month: 9, day: 24))!
+        #expect(OneFeedDateLabel.historySection(today, now: now, calendar: calendar) == "Today")
+        let recent = OneFeedDateLabel.historySection(thisYear, now: now, calendar: calendar)
+        #expect(recent.contains("2026") == false)
+        #expect(OneFeedDateLabel.historySection(lastYear, now: now, calendar: calendar).contains("2025"))
+    }
+
+    @Test func aPassingHourDoesNotRewriteASameDaySimilarCaption() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let read = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 8))!
+        let later = calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 10))!
+        let first = StoryGrouping.similarCaption(matchedConsumedAt: read, now: read.addingTimeInterval(90), calendar: calendar)
+        let second = StoryGrouping.similarCaption(matchedConsumedAt: read, now: later, calendar: calendar)
+        #expect(first == "Similar to something you read earlier today")
+        #expect(first == second)
+        let yesterday = StoryGrouping.similarCaption(matchedConsumedAt: read, now: later.addingTimeInterval(86_400), calendar: calendar)
+        #expect(yesterday == "Similar to something you read yesterday")
+        let stamp = OneFeedDateLabel.syncStamp(read, now: read.addingTimeInterval(90), calendar: calendar)
+        let stampLater = OneFeedDateLabel.syncStamp(read, now: later, calendar: calendar)
+        #expect(stamp == stampLater)
+        #expect(stamp.contains("minute") == false)
     }
 
     @Test func stripHTMLTurnsMarkupAndEntitiesIntoPlainPreviewText() {

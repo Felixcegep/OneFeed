@@ -61,4 +61,57 @@ struct ArticleIdentityVideoTests {
 
         #expect(ArticleIdentity.identityKey(for: article) == "video:abc123")
     }
+
+    @Test func mergeKeepsTheLongerBodyWithoutReadingItOnTheOpenArticles() throws {
+        let context = try InMemoryStore.makeContext()
+        let url = URL(string: "https://source.test/story")!
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let short = "<p>Short</p>"
+        let long = "<p>\(String(repeating: "word ", count: 80))</p>"
+        context.insert(Article(
+            guid: "keeper",
+            title: "Story",
+            url: url,
+            contentHTML: short,
+            estimatedReadingMinutes: 30,
+            feed: feed
+        ))
+        context.insert(Article(
+            guid: "copy",
+            title: "Story",
+            url: url,
+            contentHTML: long,
+            estimatedReadingMinutes: 1
+        ))
+        try context.save()
+        ArticleIdentity.liveHTMLReads = 0
+
+        _ = try ArticleIdentity.mergeDuplicates(in: context)
+
+        let remaining = try #require(context.fetch(FetchDescriptor<Article>()).first)
+        #expect(remaining.contentHTML == long)
+        #expect(remaining.estimatedReadingMinutes >= 2)
+        #expect(ArticleIdentity.liveHTMLReads == 0)
+    }
+
+    @Test func mergingDuplicatesLeavesAnUnrelatedStoryOnDisk() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let url = URL(string: "https://source.test/story")!
+        let html = "<p>\(String(repeating: "word ", count: 40))</p>"
+        setup.insert(Article(guid: "keeper", title: "Story", url: url, contentHTML: "<p>Short</p>"))
+        setup.insert(Article(guid: "copy", title: "Story", url: url, contentHTML: "<p>Longer page</p>"))
+        let unrelated = Article(guid: "other", title: "Other", url: URL(string: "https://source.test/other"), contentHTML: html)
+        setup.insert(unrelated)
+        try setup.save()
+
+        let screen = ModelContext(container)
+        let removed = try ArticleIdentity.mergeDuplicates(in: screen)
+        #expect(removed == 1)
+        let matchID = unrelated.id
+        let stored = try #require(setup.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })).first)
+        #expect(stored.contentHTML == html)
+        #expect(try screen.fetchCount(FetchDescriptor<Article>()) == 2)
+    }
 }

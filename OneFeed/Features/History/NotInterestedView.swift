@@ -4,26 +4,111 @@ import SwiftUI
 struct NotInterestedView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \NotInterestedEntry.recordedAt, order: .reverse) private var entries: [NotInterestedEntry]
-    @Query private var feeds: [Feed]
     @State private var selectedArticle: Article?
     @State private var pendingRemoval: NotInterestedSourceGroup?
     @State private var librarianPrompt: LibrarianPrompt?
+    @State private var listCache = NotInterestedListCache()
+    @State private var feedCache = NotInterestedFeedCache()
+    @State private var feedDetailTick = 0
+    /// Source groups stay put while a row redraws. Rebuilt off the main thread when a mark is added, removed, or recorded again.
+    @State private var grouped: [NotInterestedSourceGroup] = []
+    @State private var logReady = false
+    @State private var logHoldRevealed = false
+    @State private var isRemovingSource = false
+    @State private var queueError: String?
+    @State private var storyError: String?
+    @State private var removeError: String?
+    @State private var sourceError: String?
+    @State private var logError: String?
 
-    private var groups: [NotInterestedSourceGroup] {
-        NotInterestedLog.groups(from: entries)
+    /// Changes when a mark is added, removed, or recorded again. A title edit shows on the row without regrouping.
+    private var logStamp: Int {
+        var stamp = entries.count
+        for entry in entries {
+            stamp ^= entry.persistentModelID.hashValue
+            stamp ^= entry.recordedAt.hashValue
+        }
+        return stamp
+    }
+
+    private var logHoldWaiting: Bool {
+        !logReady && grouped.isEmpty && !entries.isEmpty
+    }
+
+    private func reloadLog() async {
+        let edge = logStamp
+        let onScreen = NotInterestedListPlan.groupsOnTheOpenScreen(entryCount: entries.count)
+        let openSnaps = onScreen ? entries.map(NotInterestedEntrySnap.init) : []
+        if onScreen {
+            publish(NotInterestedListPlan.groups(from: openSnaps))
+        }
+        let container = modelContext.container
+        let plans = await Task.detached(priority: .userInitiated) {
+            let snaps = onScreen ? openSnaps : NotInterestedListPlan.snaps(in: container)
+            return NotInterestedListPlan.groups(from: snaps)
+        }.value
+        guard !Task.isCancelled, edge == logStamp else { return }
+        publish(plans)
+    }
+
+    private func publish(_ plans: [NotInterestedGroupPlan]) {
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let groups = plans.map { plan in
+            NotInterestedSourceGroup(
+                sourceTitle: plan.sourceTitle,
+                sourceFeedURL: plan.sourceFeedURL,
+                sourceWebsiteURL: plan.sourceWebsiteURL,
+                feedID: plan.feedID,
+                entries: plan.entryIDs.compactMap { byID[$0] }
+            )
+        }
+        guard !showsSameGroups(groups, as: grouped) else {
+            logReady = true
+            return
+        }
+        if NotInterestedListPlan.prefetchesStories(entryCount: entries.count) {
+            listCache.resolve(entries: entries, guids: entries.map(\.articleGUID), in: modelContext)
+        }
+        grouped = groups
+        logReady = true
+    }
+
+    private func showsSameGroups(_ next: [NotInterestedSourceGroup], as current: [NotInterestedSourceGroup]) -> Bool {
+        next.count == current.count && zip(next, current).allSatisfy { lhs, rhs in
+            lhs.sourceTitle == rhs.sourceTitle
+                && lhs.sourceFeedURL == rhs.sourceFeedURL
+                && lhs.entries.map(\.id) == rhs.entries.map(\.id)
+        }
     }
 
     var body: some View {
         Group {
-            if groups.isEmpty {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: !entries.isEmpty,
+                ready: logReady,
+                hasPlannedRows: !grouped.isEmpty
+            ) {
                 EmptyLibraryState(
                     title: "Nothing set aside",
                     systemImage: "hand.thumbsdown",
-                    description: "Articles you mark not interested stay here, grouped by source."
+                    description: "Skip a story, then choose Not interested. Those articles stay here, grouped by source."
                 )
+            } else if !logReady && grouped.isEmpty {
+                if LibraryHold.showsStoredRows(waiting: !entries.isEmpty, revealed: logHoldRevealed) {
+                    List {
+                        ForEach(entries) { entry in
+                            entryRow(entry)
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
-                    ForEach(groups) { group in
+                    ForEach(grouped) { group in
                         Section {
                             ForEach(group.entries) { entry in
                                 entryRow(entry)
@@ -39,21 +124,101 @@ struct NotInterestedView: View {
         .navigationTitle("Not interested")
         .oneFeedInlineTitle()
         .oneFeedPaperToolbar()
+        .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
+        .task(id: logStamp) {
+            await reloadLog()
+        }
+        .task(id: logHoldWaiting) {
+            logHoldRevealed = false
+            guard logHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, logHoldWaiting else { return }
+            logHoldRevealed = true
+        }
         .toolbar {
-            if !groups.isEmpty {
+            if !grouped.isEmpty {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Ask Gemini") {
-                        librarianPrompt = LibrarianPrompt(text: NotInterestedLog.reviewPrompt(in: modelContext))
+                        librarianPrompt = LibrarianPrompt(preparesReview: true)
                     }
                 }
             }
         }
         .navigationDestination(item: $librarianPrompt) { prompt in
-            ExperimentalLibrarianView(initialPrompt: prompt.text)
+            ExperimentalLibrarianView(
+                initialPrompt: prompt.preparesReview ? nil : prompt.text,
+                preparesReviewPrompt: prompt.preparesReview
+            )
         }
         .oneFeedArticleCover(item: $selectedArticle) { article in
-            ReaderView(article: article) { _ in selectedArticle = nil }
+            ReaderView(article: article, onFinish: { state in
+                guard article.isStored else {
+                    selectedArticle = nil
+                    return true
+                }
+                if state == .saved {
+                    do {
+                        try ArticleQueueService().moveToQueue(article, in: modelContext)
+                    } catch {
+                        queueError = UserFacingFailure.message(for: error, fallback: "Couldn’t put that in Queue.")
+                        return false
+                    }
+                } else {
+                    do {
+                        try ArticleActions.apply(state, to: article, in: modelContext)
+                    } catch {
+                        storyError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+                        return false
+                    }
+                }
+                selectedArticle = nil
+                return true
+            }, onClose: {
+                selectedArticle = nil
+            })
+            .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
+            .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
+        }
+        .alert("Couldn’t put that in Queue", isPresented: Binding(
+            get: { queueError != nil },
+            set: { if !$0 { queueError = nil } }
+        )) {
+            Button("OK", role: .cancel) { queueError = nil }
+        } message: {
+            Text(queueError ?? "")
+        }
+        .alert("Couldn’t update that story", isPresented: Binding(
+            get: { storyError != nil },
+            set: { if !$0 { storyError = nil } }
+        )) {
+            Button("OK", role: .cancel) { storyError = nil }
+        } message: {
+            Text(storyError ?? "")
+        }
+        .alert("Couldn’t remove that source", isPresented: Binding(
+            get: { removeError != nil },
+            set: { if !$0 { removeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { removeError = nil }
+        } message: {
+            Text(removeError ?? "")
+        }
+        .alert("Couldn’t update that source", isPresented: Binding(
+            get: { sourceError != nil },
+            set: { if !$0 { sourceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { sourceError = nil }
+        } message: {
+            Text(sourceError ?? "")
+        }
+        .alert("Couldn’t remove that entry", isPresented: Binding(
+            get: { logError != nil },
+            set: { if !$0 { logError = nil } }
+        )) {
+            Button("OK", role: .cancel) { logError = nil }
+        } message: {
+            Text(logError ?? "")
         }
         .confirmationDialog(
             "Remove \(pendingRemoval?.sourceTitle ?? "this source") and its locally stored articles?",
@@ -64,16 +229,16 @@ struct NotInterestedView: View {
             titleVisibility: .visible
         ) {
             Button("Remove source", role: .destructive) {
-                if let group = pendingRemoval {
-                    Task { await removeSource(group) }
-                }
+                guard let group = pendingRemoval else { return }
                 pendingRemoval = nil
+                Task { await removeSource(group) }
             }
         }
     }
 
     private func sourceHeader(_ group: NotInterestedSourceGroup) -> some View {
-        let feed = NotInterestedLog.feed(matching: group, in: feeds)
+        let _ = feedDetailTick
+        let feed = feedCache.feed(for: group, in: modelContext)
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.sourceTitle)
@@ -94,11 +259,21 @@ struct NotInterestedView: View {
             if let feed {
                 Menu {
                     Button("Move to Archive", systemImage: "archivebox") {
-                        NotInterestedLog.archive(feed, in: modelContext)
+                        do {
+                            try NotInterestedLog.archive(feed, in: modelContext)
+                            feedDetailTick += 1
+                        } catch {
+                            sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+                        }
                     }
                     if feed.includeInToday {
                         Button("Take out of Today", systemImage: "sun.min") {
-                            NotInterestedLog.takeOutOfToday(feed, in: modelContext)
+                            do {
+                                try NotInterestedLog.takeOutOfToday(feed, in: modelContext)
+                                feedDetailTick += 1
+                            } catch {
+                                sourceError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+                            }
                         }
                     }
                     Button("Ask Gemini about this source", systemImage: "text.bubble") {
@@ -122,7 +297,7 @@ struct NotInterestedView: View {
     }
 
     private func entryRow(_ entry: NotInterestedEntry) -> some View {
-        let article = NotInterestedLog.article(for: entry, in: modelContext)
+        let article = listCache.article(for: entry, in: modelContext)
         return Button {
             selectedArticle = article
         } label: {
@@ -132,7 +307,7 @@ struct NotInterestedView: View {
                     .foregroundStyle(OneFeedTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(entry.recordedAt.formatted(date: .abbreviated, time: .omitted))
+                Text(OneFeedDateLabel.historySection(entry.recordedAt))
                     .font(.caption)
                     .foregroundStyle(OneFeedTheme.graphite)
             }
@@ -144,15 +319,23 @@ struct NotInterestedView: View {
         .disabled(article == nil)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button("Remove", systemImage: "trash", role: .destructive) {
-                NotInterestedLog.delete(entry, in: modelContext)
+                removeLogEntry(entry)
             }
         }
         .contextMenu {
             Button("Remove from log", systemImage: "trash", role: .destructive) {
-                NotInterestedLog.delete(entry, in: modelContext)
+                removeLogEntry(entry)
             }
         }
         .accessibilityHint(article == nil ? "The article is no longer on this device" : "Opens this article")
+    }
+
+    private func removeLogEntry(_ entry: NotInterestedEntry) {
+        do {
+            try NotInterestedLog.delete(entry, in: modelContext)
+        } catch {
+            logError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that entry.")
+        }
     }
 
     private func sourceDetail(for group: NotInterestedSourceGroup, feed: Feed?) -> String {
@@ -182,18 +365,63 @@ struct NotInterestedView: View {
     }
 
     private func removeSource(_ group: NotInterestedSourceGroup) async {
-        guard let feed = NotInterestedLog.feed(matching: group, in: feeds) else { return }
+        guard !isRemovingSource else { return }
+        guard let feed = feedCache.feed(for: group, in: modelContext) else { return }
+        isRemovingSource = true
+        defer { isRemovingSource = false }
         do {
             try await FreshRSSSyncService().removeSubscription(feed, in: modelContext)
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
             modelContext.delete(feed)
-            try? modelContext.save()
+            do {
+                try modelContext.save()
+                LibraryChange.noteRemovedFeed(feed)
+            } catch {
+                modelContext.rollback()
+                removeError = UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source.")
+            }
         }
     }
 }
 
+private final class NotInterestedFeedCache {
+    private var feeds: [String: Feed?] = [:]
+
+    func feed(for group: NotInterestedSourceGroup, in context: ModelContext) -> Feed? {
+        let key = group.feedID?.uuidString ?? group.sourceFeedURL
+        if let cached = feeds[key] {
+            return cached?.modelContext == nil ? nil : cached
+        }
+        let found = NotInterestedLog.storedFeed(matching: group, in: context)
+        feeds[key] = found
+        return found
+    }
+}
+
+private final class NotInterestedListCache {
+    private var articles: [PersistentIdentifier: Article?] = [:]
+
+    /// One story lookup for the visible log. Bodies stay on disk until a row opens.
+    func resolve(entries: [NotInterestedEntry], guids: [String], in context: ModelContext) {
+        articles.removeAll()
+        let matches = NotInterestedLog.articles(matchingGUIDs: guids, in: context)
+        for entry in entries {
+            if let match = matches[entry.articleGUID] {
+                articles[entry.persistentModelID] = match
+            }
+        }
+    }
+
+    func article(for entry: NotInterestedEntry, in context: ModelContext) -> Article? {
+        if let cached = articles[entry.persistentModelID] { return cached }
+        let found = NotInterestedLog.article(for: entry, in: context)
+        articles[entry.persistentModelID] = found
+        return found
+    }
+}
+
 private struct LibrarianPrompt: Identifiable, Hashable {
-    let text: String
-    var id: String { text }
+    let id = UUID()
+    var text = ""
+    var preparesReview = false
 }

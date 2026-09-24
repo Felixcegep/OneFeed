@@ -29,7 +29,7 @@ struct ReaderFocusSheet: View {
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
-        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.height(340), .medium])
+        .presentationDetents(dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(OneFeedTheme.paper)
         #endif
@@ -61,7 +61,7 @@ struct ReaderFocusSheet: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .frame(maxWidth: .infinity, minHeight: 36)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .fixedSize(horizontal: false, vertical: true)
                 .background(
                     selected ? OneFeedTheme.ink : OneFeedTheme.paper,

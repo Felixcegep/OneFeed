@@ -22,6 +22,7 @@ final class SavedViewModel {
         self.freshRSSService = freshRSSService
     }
 
+    /// Keeps the context for saves and for opening one imported story. The list itself comes from the screen query.
     func configure(with context: ModelContext) {
         self.context = context
     }
@@ -29,20 +30,17 @@ final class SavedViewModel {
     func reload() {
         guard let context else { return }
         let saved = ArticleState.saved.rawValue
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == saved })
-        descriptor.sortBy = [SortDescriptor(\.completedAt, order: .reverse)]
+        var descriptor = ArticleListFetch.rows(
+            predicate: #Predicate { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
         do { articles = ArticleIdentity.collapsingDuplicates(try context.fetch(descriptor)) }
-        catch { presentedError = error.localizedDescription }
+        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
     func openArticle(id: UUID) {
         guard let context else { return }
-        reload()
-        if let match = articles.first(where: { $0.id == id && $0.isStored }) {
-            selectedArticle = match
-            return
-        }
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == id })
+        var descriptor = ArticleListFetch.rows(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         selectedArticle = try? context.fetch(descriptor).first
     }
@@ -50,16 +48,16 @@ final class SavedViewModel {
     func restore(_ article: Article) {
         guard let context, article.isStored else { return }
         if article.remoteID != nil { freshRSSService.enqueueMutation(for: article, transition: .queued, in: context) }
-        do { try queue.restoreSaved(article, in: context); reload() }
-        catch { presentedError = error.localizedDescription }
+        do { try queue.restoreSaved(article, in: context) }
+        catch { presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.") }
     }
 
-    func finishReading(_ article: Article, as state: ArticleState) {
-        guard let context else { return }
-        selectedArticle = nil
+    @discardableResult
+    func finishReading(_ article: Article, as state: ArticleState) -> Bool {
+        guard let context else { return false }
         guard article.isStored else {
-            reload()
-            return
+            selectedArticle = nil
+            return true
         }
         if state == .read || state == .skipped {
             if state == .skipped {
@@ -72,10 +70,11 @@ final class SavedViewModel {
                     ReadingUndo.commit(article, in: context)
                 }
             } catch {
-                presentedError = error.localizedDescription
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t update Queue.")
+                return false
             }
         }
         selectedArticle = nil
-        reload()
+        return true
     }
 }
