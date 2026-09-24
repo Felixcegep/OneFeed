@@ -1003,7 +1003,11 @@ struct ArticleCollectionView: View {
     private var collectionColumn: some View {
         Group {
             if LibraryHold.showsExplanation(
-                hasStoredRows: !provisionalStories.isEmpty || !displayedStoryRows.isEmpty,
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: storyListReady,
+                    provisionalHasRows: !provisionalStories.isEmpty,
+                    plannedHasRows: !displayedStoryRows.isEmpty
+                ),
                 ready: storyListReady,
                 hasPlannedRows: !displayedStoryRows.isEmpty
             ) {

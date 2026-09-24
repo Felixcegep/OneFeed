@@ -746,6 +746,15 @@ enum LibraryHold {
         return ready && !hasPlannedRows
     }
 
+    /// A ready plan already knows whether rows exist. The provisional scan runs only while that plan is still outstanding.
+    static func storedRowsAreKnown(
+        planReady: Bool,
+        provisionalHasRows: @autoclosure () -> Bool,
+        plannedHasRows: Bool
+    ) -> Bool {
+        planReady || provisionalHasRows() || plannedHasRows
+    }
+
     /// Rows already in memory stay hidden for a moment, then appear if the plan is still running.
     static func showsStoredRows(waiting: Bool, revealed: Bool) -> Bool {
         waiting && revealed

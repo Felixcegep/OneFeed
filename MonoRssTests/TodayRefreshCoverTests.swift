@@ -52,6 +52,29 @@ struct TodayRefreshCoverTests {
         #expect(LibraryHold.showsStoredRows(waiting: true, revealed: false) == false)
         #expect(LibraryHold.showsStoredRows(waiting: true, revealed: true))
         #expect(LibraryHold.showsStoredRows(waiting: false, revealed: true) == false)
+        var scanned = false
+        let known = LibraryHold.storedRowsAreKnown(
+            planReady: true,
+            provisionalHasRows: {
+                scanned = true
+                return false
+            }(),
+            plannedHasRows: false
+        )
+        #expect(known)
+        #expect(scanned == false)
+        #expect(LibraryHold.showsExplanation(hasStoredRows: known, ready: true, hasPlannedRows: false))
+        var waitingScan = false
+        #expect(LibraryHold.storedRowsAreKnown(
+            planReady: false,
+            provisionalHasRows: {
+                waitingScan = true
+                return true
+            }(),
+            plannedHasRows: false
+        ))
+        #expect(waitingScan)
+        #expect(LibraryHold.storedRowsAreKnown(planReady: false, provisionalHasRows: false, plannedHasRows: false) == false)
     }
 
     @Test func theFirstLoadStillUsesTheCover() {
