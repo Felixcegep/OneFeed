@@ -49,10 +49,16 @@ final class ArticleExtractionService {
         self.extractor = extractor
     }
 
-    func extractedHTML(for article: Article, policy: ArticleExtractionPolicy = ArticleExtractionPolicy()) async -> String? {
+    func extractedHTML(for article: Article, policy: ArticleExtractionPolicy = ArticleExtractionPolicy(), alreadyEligible: Bool = false) async -> String? {
         let existing = article.contentHTML ?? article.summary
         if ProcessInfo.processInfo.arguments.contains("-uiTesting") { return existing }
-        guard policy.shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return existing }
+        if !alreadyEligible {
+            let kind = article.contentKind
+            let shouldFetch = await Task.detached(priority: .utility) {
+                policy.shouldFetchPage(rssHTML: existing, kind: kind)
+            }.value
+            guard shouldFetch else { return existing }
+        }
         guard let url = article.url else { return existing }
         var request = URLRequest(url: url, timeoutInterval: 15)
         request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")

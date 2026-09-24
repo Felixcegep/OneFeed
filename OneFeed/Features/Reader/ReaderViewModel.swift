@@ -55,10 +55,14 @@ final class ReaderViewModel {
         }
         guard article.contentKind == "article" else { return }
         let existing = article.contentHTML ?? article.summary
-        guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
+        let kind = article.contentKind
+        let shouldFetch = await Task.detached(priority: .utility) {
+            ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: kind)
+        }.value
+        guard shouldFetch else { return }
         isExtracting = true
         defer { isExtracting = false }
-        guard let html = await ArticleExtractionService().extractedHTML(for: article) else { return }
+        guard let html = await ArticleExtractionService().extractedHTML(for: article, alreadyEligible: true) else { return }
         do {
             try Task.checkCancellation()
         } catch {
@@ -356,6 +360,11 @@ final class ReaderViewModel {
         )
     }
 
+    nonisolated private static func hasVisibleText(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value.contains { !$0.isWhitespace }
+    }
+
     /// Picks the page body without touching the view. Whitespace-only HTML still falls through to the fallback.
     nonisolated private static func resolvedBody(_ snapshot: ReaderBodySnapshot) -> String {
         let fallback = switch snapshot.contentKind {
@@ -371,7 +380,7 @@ final class ReaderViewModel {
         if snapshot.contentKind == "youtube", !snapshot.trimmedSummary.isEmpty {
             return ReaderHTML.videoSummaryBody(from: snapshot.trimmedSummary)
         }
-        if let value = snapshot.contentHTML ?? snapshot.summary, value.contains(where: { !$0.isWhitespace }) {
+        if let value = snapshot.contentHTML ?? snapshot.summary, hasVisibleText(value) {
             return value
         }
         return fallback
@@ -524,9 +533,7 @@ final class ReaderViewModel {
     }
 
     private func loadPDFTextIfNeeded() async {
-        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return
-        }
+        if Self.hasVisibleText(article.contentHTML) { return }
         guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) else { return }
         isExtracting = true
         defer { isExtracting = false }
@@ -537,7 +544,9 @@ final class ReaderViewModel {
         guard let persisted else { return }
         article.contentHTML = persisted
         noteDocumentChanged()
-        let minutes = ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
+        let minutes = await Task.detached(priority: .utility) {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
+        }.value
         if minutes > article.estimatedReadingMinutes {
             article.estimatedReadingMinutes = minutes
         }
@@ -547,9 +556,7 @@ final class ReaderViewModel {
     }
 
     private func loadEPUBIfNeeded() async {
-        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return
-        }
+        if Self.hasVisibleText(article.contentHTML) { return }
         guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article),
               let hash = ImportedDocumentStore.hash(fromGuid: article.guid) else { return }
         isExtracting = true

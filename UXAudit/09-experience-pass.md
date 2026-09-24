@@ -199,6 +199,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | A set-aside row always spelled out the year, and an editing folder did not say if it was open | Not interested, Feed | Medium | Every log row used a full date, and the folder disclosure was only a chevron | A mark from today says Today. Another year keeps the year. VoiceOver hears Expanded or Collapsed | Code review |
 | Queue, History, Feed, and Not interested walked every row several times per redraw | Queue, History, Feed, Not interested | High | The same list was grouped for the empty check, the rows, and the toolbar, and each pass hashed every id | Each of those screens groups once per update. A middle set-aside date still regroups | Code review |
 | Opening a story trimmed and hashed the article before the page could build | Reader | High | The first frame copied the whole body to see if it was empty, then hashed it on the main thread | Opening checks the first visible character. Trimming and assembly run off the main thread. A blank body still opens the website when a link exists | `ReaderFocusTests.whitespaceOnlyBodyUsesTheMetadataFallback` |
+| Reopening a PDF or book, or deciding to fetch the full article, copied the stored text on the main thread | Reader | High | Those checks trimmed or word-counted the body before the page could stay responsive | A stored document stops at the first visible character. The word count that decides a full-text fetch runs off the main thread, and it is not repeated | Code review |
 
 ## Still open
 
