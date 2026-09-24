@@ -33,7 +33,8 @@ nonisolated enum ContentClassifier: Sendable {
     }
 
     static func plainExcerpt(_ html: String, maxCharacters: Int = 220) -> String {
-        let plain = stripHTML(html)
+        let sample = html.prefix(8_000)
+        let plain = stripHTML(String(sample))
         guard plain.count > maxCharacters else { return plain }
         let limit = plain.index(plain.startIndex, offsetBy: maxCharacters)
         if let space = plain[..<limit].lastIndex(of: " ") {

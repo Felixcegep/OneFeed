@@ -47,7 +47,7 @@ struct OnboardingView: View {
                             .foregroundStyle(OneFeedTheme.ink)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
-                            .contentTransition(.opacity)
+                            .contentTransition(reduceMotion ? .identity : .opacity)
                             .accessibilityAddTraits(.isHeader)
                         if !subtitle.isEmpty {
                             Text(subtitle)
@@ -56,7 +56,7 @@ struct OnboardingView: View {
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 12)
-                                .contentTransition(.opacity)
+                                .contentTransition(reduceMotion ? .identity : .opacity)
                         }
                     }
                     .frame(maxWidth: .infinity)

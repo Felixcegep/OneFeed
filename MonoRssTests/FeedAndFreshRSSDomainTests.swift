@@ -400,6 +400,9 @@ struct FeedAndFreshRSSDomainTests {
         #expect(ContentClassifier.proseExcerpt("Article URL: https://dfarq.homeip.net/nec-v20") == nil)
         #expect(ContentClassifier.proseExcerpt("https://example.test/story") == nil)
         #expect(ContentClassifier.proseExcerpt("<p>A short claim about isolation.</p>") == "A short claim about isolation.")
+        let lead = "<p>The opening claim stays on the card.</p>"
+        let tail = String(repeating: "<p>later</p>", count: 20_000)
+        #expect(ContentClassifier.proseExcerpt(lead + tail) == "The opening claim stays on the card.")
     }
 
     @Test func skipShortYouTubeDetectsShortsPathAndHashTag() {

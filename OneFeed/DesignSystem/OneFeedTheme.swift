@@ -646,7 +646,7 @@ struct ArticleRatingControl: View {
                         Image(systemName: star <= article.rating ? "star.fill" : "star")
                             .font(.body)
                             .foregroundStyle(star <= article.rating ? OneFeedTheme.ink : OneFeedTheme.sand)
-                            .contentTransition(.symbolEffect(.replace))
+                            .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
