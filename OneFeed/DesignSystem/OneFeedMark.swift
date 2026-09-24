@@ -243,12 +243,14 @@ struct OneFeedDecisionCurtain: View {
             if reduceMotion {
                 visible = true
                 showCaption = true
-                return
+            } else {
+                withAnimation(OneFeedMotion.decision) { visible = true }
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                withAnimation(OneFeedMotion.overlay) { showCaption = true }
             }
-            withAnimation(OneFeedMotion.decision) { visible = true }
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled else { return }
-            withAnimation(OneFeedMotion.overlay) { showCaption = true }
+            guard !caption.isEmpty else { return }
+            AccessibilityNotification.Announcement(caption).post()
         }
     }
 

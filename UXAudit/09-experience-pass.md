@@ -172,6 +172,7 @@ Running notes for the app-quality pass. Product identity stays plaster, paper, w
 | Pasting a source into a folder lost the error if that folder closed first | Feed | Medium | The failure was written only into the open folder’s row | The row still shows the error while the folder is open. Otherwise an alert explains it | Code review |
 | The reader could be swiped away while Done, Skip, or Queue was still finishing | Reader | Medium | The cover stayed dismissible during the decision curtain | The swipe-away stays off until that finish completes or fails | Code review |
 | One bad file stopped the rest of a shared import | Queue | High | The batch lived in one do/catch, so the first failure skipped the remaining files | Each file is imported on its own. A later file still opens, and the alert says how many failed | Code review |
+| VoiceOver could miss Done, Queued, or Next | Reader | Medium | The decision curtain was only a label on a view that was not focused | The curtain announces that word when it appears | Code review |
 
 ## Still open
 
