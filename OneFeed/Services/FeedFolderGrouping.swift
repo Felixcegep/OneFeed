@@ -35,6 +35,21 @@ struct FolderSummary: Identifiable, Sendable {
     var name: String { folderID.title }
 }
 
+/// Folder membership for the Feed list. A refresh updates fetch time and does not change this token.
+enum FeedMembershipEdge {
+    static func token(of feeds: [Feed], includesEnabled: Bool) -> Int {
+        var token = feeds.count
+        for feed in feeds {
+            token = token &* 31 &+ feed.id.hashValue
+            token = token &* 31 &+ feed.memberships.hashValue
+            if includesEnabled {
+                token = token &* 31 &+ (feed.isEnabled ? 1 : 0)
+            }
+        }
+        return token
+    }
+}
+
 /// Fields the folder list needs. Copied on the main thread so the count can run elsewhere.
 struct FolderFeedSnap: Sendable {
     var id: UUID

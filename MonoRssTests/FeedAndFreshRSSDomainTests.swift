@@ -294,6 +294,21 @@ struct FeedAndFreshRSSDomainTests {
         #expect(copied.first?.guid == "open")
     }
 
+    @Test func aFeedRefreshDoesNotChangeTheFolderEdge() {
+        let feed = Feed(title: "Swift", feedURL: URL(string: "https://example.com/rss")!)
+        let before = FeedMembershipEdge.token(of: [feed], includesEnabled: true)
+        let stories = FeedMembershipEdge.token(of: [feed], includesEnabled: false)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 10)
+        feed.etag = "abc"
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true) == before)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) == stories)
+        feed.isEnabled = false
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true) != before)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) == stories)
+        feed.setMemberships(["News"])
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: false) != before)
+    }
+
     @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {
         let development = Feed(title: "Swift", feedURL: URL(string: "https://c.test/rss")!, folderName: "Development")
         let loose = Feed(title: "Loose", feedURL: URL(string: "https://l.test/rss")!)

@@ -37,7 +37,8 @@ struct FoldersView: View {
             sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
         ))
     }
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var refresh = BrowseRefresh()
     @State private var showingAddSource = false
     @State private var toolbarDestination: FeedToolbarDestination?
@@ -64,9 +65,16 @@ struct FoldersView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Sources for the folder list. A later refresh does not replace this until membership changes.
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true)
+    }
+
     var body: some View {
         let _ = iconTick
         let _ = folderOrderTick
+        let _ = feedTick
         let summaries = isEditingFolders ? [] : folderSummaries
         let editingGroups = isEditingFolders ? editingFolderCache.groups(from: feeds) : []
         return List {
@@ -139,6 +147,13 @@ struct FoldersView: View {
         .onAppear { refresh.noteVisibleDay() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { refresh.noteVisibleDay() }
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true) { next in
+                if feedBox.apply(next, includesEnabled: true) {
+                    feedTick += 1
+                }
+            }
         }
         .task {
             refresh.adoptLatestFetch(from: feeds)
@@ -799,7 +814,8 @@ private struct StoryListRefreshChrome: ViewModifier {
 struct ArticleCollectionView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var articles: [Article]
-    @Query(sort: \Feed.title) private var feeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     let destination: FeedBrowseDestination
     @State private var selectedArticle: Article?
     @State private var storyError: String?
@@ -964,8 +980,14 @@ struct ArticleCollectionView: View {
         ListIdentity.token(ids: articles.lazy.map(\.id))
     }
 
+    private var feeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: false)
+    }
+
     var body: some View {
-        OneFeedReadingSplit(article: $selectedArticle) {
+        let _ = feedTick
+        return OneFeedReadingSplit(article: $selectedArticle) {
             OneFeedSearchHost("Search articles", applied: $appliedSearch) {
                 collectionColumn
             }
@@ -1055,6 +1077,13 @@ struct ArticleCollectionView: View {
         .oneFeedScrollEdge()
         .background(OneFeedTheme.plaster)
         .modifier(StoryListRefreshChrome(refresh: refresh))
+        .background {
+            FeedMembershipWatch(includesEnabled: false) { next in
+                if feedBox.apply(next, includesEnabled: false) {
+                    feedTick += 1
+                }
+            }
+        }
         .task { refresh.adoptLatestFetch(from: feeds) }
         .alert("Couldn’t refresh", isPresented: Binding(
             get: { refresh.presentedError != nil },
@@ -1134,5 +1163,49 @@ struct ArticleCollectionView: View {
         case .unread: "New stories from your sources will land here."
         case .folder: "New stories from this folder will land here."
         }
+    }
+}
+
+/// The Feed screens keep this copy. A refresh of fetch time does not publish a new copy.
+private final class FeedDirectoryBox {
+    private var loaded = false
+    private var stored: [Feed] = []
+    private var edge = Int.min
+
+    func feeds(in context: ModelContext, includesEnabled: Bool) -> [Feed] {
+        if !loaded {
+            stored = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled)
+            loaded = true
+        }
+        return stored
+    }
+
+    func apply(_ feeds: [Feed], includesEnabled: Bool) -> Bool {
+        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled)
+        guard !loaded || next != edge else { return false }
+        stored = feeds
+        edge = next
+        loaded = true
+        return true
+    }
+}
+
+/// Watches sources without making the folder or story list redraw on every fetch timestamp.
+private struct FeedMembershipWatch: View {
+    @Query(sort: \Feed.title) private var feeds: [Feed]
+    var includesEnabled: Bool
+    var onChange: ([Feed]) -> Void
+
+    private var edge: Int {
+        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled)
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear { onChange(feeds) }
+            .onChange(of: edge) { _, _ in onChange(feeds) }
     }
 }
