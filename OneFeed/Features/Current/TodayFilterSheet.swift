@@ -44,13 +44,28 @@ struct TodayFilterSheet: View {
     }
 
     private var filterList: some View {
+        Group {
+            if feeds.isEmpty {
+                EmptyLibraryState(
+                    title: "No sources yet",
+                    systemImage: "dot.radiowaves.left.and.right",
+                    description: "Add a source in Feed, then choose whether it fills Today."
+                )
+            } else if visibleFolders.isEmpty {
+                EmptyLibraryState(
+                    title: "No matches",
+                    systemImage: "magnifyingglass",
+                    description: "Try a folder or source name."
+                )
+            } else {
+                filterRows
+            }
+        }
+        .background(OneFeedTheme.plaster)
+    }
+
+    private var filterRows: some View {
         List {
-                if feeds.isEmpty {
-                    emptySources
-                } else if visibleFolders.isEmpty {
-                        ContentUnavailableView.search(text: appliedSearch)
-                        .listRowBackground(Color.clear)
-                } else {
                     ForEach(Array(visibleFolders.enumerated()), id: \.element.id) { index, folder in
                         Section {
                             if folder.offersAllSources {
@@ -68,18 +83,8 @@ struct TodayFilterSheet: View {
                         }
                         .listRowBackground(OneFeedTheme.paper)
                     }
-                }
         }
         .oneFeedGroupedListStyle()
-    }
-
-    private var emptySources: some View {
-        ContentUnavailableView {
-            Label("No sources yet", systemImage: "dot.radiowaves.left.and.right")
-        } description: {
-            Text("Add a source in Feed, then choose whether it fills Today.")
-        }
-        .listRowBackground(Color.clear)
     }
 
     private func allSourcesToggle(_ group: FeedFolderGroup) -> some View {
