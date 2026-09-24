@@ -235,10 +235,11 @@ final class SettingsViewModel {
             Task {
                 defer { isStagingOPML = false }
                 do {
-                    let outlines = try await Task.detached {
-                        try OPMLService.parse(data)
+                    let container = context.container
+                    let preview = try await Task.detached {
+                        let outlines = try OPMLService.parse(data)
+                        return try OPMLService.preview(outlines, in: container)
                     }.value
-                    let preview = try OPMLService().preview(outlines: outlines, in: context)
                     pendingOPMLPreview = preview
                     opmlImportConfirmation = preview.confirmationMessage
                     isConfirmingOPMLImport = true

@@ -100,6 +100,21 @@ struct OPMLTests {
         #expect(parsed.first?.folderName == "Must read")
     }
 
+    @Test func previewMatchesSourcesAwayFromTheOpenScreen() throws {
+        let context = try context()
+        context.insert(Feed(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Must read"))
+        try context.save()
+        let outlines = [
+            OPMLFeedOutline(title: "One", feedURL: URL(string: "https://one.test/rss")!, folderName: "Philosophy"),
+            OPMLFeedOutline(title: "New", feedURL: URL(string: "https://new.test/rss")!, folderName: nil)
+        ]
+        let preview = try OPMLService.preview(outlines, in: context.container)
+        #expect(preview.newSourceCount == 1)
+        #expect(preview.alreadyPresentCount == 1)
+        #expect(preview.folderMembershipsToAdd == 1)
+        #expect(try context.fetch(FetchDescriptor<Feed>()).count == 1)
+    }
+
     @Test func confirmingOPMLImportWritesSourcesOnTheIngestActor() async throws {
         let context = try context()
         let outlines = [

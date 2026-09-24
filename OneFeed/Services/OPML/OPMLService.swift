@@ -77,9 +77,22 @@ struct OPMLService {
 
     /// Matches already-parsed outlines against the library. The file parse stays off this call.
     func preview(outlines: [OPMLFeedOutline], in context: ModelContext) throws -> OPMLImportPreview {
-        let feeds = try context.fetch(FetchDescriptor<Feed>())
-        var known: [(url: URL, folders: Set<String>)] = feeds.map { feed in
-            (feed.feedURL, Set(feed.memberships.map { $0.lowercased() }))
+        try Self.preview(outlines, in: context.container)
+    }
+
+    /// Matches outlines against sources read on a short-lived context, so the open screen does not fetch every feed.
+    nonisolated static func preview(_ outlines: [OPMLFeedOutline], in container: ModelContainer) throws -> OPMLImportPreview {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        var descriptor = FetchDescriptor<Feed>()
+        descriptor.propertiesToFetch = [\.feedURL, \.folderNames, \.folderName]
+        let feeds = try context.fetch(descriptor)
+        return preview(outlines, known: feeds.map { ($0.feedURL, $0.memberships) })
+    }
+
+    nonisolated static func preview(_ outlines: [OPMLFeedOutline], known feeds: [(URL, [String])]) -> OPMLImportPreview {
+        var known: [(url: URL, folders: Set<String>)] = feeds.map { url, folders in
+            (url, Set(folders.map { $0.lowercased() }))
         }
         var newSourceCount = 0
         var alreadyPresentCount = 0
