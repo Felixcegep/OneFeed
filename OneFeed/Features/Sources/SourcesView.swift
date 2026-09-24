@@ -3,7 +3,8 @@ import SwiftUI
 
 struct SourcesView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Feed.title) private var storedFeeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var viewModel = SourcesViewModel()
     @State private var addPreferredFolder: String?
     @State private var pickingFolder: FolderIconTarget?
@@ -13,6 +14,11 @@ struct SourcesView: View {
 
     private var folderQuery: String {
         appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var storedFeeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
     }
 
     private var visibleFolders: [FeedFolderGroup] {
@@ -27,12 +33,20 @@ struct SourcesView: View {
 
     var body: some View {
         let _ = iconTick
+        let _ = feedTick
         OneFeedSearchHost("Folders or sources", applied: $appliedSearch) {
             sourcesList
         }
         .navigationTitle("Sources")
         .oneFeedLargeTitle()
         .oneFeedScrollEdge()
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesTitle: true) {
+                    feedTick += 1
+                }
+            }
+        }
         .task { viewModel.configure(with: modelContext) }
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
@@ -250,8 +264,14 @@ private struct FolderFeedsView: View {
     var onAddInFolder: () -> Void
 
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Feed.title) private var storedFeeds: [Feed]
+    @State private var feedBox = FeedDirectoryBox()
+    @State private var feedTick = 0
     @State private var appliedSearch = ""
+
+    private var storedFeeds: [Feed] {
+        _ = feedTick
+        return feedBox.feeds(in: modelContext, includesEnabled: true, includesTitle: true)
+    }
 
     private var otherFolders: [String] {
         FolderStore.allNames(from: storedFeeds).filter { name in
@@ -271,8 +291,16 @@ private struct FolderFeedsView: View {
     }
 
     var body: some View {
+        let _ = feedTick
         OneFeedSearchHost("Sources in this folder", applied: $appliedSearch) {
             folderFeedList
+        }
+        .background {
+            FeedMembershipWatch(includesEnabled: true, includesTitle: true) { next in
+                if feedBox.apply(next, includesEnabled: true, includesTitle: true) {
+                    feedTick += 1
+                }
+            }
         }
     }
 

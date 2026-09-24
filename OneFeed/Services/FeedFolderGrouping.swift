@@ -37,7 +37,7 @@ struct FolderSummary: Identifiable, Sendable {
 
 /// Folder membership for the Feed list. A refresh updates fetch time and does not change this token.
 enum FeedMembershipEdge {
-    static func token(of feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false) -> Int {
+    static func token(of feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false, includesTitle: Bool = false) -> Int {
         var token = feeds.count
         for feed in feeds {
             token = token &* 31 &+ feed.id.hashValue
@@ -47,6 +47,9 @@ enum FeedMembershipEdge {
             }
             if includesToday {
                 token = token &* 31 &+ (feed.includeInToday ? 1 : 0)
+            }
+            if includesTitle {
+                token = token &* 31 &+ feed.title.hashValue
             }
         }
         return token

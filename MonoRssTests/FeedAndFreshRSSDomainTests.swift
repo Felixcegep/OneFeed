@@ -312,6 +312,11 @@ struct FeedAndFreshRSSDomainTests {
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) == today)
         feed.includeInToday = false
         #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesToday: true) != today)
+        let sources = FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true)
+        feed.lastFetchedAt = Date(timeIntervalSince1970: 30)
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) == sources)
+        feed.title = "Renamed"
+        #expect(FeedMembershipEdge.token(of: [feed], includesEnabled: true, includesTitle: true) != sources)
     }
 
     @Test func folderNamesMatchTheCountedFoldersBeforeUnreadBadges() {

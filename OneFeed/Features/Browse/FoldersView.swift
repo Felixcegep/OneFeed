@@ -1172,17 +1172,17 @@ final class FeedDirectoryBox {
     private var stored: [Feed] = []
     private var edge = Int.min
 
-    func feeds(in context: ModelContext, includesEnabled: Bool, includesToday: Bool = false) -> [Feed] {
+    func feeds(in context: ModelContext, includesEnabled: Bool, includesToday: Bool = false, includesTitle: Bool = false) -> [Feed] {
         if !loaded {
             stored = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
-            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled, includesToday: includesToday)
+            edge = FeedMembershipEdge.token(of: stored, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
             loaded = true
         }
         return stored
     }
 
-    func apply(_ feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false) -> Bool {
-        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday)
+    func apply(_ feeds: [Feed], includesEnabled: Bool, includesToday: Bool = false, includesTitle: Bool = false) -> Bool {
+        let next = FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
         guard !loaded || next != edge else { return false }
         stored = feeds
         edge = next
@@ -1196,10 +1196,11 @@ struct FeedMembershipWatch: View {
     @Query(sort: \Feed.title) private var feeds: [Feed]
     var includesEnabled: Bool
     var includesToday: Bool = false
+    var includesTitle: Bool = false
     var onChange: ([Feed]) -> Void
 
     private var edge: Int {
-        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday)
+        FeedMembershipEdge.token(of: feeds, includesEnabled: includesEnabled, includesToday: includesToday, includesTitle: includesTitle)
     }
 
     var body: some View {
