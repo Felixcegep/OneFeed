@@ -1,5 +1,8 @@
 import SwiftUI
 import WebKit
+#if os(iOS)
+import AVFoundation
+#endif
 import SwiftData
 
 enum ReaderDisplayMode: String, CaseIterable, Identifiable {
@@ -951,9 +954,12 @@ private struct WebsiteReaderPane: View {
     let title: String
     var isVideo = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var page: WebPage
     @State private var hasCommitted = ReaderWebWarmup.skipsOpeningCover
     @State private var allowCover = false
+    @State private var mediaLifecycleTask: Task<Void, Never>?
+    @State private var isPaneVisible = true
 
     init(url: URL, title: String, isVideo: Bool = false) {
         self.url = url
@@ -962,6 +968,10 @@ private struct WebsiteReaderPane: View {
         var configuration = WebPage.Configuration()
         configuration.loadsSubresources = true
         configuration.defaultNavigationPreferences.allowsContentJavaScript = true
+        configuration.mediaPlaybackBehavior = .allowsInlinePlayback
+        if isVideo, Self.isYouTubeURL(url) {
+            configuration.userContentController = YouTubeBackgroundPlayback.makeUserContentController()
+        }
         _page = State(initialValue: WebPage(configuration: configuration))
     }
 
@@ -988,15 +998,109 @@ private struct WebsiteReaderPane: View {
             .onChange(of: page.isLoading) { _, loading in
                 if !loading { hasCommitted = true }
             }
+            .onChange(of: scenePhase) { _, phase in
+                guard isYouTubePlayback else { return }
+                let previousTask = mediaLifecycleTask
+                mediaLifecycleTask = Task { @MainActor in
+                    await previousTask?.value
+                    guard !Task.isCancelled else { return }
+                    await handleMediaScenePhase(phase)
+                }
+            }
+            .onAppear { isPaneVisible = true }
             .task(id: url) {
                 allowCover = false
                 async let cover: Void = revealCoverIfStillWaiting()
+                if isYouTubePlayback {
+                    configurePlaybackAudioSession()
+                }
                 _ = page.load(URLRequest(url: url))
                 await waitForPageSettled(page)
                 hasCommitted = true
                 allowCover = false
                 _ = await cover
             }
+            .onDisappear {
+                isPaneVisible = false
+                mediaLifecycleTask?.cancel()
+                if isYouTubePlayback {
+                    Task { _ = await YouTubeBackgroundPlayback.command("clear", on: page) }
+                }
+                deactivatePlaybackAudioSession()
+            }
+    }
+
+    private var isYouTubePlayback: Bool {
+        isVideo && Self.isYouTubeURL(url)
+    }
+
+    private static func isYouTubeURL(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "youtube.com" || host.hasSuffix(".youtube.com")
+            || host == "youtube-nocookie.com" || host.hasSuffix(".youtube-nocookie.com")
+            || host == "youtu.be"
+    }
+
+    @MainActor
+    private func handleMediaScenePhase(_ phase: ScenePhase) async {
+        guard isPaneVisible, !Task.isCancelled else { return }
+        switch phase {
+        case .inactive, .background:
+            // Preserve playback intent before WebKit can pause during the state query.
+            _ = await YouTubeBackgroundPlayback.command("arm", on: page)
+            guard isPaneVisible, !Task.isCancelled else { return }
+            await logMediaState("before \(phase)")
+            guard isPaneVisible, !Task.isCancelled else { return }
+            await page.setAllMediaPlaybackSuspended(false)
+            guard isPaneVisible, !Task.isCancelled else { return }
+            _ = await YouTubeBackgroundPlayback.command("resumePending", on: page)
+            guard isPaneVisible, !Task.isCancelled else { return }
+            await logMediaState("after \(phase)")
+        case .active:
+            _ = await YouTubeBackgroundPlayback.command("activate", on: page)
+            guard isPaneVisible, !Task.isCancelled else { return }
+            await logMediaState("returned active")
+        @unknown default:
+            break
+        }
+    }
+
+    @MainActor
+    private func logMediaState(_ label: String) async {
+        let state = await page.mediaPlaybackState()
+        let name: String
+        switch state {
+        case .none: name = "none"
+        case .playing: name = "playing"
+        case .paused: name = "paused"
+        case .suspended: name = "suspended"
+        @unknown default: name = "unknown(\(state.rawValue))"
+        }
+        NSLog("[OneFeed][YouTubeNative] %@ state=%@", label, name)
+        _ = await YouTubeBackgroundPlayback.command("snapshot", on: page)
+    }
+
+    private func configurePlaybackAudioSession() {
+        #if os(iOS)
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+        } catch {
+            NSLog("[OneFeed] Could not configure playback audio session: %@", error.localizedDescription)
+        }
+        #endif
+    }
+
+    private func deactivatePlaybackAudioSession() {
+        #if os(iOS)
+        guard isYouTubePlayback else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            NSLog("[OneFeed] Could not deactivate playback audio session: %@", error.localizedDescription)
+        }
+        #endif
     }
 
     private func revealCoverIfStillWaiting() async {
