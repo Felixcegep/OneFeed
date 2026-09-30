@@ -47,7 +47,7 @@ struct OnboardingView: View {
                             .foregroundStyle(OneFeedTheme.ink)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
-                            .contentTransition(.opacity)
+                            .contentTransition(reduceMotion ? .identity : .opacity)
                             .accessibilityAddTraits(.isHeader)
                         if !subtitle.isEmpty {
                             Text(subtitle)
@@ -56,7 +56,7 @@ struct OnboardingView: View {
                                 .multilineTextAlignment(.center)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 12)
-                                .contentTransition(.opacity)
+                                .contentTransition(reduceMotion ? .identity : .opacity)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -153,7 +153,7 @@ struct OnboardingView: View {
 
     private var subtitle: String {
         switch viewModel.page {
-        case 0: "Read one story at a time in Today. Save stories in Queue for later."
+        case 0: "Read one story at a time in Today. Keep stories in Queue for later."
         case 1: "Add websites, RSS feeds, or connect FreshRSS."
         default: "Open a piece when you are ready. Done when you are finished."
         }

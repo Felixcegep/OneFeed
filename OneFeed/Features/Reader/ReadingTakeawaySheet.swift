@@ -3,7 +3,9 @@ import SwiftUI
 
 struct ReadingTakeawaySheet: View {
     let article: Article
+    var onDraftFailed: (String) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var reaction: ArticleReadingReaction?
@@ -12,6 +14,7 @@ struct ReadingTakeawaySheet: View {
     @State private var detent: PresentationDetent = .medium
     @State private var explicitDismiss = false
     @State private var didWrite = false
+    @State private var saveError: String?
     @State private var showsFirstVisitHint = false
     @AppStorage(AppPreferenceKey.didSeeTakeawayHint) private var didSeeTakeawayHint = false
     @FocusState private var noteFocused: Bool
@@ -44,6 +47,7 @@ struct ReadingTakeawaySheet: View {
                         .focused($noteFocused)
                         .lineLimit(2...4)
                         .font(OneFeedTheme.serifBody(17))
+                        .oneFeedLegibleWeight()
                         .foregroundStyle(OneFeedTheme.ink)
                         .padding(12)
                         .background(
@@ -85,6 +89,14 @@ struct ReadingTakeawaySheet: View {
                 }
             }
             .sensoryFeedback(.selection, trigger: selectionPulse)
+            .alert("Couldn’t save that note", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK", role: .cancel) { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
             .onAppear {
                 guard !didSeeTakeawayHint else { return }
                 showsFirstVisitHint = true
@@ -180,25 +192,36 @@ struct ReadingTakeawaySheet: View {
 
     private func keepDraftIfNeeded() {
         guard !explicitDismiss, !didWrite, isDirty, article.isStored else { return }
-        article.setReadingTakeaway(reaction: reaction, note: trimmedNote)
-        LibraryChange.note(article)
-        try? article.modelContext?.save()
-        didWrite = true
+        if writeTakeaway() {
+            didWrite = true
+        } else if let saveError {
+            onDraftFailed(saveError)
+        }
     }
 
     private func save() {
+        guard !didWrite, !explicitDismiss else { return }
         if reaction == nil, trimmedNote.isEmpty {
             explicitDismiss = true
             dismiss()
             return
         }
-        article.setReadingTakeaway(reaction: reaction, note: trimmedNote)
-        if article.isStored {
-            LibraryChange.note(article)
-            try? article.modelContext?.save()
-        }
+        guard writeTakeaway() else { return }
         didWrite = true
         dismiss()
+    }
+
+    private func writeTakeaway() -> Bool {
+        article.setReadingTakeaway(reaction: reaction, note: trimmedNote)
+        guard article.isStored else { return true }
+        LibraryChange.note(article)
+        do {
+            try modelContext.save()
+            return true
+        } catch {
+            saveError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that note.")
+            return false
+        }
     }
 }
 

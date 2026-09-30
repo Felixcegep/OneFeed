@@ -7,16 +7,17 @@ import SwiftData
 final class BrowseRefresh {
     private let feedService: any FeedRepository
     private let freshRSSService: any FreshRSSSyncing
+    private var inFlight: Task<Void, Never>?
+    /// A second pull, or a source added while this pass is fetching, runs once after it.
+    private var askedForAnotherPass = false
     private(set) var isRefreshing = false
     private(set) var lastRefreshedAt: Date?
     let progress = RefreshProgress()
     var presentedError: String?
-
-    var statusText: String {
-        if isRefreshing { return progress.primaryText }
-        guard let lastRefreshedAt else { return "Pull to update" }
-        return "Updated \(lastRefreshedAt.formatted(.relative(presentation: .named)))"
-    }
+    /// Clock time, not a relative phrase. A relative phrase changes as minutes pass, and each progress tick redraws the title bar.
+    private(set) var statusText = "Pull to update"
+    private var statusDay: Date?
+    private var statusStamp: Date?
 
     init() {
         self.feedService = FeedService()
@@ -32,15 +33,33 @@ final class BrowseRefresh {
     }
 
     func refresh(in context: ModelContext) async {
-        guard !isRefreshing else { return }
+        if let inFlight {
+            askedForAnotherPass = true
+            await inFlight.value
+            return
+        }
+        let task = Task { await self.runRefresh(in: context) }
+        inFlight = task
+        await task.value
+    }
+
+    private func runRefresh(in context: ModelContext) async {
         isRefreshing = true
         defer {
             progress.finish()
             isRefreshing = false
+            inFlight = nil
         }
         await BackgroundRefreshCoordinator.runExclusive {
             await self.performRefreshWork(in: context)
-            self.lastRefreshedAt = .now
+            self.recordRefreshTime(.now)
+        }
+        while askedForAnotherPass {
+            askedForAnotherPass = false
+            await BackgroundRefreshCoordinator.runExclusive(followsUp: true) {
+                await self.performRefreshWork(in: context)
+                self.recordRefreshTime(.now)
+            }
         }
     }
 
@@ -66,8 +85,42 @@ final class BrowseRefresh {
         }
     }
 
-    func adoptLatestFetch(from feeds: [Feed]) {
-        guard lastRefreshedAt == nil else { return }
-        lastRefreshedAt = feeds.compactMap(\.lastFetchedAt).max()
+    func adoptLatestFetch(from feeds: [Feed], now: Date = .now) {
+        if lastRefreshedAt == nil {
+            lastRefreshedAt = feeds.compactMap(\.lastFetchedAt).max()
+        }
+        noteVisibleDay(now: now)
+    }
+
+    /// Republishes the subtitle when the calendar day changes. A refresh in progress keeps the line that was already showing.
+    func noteVisibleDay(now: Date = .now, calendar: Calendar = .current) {
+        guard !isRefreshing else { return }
+        let day = calendar.startOfDay(for: now)
+        guard statusDay != day || statusStamp != lastRefreshedAt else { return }
+        publishStatus(now: now, calendar: calendar)
+    }
+
+    private func recordRefreshTime(_ date: Date, now: Date = .now) {
+        lastRefreshedAt = date
+        publishStatus(now: now)
+    }
+
+    private func publishStatus(now: Date, calendar: Calendar = .current) {
+        statusDay = calendar.startOfDay(for: now)
+        statusStamp = lastRefreshedAt
+        statusText = Self.updatedLine(at: lastRefreshedAt, now: now, calendar: calendar)
+    }
+
+    /// Same-day updates use a clock time, so the title bar does not grow from “just now” to “1 minute ago” while the progress line moves.
+    static func updatedLine(at date: Date?, now: Date = .now, calendar: Calendar = .current) -> String {
+        guard let date else { return "Pull to update" }
+        if calendar.isDate(date, inSameDayAs: now) {
+            return "Updated \(date.formatted(date: .omitted, time: .shortened))"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "Updated yesterday"
+        }
+        return "Updated \(date.formatted(date: .abbreviated, time: .omitted))"
     }
 }

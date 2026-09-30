@@ -9,7 +9,8 @@ struct DailyDeckService {
 
     nonisolated static func generateIfNeeded(in context: ModelContext, maxItems: Int = 10, persist: Bool = true) throws -> DailyDeck {
         if let existing = try todayDeck(in: context) {
-            return existing
+            try topUpCaughtUpDeck(existing, in: context, maxItems: maxItems, persist: persist)
+            return try todayDeck(in: context) ?? existing
         }
 
         let deck = DailyDeck(dayStart: dayStart(for: .now), createdAt: .now)
@@ -50,7 +51,7 @@ struct DailyDeckService {
     func currentItem(in context: ModelContext) throws -> DailyDeckItem? {
         guard let deck = try Self.todayDeck(in: context) else { return nil }
         let items = deck.items.sorted { $0.position < $1.position }
-        if let current = items.first(where: { $0.status == .current && $0.article?.isStored == true }) {
+        if let current = items.first(where: { $0.status == .current && $0.articleExists(in: context) }) {
             return current
         }
         var repaired = false
@@ -58,9 +59,9 @@ struct DailyDeckService {
             orphan.status = .skipped
             repaired = true
         }
-        if let next = items.first(where: { $0.status == .queued && $0.article?.isStored == true }) {
+        if let next = items.first(where: { $0.status == .queued && $0.articleExists(in: context) }) {
             next.status = .current
-            if let article = next.article {
+            if let id = next.resolvedArticleID(), let article = Self.lightweightArticle(id: id, in: context) {
                 article.state = .current
                 article.firstDisplayedAt = article.firstDisplayedAt ?? .now
                 LibraryChange.note(article)
@@ -78,7 +79,7 @@ struct DailyDeckService {
         precondition([.read, .skipped, .saved].contains(state), "Deck items can only advance to a terminal state")
 
         item.status = state
-        if let article = item.article {
+        if let id = item.resolvedArticleID(), let article = Self.lightweightArticle(id: id, in: context) {
             article.state = state
             article.completedAt = .now
             if state == .saved { article.isRemoteStarred = true }
@@ -90,17 +91,21 @@ struct DailyDeckService {
             .sorted { $0.position < $1.position }
             .first
 
+        var promoted: Article?
         if let nextItem {
             nextItem.status = .current
-            if let article = nextItem.article {
-                article.state = .current
-                article.firstDisplayedAt = .now
-                LibraryChange.note(article)
+            if let id = nextItem.resolvedArticleID() {
+                promoted = Self.lightweightArticle(id: id, in: context)
+                if let article = promoted {
+                    article.state = .current
+                    article.firstDisplayedAt = .now
+                    LibraryChange.note(article)
+                }
             }
         }
 
         try context.save()
-        WidgetSnapshotStore.write(article: nextItem?.article)
+        WidgetSnapshotStore.write(article: promoted)
         return nextItem
     }
 
@@ -109,8 +114,10 @@ struct DailyDeckService {
         return deck.items
             .filter { $0.status == .current || $0.status == .queued }
             .sorted { $0.position < $1.position }
-            .compactMap(\.article)
-            .filter(\.isStored)
+            .compactMap { item in
+                guard let id = item.resolvedArticleID() else { return nil }
+                return Self.lightweightArticle(id: id, in: context)
+            }
     }
 
     /// Turns sources on or off for Today and rebuilds the open part of today's stack.
@@ -124,13 +131,19 @@ struct DailyDeckService {
     }
 
     nonisolated static func setIncludedInToday(_ included: Bool, feeds: [Feed], in context: ModelContext) throws {
+        try storeIncludedInToday(included, feeds: feeds, in: context)
+        try reconcileMembership(in: context)
+    }
+
+    /// Saves the switches and leaves today's stack alone. The filter sheet reconciles once when it closes.
+    nonisolated static func storeIncludedInToday(_ included: Bool, feeds: [Feed], in context: ModelContext) throws {
         let targets = feeds.filter { $0.includeInToday != included }
         guard !targets.isEmpty else { return }
         for feed in targets {
             feed.includeInToday = included
             feed.touchLibrary()
         }
-        try reconcileMembership(in: context)
+        try context.save()
         Task { @MainActor in
             LibrarySyncService.shared.schedulePush()
         }
@@ -144,8 +157,9 @@ struct DailyDeckService {
 
         var droppedIDs = Set<UUID>()
         for item in deck.items where item.status == .current || item.status == .queued {
-            guard !isEligibleForToday(item.article) else { continue }
-            if let article = item.article, article.isStored, article.state == .current {
+            let linked = item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+            guard !isEligibleForToday(linked) else { continue }
+            if let article = linked, article.state == .current {
                 article.state = .queued
                 article.touchLibrary()
             }
@@ -159,7 +173,7 @@ struct DailyDeckService {
         let open = live.filter { $0.status == .current || $0.status == .queued }
         if !open.contains(where: { $0.status == .current }), let next = open.first {
             next.status = .current
-            if let article = next.article, article.isStored {
+            if let id = next.resolvedArticleID(), let article = lightweightArticle(id: id, in: context) {
                 article.state = .current
                 article.firstDisplayedAt = article.firstDisplayedAt ?? .now
                 article.touchLibrary()
@@ -169,13 +183,15 @@ struct DailyDeckService {
         var appended: [DailyDeckItem] = []
         let room = max(0, maxItems - live.count)
         if room > 0 {
-            let taken = Set(live.compactMap { $0.article?.id })
+            let taken = Set(live.compactMap { $0.resolvedArticleID() })
             let placements = try storyPlacements(in: context)
             let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
             let selected = selectCandidates(
                 from: pool,
                 maxItems: room,
-                alreadySelected: live.compactMap(\.article),
+                alreadySelected: live.compactMap { item in
+                    item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+                },
                 placements: placements
             )
             var placedCurrent = live.contains { $0.status == .current }
@@ -207,6 +223,62 @@ struct DailyDeckService {
         WidgetSnapshotStore.write(article: current)
     }
 
+    /// When today's stack is finished, refresh can fill another batch. An open story stays put.
+    nonisolated private static func topUpCaughtUpDeck(
+        _ deck: DailyDeck,
+        in context: ModelContext,
+        maxItems: Int,
+        persist: Bool
+    ) throws {
+        let hasOpenStory = deck.items.contains {
+            ($0.status == .current || $0.status == .queued) && $0.articleExists(in: context)
+        }
+        guard !hasOpenStory else { return }
+
+        let taken = Set(deck.items.compactMap { $0.resolvedArticleID() })
+        let placements = try storyPlacements(in: context)
+        let pool = try fetchCandidates(in: context).filter { !taken.contains($0.id) }
+        let selected = selectCandidates(
+            from: pool,
+            maxItems: maxItems,
+            alreadySelected: deck.items.compactMap { item in
+                item.resolvedArticleID().flatMap { lightweightArticle(id: $0, in: context) }
+            },
+            placements: placements
+        )
+        guard !selected.isEmpty else { return }
+
+        var position = deck.items.map(\.position).max() ?? 0
+        var placedCurrent = false
+        for article in selected {
+            position += 1
+            let status: ArticleState = placedCurrent ? .queued : .current
+            placedCurrent = true
+            let item = DailyDeckItem(position: position, status: status, article: article, deck: deck)
+            context.insert(item)
+            if article.state != status {
+                article.state = status
+                article.touchLibrary()
+            }
+            if status == .current {
+                article.firstDisplayedAt = article.firstDisplayedAt ?? .now
+            }
+        }
+
+        if persist { try context.save() }
+        WidgetSnapshotStore.write(article: selected.first)
+    }
+
+    /// Identity and state for a deck row. The stored page stays on disk.
+    nonisolated static func lightweightArticle(id: UUID, in context: ModelContext) -> Article? {
+        let matchID = id
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        descriptor.propertiesToFetch = ArticleListFetch.rowColumns
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        return try? context.fetch(descriptor).first
+    }
+
     nonisolated private static func dayStart(for date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
     }
@@ -229,6 +301,9 @@ struct DailyDeckService {
         })
         descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .reverse)]
         descriptor.fetchLimit = 80
+        // The body stays on disk. These are the same columns a row reads, so a later card does not fault the page.
+        descriptor.propertiesToFetch = ArticleListFetch.rowColumns
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let fetched = try context.fetch(descriptor)
 
         return fetched.filter { article in
@@ -237,14 +312,28 @@ struct DailyDeckService {
         }
     }
 
+    static func loadStoryPlacements(in context: ModelContext) -> [String: StoryPlacement] {
+        (try? storyPlacements(in: context)) ?? [:]
+    }
+
+    /// Reads cluster captions off the main actor so opening Feed does not stall the list.
+    static func loadStoryPlacements(from container: ModelContainer) async -> [String: StoryPlacement] {
+        await Task.detached(priority: .utility) {
+            loadStoryPlacements(in: ModelContext(container))
+        }.value
+    }
+
     nonisolated private static func storyPlacements(in context: ModelContext) throws -> [String: StoryPlacement] {
-        let memories = try context.fetch(FetchDescriptor<ContentMemory>())
+        var descriptor = FetchDescriptor<ContentMemory>()
+        descriptor.propertiesToFetch = [\.identityKey, \.relationshipRaw, \.storyClusterID, \.matchedConsumedAt]
+        let memories = try context.fetch(descriptor)
         var lookup: [String: StoryPlacement] = [:]
         lookup.reserveCapacity(memories.count)
         for memory in memories {
             lookup[memory.identityKey] = StoryPlacement(
                 relationshipRaw: memory.relationshipRaw,
-                storyClusterID: memory.storyClusterID
+                storyClusterID: memory.storyClusterID,
+                matchedConsumedAt: memory.matchedConsumedAt
             )
         }
         return lookup
@@ -309,7 +398,8 @@ struct DailyDeckService {
     }
 }
 
-nonisolated struct StoryPlacement: Sendable {
+nonisolated struct StoryPlacement: Equatable, Sendable {
     var relationshipRaw: String
     var storyClusterID: UUID?
+    var matchedConsumedAt: Date? = nil
 }

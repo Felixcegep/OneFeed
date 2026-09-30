@@ -46,13 +46,23 @@ final class LibrarySyncService {
     private(set) var linkedRecord: CloudFileLinkRecord?
 
     /// Reader presented. Automatic and manual pulls wait; `useCloudFile` still pulls.
-    var hasActiveReadingSession = false
+    var hasActiveReadingSession = false {
+        didSet {
+            guard oldValue, !hasActiveReadingSession else { return }
+            resumeDeferredPullIfIdle()
+            resumeDeferredPush()
+        }
+    }
+    /// A cloud pull arrived while a story was open. Pull once reading ends.
+    private var pullAgain = false
 
     private var context: ModelContext?
     private var scopedURL: URL?
     private var libraryFileURL: URL?
     private var isFileBookmark = false
     private var pushTask: Task<Void, Never>?
+    /// A library change arrived while a sync was already writing. One push runs after that sync.
+    private var pushAgain = false
     private var lastWrittenData: Data?
     private var presenter: LibraryFilePresenter?
     private var isApplyingRemote = false
@@ -140,7 +150,7 @@ final class LibrarySyncService {
             let isFile = !isDirectory
             try LibraryFolderStore.saveBookmark(for: url, isFile: isFile)
             await restoreIfNeeded()
-            await pullAndMerge()
+            await pullAndMerge(replacingDuringReading: true)
             await pushNow()
         } catch {
             present(error)
@@ -163,6 +173,8 @@ final class LibrarySyncService {
         lastOutcome = .unlinked
         isLinked = false
         isSyncing = false
+        pushAgain = false
+        pullAgain = false
         status = .unlinked
     }
 
@@ -203,12 +215,21 @@ final class LibrarySyncService {
 
     func schedulePush() {
         guard isLinked, !isDisabled, !isApplyingRemote else { return }
+        if usesGoogleDriveAPI, !isAutoSyncEnabled { return }
+        if hasActiveReadingSession {
+            pushTask?.cancel()
+            pushAgain = true
+            return
+        }
         if usesGoogleDriveAPI {
-            guard isAutoSyncEnabled else { return }
             pushTask?.cancel()
             pushTask = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(1_500))
                 guard !Task.isCancelled else { return }
+                if isSyncing || self.hasActiveReadingSession {
+                    pushAgain = true
+                    return
+                }
                 _ = await sync(request: .automatic)
             }
             return
@@ -217,27 +238,79 @@ final class LibrarySyncService {
         pushTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1_500))
             guard !Task.isCancelled else { return }
+            if isSyncing || self.hasActiveReadingSession {
+                pushAgain = true
+                return
+            }
             await pushNow()
         }
     }
 
+    /// Runs one delayed push after the sync that was already in progress.
+    private func resumeDeferredPush() {
+        guard pushAgain else { return }
+        pushAgain = false
+        schedulePush()
+    }
+
+    /// Runs one deferred cloud pull after the open story closes.
+    /// A file push that also waited runs after that pull, so the open story is not overwritten first.
+    private func resumeDeferredPullIfIdle() {
+        guard !hasActiveReadingSession, !isSyncing else { return }
+        let pull = pullAgain
+        let pushFile = pushAgain && !usesGoogleDriveAPI
+        guard pull || pushFile else { return }
+        pullAgain = false
+        if pushFile { pushAgain = false }
+        Task { await resumeDeferredLibraryWork(pull: pull, pushFile: pushFile) }
+    }
+
+    private func resumeDeferredLibraryWork(pull: Bool, pushFile: Bool) async {
+        if usesGoogleDriveAPI {
+            if pull { _ = await sync(request: .automatic) }
+            return
+        }
+        if pull { await pullAndMerge() }
+        if pushFile { await pushNow() }
+    }
+
     func syncNow() async {
-        guard isLinked else { return }
+        guard isLinked, !isSyncing else { return }
         if usesGoogleDriveAPI {
             _ = await sync(request: .manual)
             return
         }
+        isSyncing = true
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+            resumeDeferredPullIfIdle()
+        }
         await pullAndMerge()
-        await pushNow()
+        if hasActiveReadingSession {
+            pushAgain = true
+        } else {
+            await pushNow()
+        }
     }
 
     func flush() async {
         pushTask?.cancel()
         guard isLinked else { return }
+        if isSyncing || hasActiveReadingSession {
+            pushAgain = true
+            return
+        }
         if usesGoogleDriveAPI {
             guard isAutoSyncEnabled else { return }
             _ = await sync(request: .automatic)
             return
+        }
+        isSyncing = true
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+            resumeDeferredPullIfIdle()
         }
         await pushNow()
     }
@@ -255,21 +328,26 @@ final class LibrarySyncService {
 
         isSyncing = true
         status = .syncing
-        defer { isSyncing = false }
+        defer {
+            isSyncing = false
+            resumeDeferredPush()
+            resumeDeferredPullIfIdle()
+        }
 
         do {
             let outcome = try await performDriveSync(request: request)
+            if outcome == .skippedActiveSession {
+                pullAgain = true
+            } else {
+                pullAgain = false
+            }
             lastOutcome = outcome
             lastError = nil
             lastErrorMessage = nil
             status = outcome == .unlinked ? .unlinked : .idle
             return outcome
         } catch {
-            let message = error.localizedDescription
-            lastError = message
-            lastErrorMessage = message
-            lastOutcome = .failed(message)
-            status = .error(message)
+            present(error)
             return lastOutcome
         }
     }
@@ -364,6 +442,9 @@ final class LibrarySyncService {
             persist(record)
             return .inSync
         case .push:
+            if hasActiveReadingSession, request == .automatic || request == .manual {
+                return .skippedActiveSession
+            }
             try await writeDrive(localData, to: record)
             record.lastSyncedHash = localHash
             record.lastSyncedAt = .now
@@ -380,7 +461,7 @@ final class LibrarySyncService {
             if hasActiveReadingSession, request == .automatic || request == .manual {
                 return .skippedActiveSession
             }
-            return try pullDrive(
+            return try await pullDrive(
                 remoteData,
                 hash: CloudFileContentHash.sha256Hex(remoteData),
                 into: context,
@@ -430,9 +511,9 @@ final class LibrarySyncService {
         hash: String,
         into context: ModelContext,
         record: CloudFileLinkRecord
-    ) throws -> Outcome {
+    ) async throws -> Outcome {
         let document = try LibraryDocument.decode(remoteData)
-        writeRecoveryCopy(of: context)
+        await writeRecoveryCopy(of: context)
         isApplyingRemote = true
         defer { isApplyingRemote = false }
         _ = try LibraryMerge.apply(document, to: context, options: .all)
@@ -451,9 +532,11 @@ final class LibrarySyncService {
         return .pulled
     }
 
-    private func writeRecoveryCopy(of context: ModelContext) {
+    private func writeRecoveryCopy(of context: ModelContext) async {
         do {
-            let data = try Self.encodedLibraryFile(from: context)
+            let data = try await SwiftDataIngest.actor(from: context).encodedLibraryFile(
+                extraTombstones: LibraryFolderStore.loadTombstones()
+            )
             let directory = try recoveryDirectory()
             try data.write(
                 to: directory.appendingPathComponent("OneFeed.library-before-pull.json"),
@@ -508,7 +591,12 @@ final class LibrarySyncService {
         return latest
     }
 
-    private func pullAndMerge() async {
+    private func pullAndMerge(replacingDuringReading: Bool = false) async {
+        if hasActiveReadingSession, !replacingDuringReading {
+            pullAgain = true
+            return
+        }
+        pullAgain = false
         guard let context, let libraryFileURL, isLinked else { return }
         status = .syncing
         do {
@@ -671,9 +759,21 @@ final class LibrarySyncService {
     }
 
     private func present(_ error: Error) {
-        lastError = error.localizedDescription
-        lastErrorMessage = error.localizedDescription
-        status = .error(error.localizedDescription)
+        guard UserFacingFailure.shouldSurface(error) else {
+            lastError = nil
+            lastErrorMessage = nil
+            lastOutcome = .failed("Couldn’t sync the library.")
+            if case .unlinked = status {
+                return
+            }
+            status = .idle
+            return
+        }
+        let message = UserFacingFailure.message(for: error, fallback: "Couldn’t sync the library.")
+        lastError = message
+        lastErrorMessage = message
+        lastOutcome = .failed(message)
+        status = .error(message)
     }
 }
 

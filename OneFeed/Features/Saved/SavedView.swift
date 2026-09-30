@@ -5,40 +5,133 @@ import UniformTypeIdentifiers
 struct SavedView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "saved" },
-        sort: \Article.completedAt,
-        order: .reverse
-    ) private var savedQuery: [Article]
+    @Query private var savedQuery: [Article]
+
+    init() {
+        let saved = ArticleState.saved.rawValue
+        _savedQuery = Query(ArticleListFetch.rows(
+            predicate: #Predicate<Article> { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        ))
+    }
     @State private var viewModel = SavedViewModel()
     @State private var isAdding = false
-    @State private var searchText = ""
+    @State private var isImportingDrop = false
+    @State private var pendingDropProviders: [NSItemProvider] = []
+    @State private var appliedSearch = ""
+    /// Collapsed sections stay put while the open story changes. Rebuilt off the main thread when the queue or search changes.
+    @State private var queueLayout = QueueLayout()
+    @State private var queueReady = false
+    @State private var queueHoldRevealed = false
 
-    private var waiting: [Article] {
-        ArticleIdentity.collapsingDuplicates(savedQuery).filter(\.isStored)
+    /// Every waiting id and kind. Opening a story does not collapse the queue again.
+    private var queueEdge: Int {
+        var count = 0
+        var mixed = 0
+        for article in savedQuery {
+            count += 1
+            mixed = mixed &* 31 &+ article.id.hashValue
+            mixed = mixed &* 31 &+ article.contentKind.hashValue
+        }
+        return count &* 31 &+ mixed
     }
 
     private var searchQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        appliedSearch.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// In-memory filter of `waiting`. An empty query returns the queue unchanged.
-    private var visibleQueue: [Article] {
+    private var queueHoldWaiting: Bool {
+        !queueReady && !queueLayout.hasQueue && savedQuery.contains(where: \.isStored)
+    }
+
+    private var queuePlanEdge: Int {
+        var edge = queueEdge
+        edge = edge &* 31 &+ appliedSearch.hashValue
+        return edge
+    }
+
+    private func reloadQueue() async {
+        let edge = queuePlanEdge
         let query = searchQuery
-        guard !query.isEmpty else { return waiting }
-        return waiting.filter { article in
-            article.title.localizedCaseInsensitiveContains(query)
-                || article.readingNote.localizedCaseInsensitiveContains(query)
-                || (article.readingTakeawayLine?.localizedCaseInsensitiveContains(query) ?? false)
-                || ArticlePresentation.sourceName(for: article).localizedCaseInsensitiveContains(query)
+        let searching = !query.isEmpty
+        let stored = savedQuery.filter(\.isStored)
+        let onScreen = QueueListPlan.sectionsOnTheOpenScreen(storyCount: stored.count, isSearching: searching)
+        let openSnaps = onScreen ? stored.map { queueSnap($0, searching: false) } : []
+        if onScreen {
+            let openPlan = QueueListPlan.make(from: openSnaps, query: "")
+            let featured = openPlan.upNext.flatMap { id in stored.first { $0.id == id } }
+            publish(
+                openPlan,
+                byID: Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                excerpt: QueueListPlan.openScreenExcerpt(aiSummary: featured?.aiSummary, summary: featured?.summary)
+            )
         }
+        let container = modelContext.container
+        let plan = await Task.detached(priority: .userInitiated) {
+            let snaps = onScreen ? openSnaps : QueueListPlan.snaps(searching: searching, in: container)
+            return QueueListPlan.make(from: snaps, query: query)
+        }.value
+        guard !Task.isCancelled, edge == queuePlanEdge else { return }
+        let byID = Dictionary(savedQuery.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let featuredArticle = plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil }
+        let excerptSample = CardExcerptSample(
+            aiSummary: ContentClassifier.cardExcerptSample(featuredArticle?.aiSummary),
+            summary: ContentClassifier.cardExcerptSample(featuredArticle?.summary)
+        )
+        let excerpt = await Task.detached(priority: .userInitiated) {
+            ContentClassifier.cardExcerpt(aiSummary: excerptSample.aiSummary, summary: excerptSample.summary)
+        }.value
+        guard !Task.isCancelled, edge == queuePlanEdge else { return }
+        publish(plan, byID: byID, excerpt: excerpt)
     }
 
-    private var upNext: Article? { visibleQueue.first }
+    private func queueSnap(_ article: Article, searching: Bool) -> QueueStorySnap {
+        QueueStorySnap(
+            id: article.id,
+            publishedAt: article.publishedAt,
+            title: searching ? article.title : "",
+            readingNote: searching ? article.readingNote : "",
+            reactionRaw: searching ? article.readingReactionRawValue : "",
+            feedTitle: searching ? article.feed?.title : nil,
+            hasFeed: article.feed != nil,
+            url: article.url,
+            author: searching ? article.author : nil,
+            contentKind: article.contentKind,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
+    private func publish(_ plan: QueueSectionPlan, byID: [UUID: Article], excerpt: String?) {
+        func articles(_ ids: [UUID]) -> [Article] {
+            ids.compactMap { byID[$0] }.filter(\.isStored)
+        }
+        let next = QueueLayout(
+            upNext: plan.upNext.flatMap { byID[$0] }.flatMap { $0.isStored ? $0 : nil },
+            videos: articles(plan.videos),
+            audio: articles(plan.audio),
+            files: articles(plan.files),
+            articles: articles(plan.articles),
+            hasQueue: !plan.collapsedIDs.isEmpty,
+            subtitle: plan.subtitle,
+            upNextExcerpt: excerpt
+        )
+        guard !next.showsSameRows(as: queueLayout) else {
+            queueReady = true
+            return
+        }
+        queueLayout = next
+        queueReady = true
+    }
 
     var body: some View {
         OneFeedReadingSplit(article: $viewModel.selectedArticle) {
-            queueColumn
+            OneFeedSearchHost("Search queue", applied: $appliedSearch) {
+                queueColumn
+            }
         } reader: { article in
             ReaderView(article: article, onFinish: { state in
                 viewModel.finishReading(article, as: state)
@@ -48,28 +141,60 @@ struct SavedView: View {
             .onAppear { LibrarySyncService.shared.hasActiveReadingSession = true }
             .onDisappear { LibrarySyncService.shared.hasActiveReadingSession = false }
         }
-        .readingUndoBanner { viewModel.reload() }
+        .readingUndoBanner()
     }
 
     private var queueColumn: some View {
-        Group {
-            if waiting.isEmpty && searchQuery.isEmpty {
-                empty
-            } else if visibleQueue.isEmpty {
-                noMatches
+        let layout = queueLayout
+        return Group {
+            if LibraryHold.showsExplanation(
+                hasStoredRows: LibraryHold.storedRowsAreKnown(
+                    planReady: queueReady,
+                    provisionalHasRows: savedQuery.contains(where: \.isStored),
+                    plannedHasRows: layout.hasQueue
+                ),
+                ready: queueReady,
+                hasPlannedRows: layout.hasQueue
+            ) {
+                if searchQuery.isEmpty {
+                    empty
+                } else {
+                    noMatches
+                }
+            } else if !queueReady && !layout.hasQueue {
+                if LibraryHold.showsStoredRows(
+                    waiting: savedQuery.contains(where: \.isStored),
+                    revealed: queueHoldRevealed
+                ) {
+                    List {
+                        ForEach(savedQuery.filter(\.isStored)) { article in
+                            Button { viewModel.selectedArticle = article } label: {
+                                QueueArticleRow(article: article)
+                            }
+                            .buttonStyle(DirectoryRowButtonStyle())
+                            .articleListRow(isCurrent: article.isCurrentReading, isSelected: viewModel.selectedArticle?.id == article.id)
+                            .accessibilityHint("Opens this piece from Queue")
+                        }
+                    }
+                    .oneFeedGroupedListStyle()
+                } else {
+                    Color.clear
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                }
             } else {
                 List {
-                    if let upNext {
+                    if let upNext = layout.upNext {
                         Section {
                             Button { viewModel.selectedArticle = upNext } label: {
-                                FeaturedStory(article: upNext)
+                                FeaturedStory(article: upNext, preparedExcerpt: layout.upNextExcerpt, usesPreparedExcerpt: true)
                             }
                             .buttonStyle(ArticleCardButtonStyle())
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
                             .accessibilityHint("Opens the next piece in Queue")
-                            .laterQueueActions(article: upNext, restore: restore, onChanged: { viewModel.reload() })
+                            .laterQueueActions(article: upNext, restore: restore, onChanged: {})
                         } header: {
                             GallerySectionHeader(
                                 text: recentlySavedTitle(for: upNext)
@@ -80,10 +205,10 @@ struct SavedView: View {
                         #endif
                     }
 
-                    laterSection(title: "Videos", articles: videos)
-                    laterSection(title: "Files", articles: files)
-                    laterSection(title: "Articles", articles: articles)
-                    laterSection(title: "Listen", articles: audio)
+                    laterSection(title: "Videos", articles: layout.videos)
+                    laterSection(title: "Files", articles: layout.files)
+                    laterSection(title: "Articles", articles: layout.articles)
+                    laterSection(title: "Listen", articles: layout.audio)
                 }
                 .oneFeedGroupedListStyle()
             }
@@ -91,10 +216,24 @@ struct SavedView: View {
         .navigationTitle("Queue")
         .oneFeedLargeTitle()
         .oneFeedPaperToolbar()
-        .navigationSubtitle(waiting.isEmpty ? "" : waitingSubtitle)
+        .navigationSubtitle(
+            QueueNavigationSubtitle.text(
+                planned: layout.subtitle,
+                storedCount: savedQuery.reduce(into: 0) { if $1.isStored { $0 += 1 } }
+            )
+        )
+        .task(id: queuePlanEdge) {
+            await reloadQueue()
+        }
+        .task(id: queueHoldWaiting) {
+            queueHoldRevealed = false
+            guard queueHoldWaiting else { return }
+            try? await Task.sleep(for: .milliseconds(160))
+            guard !Task.isCancelled, queueHoldWaiting else { return }
+            queueHoldRevealed = true
+        }
         .background(OneFeedTheme.plaster)
         .oneFeedScrollEdge()
-        .searchable(text: $searchText, prompt: "Search queue")
         .toolbar {
             ToolbarItem(placement: .oneFeedTrailing) {
                 Button("Add", systemImage: "plus") { isAdding = true }
@@ -112,8 +251,8 @@ struct SavedView: View {
             viewModel.configure(with: modelContext)
             openPendingImportedArticle()
         }
-        .sheet(isPresented: $isAdding, onDismiss: { viewModel.reload() }) {
-            AddToQueueView { viewModel.reload() }
+        .sheet(isPresented: $isAdding) {
+            AddToQueueView {}
         }
         .onDrop(of: [.pdf, .epub, .url, .plainText], isTargeted: nil) { providers in
             importDropped(providers)
@@ -152,39 +291,6 @@ struct SavedView: View {
         )
     }
 
-    private var waitingSubtitle: String {
-        let videos = waiting.filter { $0.contentKind == "youtube" }.count
-        let rest = waiting.count - videos
-        if videos > 0, rest > 0 {
-            return "\(waiting.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
-        }
-        if videos > 0 {
-            return "\(videos) video\(videos == 1 ? "" : "s") in queue"
-        }
-        return "\(waiting.count) in queue"
-    }
-
-    private var videos: [Article] {
-        rest.filter { $0.contentKind == "youtube" }
-    }
-
-    private var audio: [Article] {
-        rest.filter { $0.contentKind == "podcast" || $0.contentKind == "music" }
-    }
-
-    private var files: [Article] {
-        rest.filter(\.isImportedDocument)
-    }
-
-    private var articles: [Article] {
-        rest.filter { article in
-            !article.isImportedDocument
-                && article.contentKind != "youtube"
-                && article.contentKind != "podcast"
-                && article.contentKind != "music"
-        }
-    }
-
     private func recentlySavedTitle(for article: Article) -> String {
         switch article.contentKind {
         case "youtube": "Recently saved\u{00A0}·\u{00A0}Video"
@@ -192,11 +298,6 @@ struct SavedView: View {
         case "epub": "Recently saved\u{00A0}·\u{00A0}Book"
         default: "Recently saved"
         }
-    }
-
-    private var rest: [Article] {
-        guard let upNext else { return visibleQueue }
-        return visibleQueue.filter { $0.id != upNext.id }
     }
 
     @ViewBuilder
@@ -224,7 +325,7 @@ struct SavedView: View {
         .buttonStyle(DirectoryRowButtonStyle())
         .articleListRow(isCurrent: article.isCurrentReading, isSelected: viewModel.selectedArticle?.id == article.id)
         .accessibilityHint("Opens this piece from Queue")
-        .laterQueueActions(article: article, restore: restore, onChanged: { viewModel.reload() })
+        .laterQueueActions(article: article, restore: restore, onChanged: {})
     }
 
     private func openPendingImportedArticle() {
@@ -244,49 +345,50 @@ struct SavedView: View {
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
-        let files = providers.filter { provider in
+        let useful = providers.filter { provider in
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
+                || provider.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+                || provider.canLoadObject(ofClass: URL.self)
+                || provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
         }
-        if !files.isEmpty {
-            Task {
+        guard !useful.isEmpty else { return false }
+        pendingDropProviders.append(contentsOf: useful)
+        guard !isImportingDrop else { return true }
+        isImportingDrop = true
+        Task { await drainDroppedImports() }
+        return true
+    }
+
+    private func drainDroppedImports() async {
+        let service = ImportedDocumentService()
+        var last: Article?
+        while !pendingDropProviders.isEmpty {
+            let batch = pendingDropProviders
+            pendingDropProviders.removeAll()
+            for provider in batch {
+                let isFile = provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+                    || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
                 do {
-                    let service = ImportedDocumentService()
-                    var last: Article?
-                    for provider in files {
+                    if isFile {
                         let url = try await AddToQueueView.fileURLForDrop(from: provider)
                         last = try await service.importFile(at: url, in: modelContext)
                         try? FileManager.default.removeItem(at: url)
+                    } else if let address = await Self.droppedAddress(from: provider) {
+                        last = try await QueueLinkService().add(urlString: address, in: modelContext)
                     }
-                    viewModel.reload()
-                    if let last { viewModel.selectedArticle = last }
                 } catch {
-                    viewModel.presentedError = error.localizedDescription
+                    let fallback = isFile ? "Couldn’t import that file." : "Couldn’t add that link."
+                    viewModel.presentedError = UserFacingFailure.message(for: error, fallback: fallback)
                 }
             }
-            return true
         }
-
-        let links = providers.filter {
-            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
-                || $0.canLoadObject(ofClass: URL.self)
-                || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        if let last { viewModel.selectedArticle = last }
+        isImportingDrop = false
+        if !pendingDropProviders.isEmpty {
+            isImportingDrop = true
+            await drainDroppedImports()
         }
-        guard !links.isEmpty else { return false }
-        Task {
-            do {
-                var last: Article?
-                for provider in links {
-                    guard let address = await Self.droppedAddress(from: provider) else { continue }
-                    last = try await QueueLinkService().add(urlString: address, in: modelContext)
-                }
-                viewModel.reload()
-                if let last { viewModel.selectedArticle = last }
-            } catch {
-                viewModel.presentedError = error.localizedDescription
-            }
-        }
-        return true
     }
 
     private static func droppedAddress(from provider: NSItemProvider) async -> String? {
@@ -335,11 +437,18 @@ private struct QueueArticleRow: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let url = article.displayImageURL, !imageFailed, !dynamicTypeSize.isAccessibilitySize {
-                ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
-                    imageFailed = true
+            if let url = article.displayImageURL, !dynamicTypeSize.isAccessibilitySize {
+                if imageFailed {
+                    RoundedRectangle(cornerRadius: OneFeedTheme.radius, style: .continuous)
+                        .fill(OneFeedTheme.warm1)
+                        .frame(width: 64, height: 64)
+                        .accessibilityHidden(true)
+                } else {
+                    ArticleThumbnail(url: url, cornerRadius: OneFeedTheme.radius) {
+                        imageFailed = true
+                    }
+                    .frame(width: 64, height: 64)
                 }
-                .frame(width: 64, height: 64)
             }
         }
         .padding(.vertical, 4)
@@ -354,7 +463,7 @@ private struct QueueArticleRow: View {
         var parts: [String] = []
         if let kind = article.kindLabel { parts.append(kind) }
         if let duration = article.timedDurationPhrase { parts.append(duration) }
-        parts.append(article.publishedAt.formatted(.dateTime.month(.abbreviated).day()))
+        parts.append(OneFeedDateLabel.monthAndDay(article.publishedAt))
         if article.rating > 0 { parts.append(String(repeating: "★", count: article.rating)) }
         return parts.joined(separator: " · ")
     }
@@ -365,13 +474,14 @@ private struct LaterQueueActions: ViewModifier {
     let restore: (Article) -> Void
     let onChanged: () -> Void
     @Environment(\.modelContext) private var modelContext
+    @State private var ratingError: String?
+    @State private var actionError: String?
 
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: modelContext)
-                    onChanged()
+                    markDone()
                 }
                 .tint(OneFeedTheme.sage)
                 Button("Remove", systemImage: "arrow.uturn.backward") {
@@ -384,19 +494,19 @@ private struct LaterQueueActions: ViewModifier {
                     restore(article)
                 }
                 Button("Done", systemImage: "checkmark") {
-                    ArticleActions.apply(.read, to: article, in: modelContext)
-                    onChanged()
+                    markDone()
                 }
                 Button("Not interested", systemImage: "hand.thumbsdown") {
-                    ArticleActions.markNotInterested(article, in: modelContext)
+                    guard ArticleActions.markNotInterested(article, in: modelContext) else {
+                        actionError = "Couldn’t file that as not interested."
+                        return
+                    }
                     onChanged()
                 }
                 Menu("Rate") {
                     ForEach(1...5, id: \.self) { stars in
                         Button {
-                            guard article.isStored else { return }
-                            article.setRating(stars)
-                            try? modelContext.save()
+                            saveRating(stars)
                         } label: {
                             Label(
                                 "\(stars) star\(stars == 1 ? "" : "s")",
@@ -406,12 +516,248 @@ private struct LaterQueueActions: ViewModifier {
                     }
                     if article.rating > 0 {
                         Button("Clear rating", systemImage: "star.slash") {
-                            article.setRating(0)
-                            try? modelContext.save()
+                            saveRating(0)
                         }
                     }
                 }
             }
+            .alert("Couldn’t update that story", isPresented: Binding(
+                get: { actionError != nil },
+                set: { if !$0 { actionError = nil } }
+            )) {
+                Button("OK", role: .cancel) { actionError = nil }
+            } message: {
+                Text(actionError ?? "")
+            }
+            .alert("Couldn’t save that rating", isPresented: Binding(
+                get: { ratingError != nil },
+                set: { if !$0 { ratingError = nil } }
+            )) {
+                Button("OK", role: .cancel) { ratingError = nil }
+            } message: {
+                Text(ratingError ?? "")
+            }
+    }
+
+    private func markDone() {
+        do {
+            try ArticleActions.apply(.read, to: article, in: modelContext)
+            onChanged()
+        } catch {
+            actionError = UserFacingFailure.message(for: error, fallback: "Couldn’t update that story.")
+        }
+    }
+
+    private func saveRating(_ stars: Int) {
+        do {
+            try ArticleActions.rate(article, stars: stars, in: modelContext)
+            onChanged()
+        } catch {
+            ratingError = UserFacingFailure.message(for: error, fallback: "Couldn’t save that rating.")
+        }
+    }
+}
+
+struct QueueStorySnap: Sendable {
+    var id: UUID
+    var publishedAt: Date
+    var title: String
+    var readingNote: String
+    var reactionRaw: String
+    var feedTitle: String?
+    var hasFeed: Bool
+    var url: URL?
+    var author: String?
+    var contentKind: String
+    var videoID: String?
+    var guid: String
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+}
+
+struct QueueSectionPlan: Sendable {
+    var collapsedIDs: [UUID] = []
+    var upNext: UUID?
+    var videos: [UUID] = []
+    var audio: [UUID] = []
+    var files: [UUID] = []
+    var articles: [UUID] = []
+    var subtitle = ""
+}
+
+/// The Queue title bar. A stored queue shows a count before the section plan arrives, so the bar does not grow.
+enum QueueNavigationSubtitle {
+    static func text(planned: String, storedCount: @autoclosure () -> Int) -> String {
+        if !planned.isEmpty { return planned }
+        let storedCount = storedCount()
+        guard storedCount > 0 else { return "" }
+        return "\(storedCount) in queue"
+    }
+}
+
+/// Same collapse and sections as the Queue screen, from copied fields.
+nonisolated enum QueueListPlan {
+    /// A modest queue can be sectioned on the open screen. A long one, or a search, waits for the off-screen plan.
+    static let synchronousSectionLimit = 200
+
+    static func sectionsOnTheOpenScreen(storyCount: Int, isSearching: Bool) -> Bool {
+        !isSearching && storyCount > 0 && storyCount <= synchronousSectionLimit
+    }
+
+    /// Copies saved stories on a short-lived context. A long queue or a search uses this instead of walking the rows on screen.
+    static func snaps(searching: Bool, in container: ModelContainer) -> [QueueStorySnap] {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let saved = ArticleState.saved.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { $0.stateRawValue == saved },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
+        if searching {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.title, \.readingNote, \.readingReactionRawValue, \.url, \.author,
+                \.contentKind, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        } else {
+            descriptor.propertiesToFetch = [
+                \.id, \.publishedAt, \.url, \.contentKind, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred,
+            ]
+        }
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let stories = (try? context.fetch(descriptor)) ?? []
+        return stories.map { article in
+            QueueStorySnap(
+                id: article.id,
+                publishedAt: article.publishedAt,
+                title: searching ? article.title : "",
+                readingNote: searching ? article.readingNote : "",
+                reactionRaw: searching ? article.readingReactionRawValue : "",
+                feedTitle: searching ? article.feed?.title : nil,
+                hasFeed: article.feed != nil,
+                url: article.url,
+                author: searching ? article.author : nil,
+                contentKind: article.contentKind,
+                videoID: article.videoID,
+                guid: article.guid,
+                hasRemoteID: article.remoteID != nil,
+                stateRaw: article.stateRawValue,
+                isRemoteStarred: article.isRemoteStarred
+            )
+        }
+    }
+
+    /// One featured preview, from the characters the card already needs. The list itself is not stripped here.
+    static func openScreenExcerpt(aiSummary: String?, summary: String?) -> String? {
+        ContentClassifier.cardExcerpt(
+            aiSummary: ContentClassifier.cardExcerptSample(aiSummary),
+            summary: ContentClassifier.cardExcerptSample(summary)
+        )
+    }
+
+    static func make(from stories: [QueueStorySnap], query: String) -> QueueSectionPlan {
+        let collapsed = collapsedStories(stories)
+        let visible = query.isEmpty ? collapsed : collapsed.filter { matches($0, query: query) }
+        var plan = QueueSectionPlan(collapsedIDs: collapsed.map(\.id), subtitle: subtitle(for: collapsed))
+        guard let featured = visible.first else { return plan }
+        plan.upNext = featured.id
+        for story in visible.dropFirst() {
+            switch story.contentKind {
+            case "youtube": plan.videos.append(story.id)
+            case "podcast", "music": plan.audio.append(story.id)
+            case "pdf", "epub": plan.files.append(story.id)
+            default: plan.articles.append(story.id)
+            }
+        }
+        return plan
+    }
+
+    private static func subtitle(for queue: [QueueStorySnap]) -> String {
+        let videos = queue.reduce(into: 0) { count, story in
+            if story.contentKind == "youtube" { count += 1 }
+        }
+        let rest = queue.count - videos
+        if videos > 0, rest > 0 {
+            return "\(queue.count) in queue · \(videos) video\(videos == 1 ? "" : "s")"
+        }
+        if videos > 0 {
+            return "\(videos) video\(videos == 1 ? "" : "s") in queue"
+        }
+        return "\(queue.count) in queue"
+    }
+
+    private static func matches(_ story: QueueStorySnap, query: String) -> Bool {
+        if story.title.localizedStandardContains(query) { return true }
+        if story.readingNote.localizedStandardContains(query) { return true }
+        if takeaway(story)?.localizedStandardContains(query) == true { return true }
+        let source = ArticlePresentation.sourceName(
+            feedTitle: story.feedTitle,
+            url: story.url,
+            author: story.author,
+            contentKind: story.contentKind
+        )
+        return source.localizedStandardContains(query)
+    }
+
+    private static func takeaway(_ story: QueueStorySnap) -> String? {
+        let note = story.readingNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = ArticleReadingReaction(stored: story.reactionRaw)?.label
+        switch (label, note.isEmpty) {
+        case (nil, true): return nil
+        case let (label?, true): return label
+        case (nil, false): return note
+        case let (label?, false): return "\(label) \u{00B7} \(note)"
+        }
+    }
+
+    private static func collapsedStories(_ stories: [QueueStorySnap]) -> [QueueStorySnap] {
+        var order: [String] = []
+        var groups: [String: [QueueStorySnap]] = [:]
+        for story in stories {
+            let key = identityKey(story)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(story)
+        }
+        return order.map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) }) ?? items[0]
+        }
+    }
+
+    private static func identityKey(_ story: QueueStorySnap) -> String {
+        if let videoID = story.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: story.url, guid: story.guid, id: story.id)
+    }
+
+    private static func score(_ story: QueueStorySnap) -> Int {
+        var value = 0
+        if story.hasFeed { value += 8 }
+        if story.hasRemoteID { value += 4 }
+        if story.stateRaw == "saved" || story.isRemoteStarred { value += 3 }
+        if story.stateRaw == "current" { value += 2 }
+        return value
+    }
+}
+
+private struct QueueLayout {
+    var upNext: Article?
+    var videos: [Article] = []
+    var audio: [Article] = []
+    var files: [Article] = []
+    var articles: [Article] = []
+    var hasQueue = false
+    var subtitle = ""
+    var upNextExcerpt: String?
+
+    func showsSameRows(as other: QueueLayout) -> Bool {
+        upNext?.id == other.upNext?.id
+            && videos.map(\.id) == other.videos.map(\.id)
+            && audio.map(\.id) == other.audio.map(\.id)
+            && files.map(\.id) == other.files.map(\.id)
+            && articles.map(\.id) == other.articles.map(\.id)
+            && hasQueue == other.hasQueue
+            && subtitle == other.subtitle
+            && upNextExcerpt == other.upNextExcerpt
     }
 }
 

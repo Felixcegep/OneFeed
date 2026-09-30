@@ -18,12 +18,23 @@ nonisolated struct ClassifiedEntry: Sendable {
     let estimatedMinutes: Int
 }
 
+struct CardExcerptSample: Sendable {
+    var aiSummary: String?
+    var summary: String?
+}
+
 nonisolated enum ContentClassifier: Sendable {
     private static let wordsPerMinute = 220
     private static let defaultMinVideoSeconds = 180
     private static let htmlTagPattern = #/<[^>]+>/#
     /// Long enough for a reading-time estimate; stops ingest from regexing a 200 KB RSS body on the main actor.
     private static let wordCountSampleLimit = 48_000
+
+    /// Plain text for indexing. A long article is sampled so a refresh does not regex the whole body.
+    static func indexingText(in html: String) -> String {
+        let sample = html.utf8.count > wordCountSampleLimit ? String(html.prefix(wordCountSampleLimit)) : html
+        return stripHTML(sample)
+    }
 
     static func stripHTML(_ html: String) -> String {
         var stripped = html.replacing(htmlTagPattern, with: " ")
@@ -33,13 +44,37 @@ nonisolated enum ContentClassifier: Sendable {
     }
 
     static func plainExcerpt(_ html: String, maxCharacters: Int = 220) -> String {
-        let plain = stripHTML(html)
+        let sample = html.prefix(8_000)
+        let plain = stripHTML(String(sample))
         guard plain.count > maxCharacters else { return plain }
         let limit = plain.index(plain.startIndex, offsetBy: maxCharacters)
         if let space = plain[..<limit].lastIndex(of: " ") {
             return String(plain[..<space]) + "…"
         }
         return String(plain[..<limit]) + "…"
+    }
+
+    /// True when the text has a visible character. Stops there, so a long summary is not copied just to see that it exists.
+    static func hasVisibleText(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value.contains { !$0.isWhitespace }
+    }
+
+    /// The featured-card preview. A summary is preferred, then the feed blurb. Markup stays out of the line.
+    static func cardExcerpt(aiSummary: String?, summary: String?) -> String? {
+        if let aiSummary, !aiSummary.isEmpty {
+            return proseExcerpt(aiSummary, maxCharacters: 280)
+        }
+        if let summary, !summary.isEmpty {
+            return proseExcerpt(summary, maxCharacters: 220)
+        }
+        return nil
+    }
+
+    /// The first characters the card excerpt needs. Copying this on the main thread avoids moving the whole article.
+    static func cardExcerptSample(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        return String(text.prefix(8_000))
     }
 
     /// Drops Hacker News link dumps and bare URLs so a card never leads with "Article URL:".

@@ -24,6 +24,13 @@ struct FeedSeedTests {
         #expect(CuratedReadingCatalog.feeds.count == 18)
     }
 
+    @Test func aFreshInstallAppliesTheCatalogAfterTheFirstScreen() {
+        #expect(LaunchSeed.needsApply(seededVersion: 0, legacySeeded: false))
+        #expect(LaunchSeed.needsApply(seededVersion: FeedSeedCatalog.version - 1, legacySeeded: true))
+        #expect(LaunchSeed.needsApply(seededVersion: FeedSeedCatalog.version, legacySeeded: false))
+        #expect(LaunchSeed.needsApply(seededVersion: FeedSeedCatalog.version, legacySeeded: true) == false)
+    }
+
     @Test func applyingCatalogInsertsThenIsIdempotentAndDropsRetired() throws {
         let context = try InMemoryStore.makeContext()
         context.insert(Feed(

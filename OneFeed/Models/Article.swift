@@ -153,28 +153,61 @@ final class Article {
     /// Raises the persisted estimate when current HTML is longer than ingest.
     func refreshEstimatedReadingMinutes() {
         guard contentKind == "article" else { return }
-        let minutes = ContentClassifier.readingMinutes(
-            words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+        raiseReadingEstimate(
+            ContentClassifier.readingMinutes(
+                words: ContentClassifier.wordCount(in: contentHTML ?? summary ?? "")
+            )
         )
-        if minutes > estimatedReadingMinutes {
-            estimatedReadingMinutes = minutes
-        }
     }
+
+    /// Keeps a longer estimate. A shorter count does not replace one already stored.
+    func raiseReadingEstimate(_ minutes: Int) {
+        guard contentKind == "article", minutes > estimatedReadingMinutes else { return }
+        estimatedReadingMinutes = minutes
+    }
+
+    /// The reader asks for this on redraws. The check stops at the first visible character.
+    @Transient private var cachedReadableSource: String?
+    @Transient private var cachedReadableHTML: String?
 
     var readableHTML: String? {
         let value = contentHTML ?? summary
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return value
+        if cachedReadableSource == value { return cachedReadableHTML }
+        cachedReadableSource = value
+        cachedReadableHTML = ContentClassifier.hasVisibleText(value) ? value : nil
+        return cachedReadableHTML
     }
 
     var displayImageURL: URL? { FeedImageURL.displayable(imageURL) }
 
+    /// Last plain excerpt for this instance. Lists redraw often; the HTML strip should not.
+    @Transient private var cachedExcerptSource: String?
+    @Transient private var cachedExcerptLimit: Int?
+    @Transient private var cachedExcerpt: String?
+
     var displayExcerpt: String? {
-        if let aiSummary, let prose = ContentClassifier.proseExcerpt(aiSummary, maxCharacters: 280) {
-            return prose
+        let source: String
+        let limit: Int
+        if let aiSummary, !aiSummary.isEmpty {
+            source = aiSummary
+            limit = 280
+        } else if let summary, !summary.isEmpty {
+            source = summary
+            limit = 220
+        } else {
+            return nil
         }
-        guard let summary else { return nil }
-        return ContentClassifier.proseExcerpt(summary)
+        if cachedExcerptSource == source, cachedExcerptLimit == limit {
+            return cachedExcerpt
+        }
+        let value = ContentClassifier.cardExcerpt(
+            aiSummary: limit == 280 ? source : nil,
+            summary: limit == 220 ? source : nil
+        )
+        cachedExcerptSource = source
+        cachedExcerptLimit = limit
+        cachedExcerpt = value
+        return value
     }
 
     init(
@@ -272,4 +305,49 @@ final class Article {
 
     /// SwiftData fatals if persisted properties are read after the row is gone.
     var isStored: Bool { modelContext != nil }
+}
+
+/// Columns a screen can read without opening the stored page or the video chat.
+/// A column left out of the fetch faults the whole row, including that page.
+nonisolated enum ArticleListFetch {
+    static let rowColumns: [PartialKeyPath<Article>] = [
+        \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary,
+        \.estimatedReadingMinutes, \.stateRawValue, \.firstDisplayedAt, \.completedAt,
+        \.remoteID, \.isRemoteStarred, \.contentKind, \.durationSeconds, \.imageURL,
+        \.videoID, \.enclosureURL, \.enclosureMIME, \.rating, \.notInterested,
+        \.aiSummary, \.declinedVideoSummary, \.videoGeminiInteractionID,
+        \.libraryUpdatedAt, \.readingReactionRawValue, \.readingNote,
+    ]
+
+    /// Fields the library file stores. The page is not one of them.
+    static let libraryColumns: [PartialKeyPath<Article>] = [
+        \.id, \.guid, \.title, \.url, \.stateRawValue, \.completedAt,
+        \.isRemoteStarred, \.libraryUpdatedAt, \.firstDisplayedAt,
+        \.readingReactionRawValue, \.readingNote, \.remoteID, \.videoID,
+    ]
+
+    static func rows(
+        predicate: Predicate<Article>? = nil,
+        sortBy: [SortDescriptor<Article>] = []
+    ) -> FetchDescriptor<Article> {
+        prepared(predicate: predicate, sortBy: sortBy, columns: rowColumns)
+    }
+
+    static func library(
+        predicate: Predicate<Article>? = nil,
+        sortBy: [SortDescriptor<Article>] = []
+    ) -> FetchDescriptor<Article> {
+        prepared(predicate: predicate, sortBy: sortBy, columns: libraryColumns)
+    }
+
+    private static func prepared(
+        predicate: Predicate<Article>?,
+        sortBy: [SortDescriptor<Article>],
+        columns: [PartialKeyPath<Article>]
+    ) -> FetchDescriptor<Article> {
+        var descriptor = FetchDescriptor(predicate: predicate, sortBy: sortBy)
+        descriptor.propertiesToFetch = columns
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        return descriptor
+    }
 }

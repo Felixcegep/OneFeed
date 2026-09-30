@@ -29,6 +29,9 @@ final class RefreshProgress {
     private var lastAdvanceAt: Date?
     private var meanDuration: TimeInterval = 0
 
+    /// Width of the progress line. Moves forward across phase changes and stays put when the refresh ends, so the line can fade out instead of snapping back to empty.
+    private(set) var displayedFraction: Double = 0
+
     var isActive: Bool { phase != .idle }
     var remainingCount: Int { max(0, total - completed) }
     var fraction: Double {
@@ -37,24 +40,35 @@ final class RefreshProgress {
     }
 
     func begin(phase: RefreshPhase, total: Int, now: Date = .now) {
-        let keepBarFull = isActive && phase == .finishing
+        let wasIdle = !isActive
+        let keepBarFull = !wasIdle && phase == .finishing
         self.phase = phase
         currentTitle = nil
+        if wasIdle {
+            displayedFraction = 0
+            articlesFound = 0
+        }
         if keepBarFull {
             self.total = max(1, total)
             completed = self.total
             estimatedFinish = now
             lastAdvanceAt = now
+            publishDisplayedFraction()
             return
         }
-        self.total = max(0, total)
-        completed = 0
-        if phase == .sources {
-            articlesFound = 0
+        if wasIdle {
+            self.total = max(0, total)
+            completed = 0
+            estimatedFinish = nil
+            lastAdvanceAt = now
+            meanDuration = 0
+        } else {
+            let carried = completed
+            self.total = carried + max(0, total)
+            completed = carried
+            lastAdvanceAt = now
         }
-        estimatedFinish = nil
-        lastAdvanceAt = now
-        meanDuration = 0
+        publishDisplayedFraction()
     }
 
     func startItem(title: String) {
@@ -71,6 +85,7 @@ final class RefreshProgress {
         if total < completed { total = completed }
         articlesFound += max(0, newArticles)
         currentTitle = nil
+        publishDisplayedFraction()
         let remaining = remainingCount
         if remaining > 0, meanDuration > 0 {
             estimatedFinish = now.addingTimeInterval(meanDuration * Double(remaining))
@@ -90,6 +105,13 @@ final class RefreshProgress {
         meanDuration = 0
     }
 
+    private func publishDisplayedFraction() {
+        let next = fraction
+        if next > displayedFraction {
+            displayedFraction = next
+        }
+    }
+
     var primaryText: String { phase.title }
 
     var countText: String {
@@ -103,11 +125,10 @@ final class RefreshProgress {
         return remainingCount == 1 ? "1 left" : "\(remainingCount) left"
     }
 
+    /// Stable line for the full-screen cover. Source names and the countdown change every tick and resize the cover.
     var coverStatus: String {
-        let detail = detailText()
-        if !detail.isEmpty { return detail }
-        if !remainingText.isEmpty { return remainingText }
-        return "This can take a minute the first time."
+        guard total > 0 else { return "This can take a minute the first time." }
+        return countText
     }
 
     /// One line for the navigation subtitle so the list does not need a tall banner.
@@ -134,12 +155,11 @@ final class RefreshProgress {
         return parts.joined(separator: " · ")
     }
 
-    func accessibilityText(now: Date = .now) -> String {
+    /// Count and phase only. Source names and the countdown change every item and would keep interrupting VoiceOver.
+    func accessibilityText() -> String {
         var parts = [primaryText]
         if total > 0 { parts.append("\(completed) of \(total) sources") }
         if articlesFound > 0 { parts.append("\(articlesFound) new articles") }
-        if let currentTitle { parts.append("fetching \(currentTitle)") }
-        if let eta = Self.remainingPhrase(until: estimatedFinish, now: now) { parts.append(eta) }
         return parts.joined(separator: ", ")
     }
 

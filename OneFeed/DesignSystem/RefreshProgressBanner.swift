@@ -1,29 +1,45 @@
 import SwiftUI
 
-/// A slim progress line pinned to the top of the current screen.
+/// A slim progress line pinned to the top safe-area bar, outside the scrolling content.
 struct RefreshProgressBanner: View {
     var progress: RefreshProgress
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isShown = false
 
     var body: some View {
-        ProgressView(value: progress.isActive ? progress.fraction : 0)
-            .progressViewStyle(.linear)
-            .tint(OneFeedTheme.accent)
-            .transaction { $0.animation = nil }
-            .opacity(progress.isActive ? 1 : 0)
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: progress.isActive)
-            .frame(height: 2)
-            .accessibilityHidden(!progress.isActive)
+        ZStack(alignment: .leading) {
+            if isShown {
+                Rectangle()
+                    .fill(OneFeedTheme.accent)
+                    .scaleEffect(x: max(progress.displayedFraction, 0.04), y: 1, anchor: .leading)
+            }
+        }
+        .frame(height: isShown ? 2 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+        // Height is a safe-area inset. Animating it fights a fling to the top and draws the line over the title.
+        .animation(nil, value: isShown)
+        .animation(nil, value: progress.displayedFraction)
+        .allowsHitTesting(false)
+            .accessibilityHidden(!isShown)
             .accessibilityLabel(progress.accessibilityText())
-            .accessibilityAddTraits(progress.isActive ? .updatesFrequently : [])
+            .accessibilityAddTraits(isShown ? .updatesFrequently : [])
+            .task(id: progress.isActive) {
+                guard progress.isActive else {
+                    isShown = false
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(160))
+                guard !Task.isCancelled, progress.isActive else { return }
+                isShown = true
+            }
     }
 }
 
 extension View {
+    /// Pins the refresh line to the navigation chrome so scroll-to-top cannot draw it across titles or rows.
     func refreshProgressBanner(_ progress: RefreshProgress) -> some View {
-        overlay(alignment: .top) {
+        safeAreaBar(edge: .top, spacing: 0) {
             RefreshProgressBanner(progress: progress)
-                .allowsHitTesting(false)
         }
     }
 }

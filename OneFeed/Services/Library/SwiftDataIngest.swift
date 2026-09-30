@@ -25,6 +25,36 @@ actor LibraryIngestActor {
         try persistIfNeeded()
     }
 
+    /// Full-text the current story and the next few. The download and the body write stay on this actor.
+    func enrichUpcomingArticles(
+        currentItemID: UUID?,
+        extraQueued: Int,
+        session: URLSession = .shared,
+        extractor: any ArticleExtracting = SwiftReadabilityExtractor()
+    ) async {
+        modelContext.autosaveEnabled = false
+        guard let deck = try? DailyDeckService.todayDeck(in: modelContext) else { return }
+        let items = deck.items.sorted { $0.position < $1.position }
+        let start = currentItemID.flatMap { id in items.first { $0.id == id }?.position }
+            ?? items.first { $0.status == .current }?.position
+            ?? 0
+        let policy = ArticleExtractionPolicy()
+        var bodies: [ExtractedBody] = []
+        for item in items.filter({ $0.position >= start }).prefix(1 + extraQueued) {
+            guard let articleID = item.resolvedArticleID() else { continue }
+            guard ArticleExtractionService.shouldFetchStoredArticle(id: articleID, policy: policy, in: modelContext.container) else { continue }
+            guard let url = DailyDeckService.lightweightArticle(id: articleID, in: modelContext)?.url else { continue }
+            guard let html = await ArticleExtractionService.downloadedArticle(
+                url: url,
+                session: session,
+                extractor: extractor
+            ) else { continue }
+            let minutes = ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+            bodies.append(ExtractedBody(articleID: articleID, html: html, estimatedMinutes: minutes))
+        }
+        try? persistExtractedBodies(bodies)
+    }
+
     func persistExtractedBodies(_ bodies: [ExtractedBody]) throws {
         guard !bodies.isEmpty else { return }
         for body in bodies {
@@ -37,6 +67,11 @@ actor LibraryIngestActor {
             }
         }
         try persistIfNeeded()
+    }
+
+    func importOPML(_ outlines: [OPMLFeedOutline]) throws -> (newSources: Int, folderMembershipsAdded: Int) {
+        modelContext.autosaveEnabled = false
+        return try OPMLImport.apply(outlines, in: modelContext)
     }
 
     func encodedLibraryFile(extraTombstones: [LibraryTombstone]) throws -> Data {
@@ -59,7 +94,12 @@ actor LibraryIngestActor {
         } else {
             descriptor = FetchDescriptor<Article>()
         }
-        descriptor.propertiesToFetch = [\.guid, \.url, \.remoteID]
+        // Every field the index and a later sync update, except the article body.
+        descriptor.propertiesToFetch = [
+            \.id, \.guid, \.title, \.url, \.author, \.publishedAt, \.summary,
+            \.estimatedReadingMinutes, \.stateRawValue, \.remoteID, \.isRemoteStarred,
+            \.contentKind, \.durationSeconds, \.videoID,
+        ]
         descriptor.relationshipKeyPathsForPrefetching = [\.feed]
         return (try? modelContext.fetch(descriptor)) ?? []
     }

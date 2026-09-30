@@ -4,7 +4,7 @@ import Foundation
 import Security
 #endif
 
-enum GeminiAPIKeyStore {
+nonisolated enum GeminiAPIKeyStore {
     private static let service = "felix.MonoRss.gemini"
     private static let account = "ai-studio-key"
 

@@ -3,6 +3,57 @@ import Testing
 @testable import OneFeed
 
 struct ReaderFocusTests {
+    @Test func resumeCueSitsAboveWhenTheBlockHasRoom() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 280,
+            blockBottom: 360,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .above(top: 252))
+    }
+
+    @Test func resumeCueMovesBelowABlockNearTheTop() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 16,
+            blockBottom: 48,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .below(top: 56))
+    }
+
+    @Test func resumeCueStaysHiddenWhenNeitherSideFits() {
+        let place = ReaderFocus.resumeCuePlacement(
+            blockTop: 12,
+            blockBottom: 790,
+            labelHeight: 20,
+            viewportHeight: 800
+        )
+        #expect(place == .hidden)
+    }
+
+    @Test func resumeCueScriptUsesTheSameGaps() {
+        let script = ReaderFocus.pageScript
+        #expect(script.contains("edge: \"above\""))
+        #expect(script.contains("edge: \"below\""))
+        #expect(script.contains("edge: \"hidden\""))
+        #expect(script.contains("box.top - height - \(Int(ReaderFocus.resumeCueGap))"))
+        #expect(script.contains("above >= \(Int(ReaderFocus.resumeCueInset))"))
+        #expect(ReaderFocus.pageCSS.contains("background: var(--paper)"))
+        #expect(!script.contains("Math.max(12, box.top - 26)"))
+    }
+
+    @Test func pageSettleWaitsGrowThenLevelOff() {
+        #expect(ReaderFocus.pageSettlePause(after: 0) == .milliseconds(80))
+        #expect(ReaderFocus.pageSettlePause(after: 1) == .milliseconds(160))
+        #expect(ReaderFocus.pageSettlePause(after: 2) == .milliseconds(320))
+        #expect(ReaderFocus.pageSettlePause(after: 3) == .milliseconds(640))
+        #expect(ReaderFocus.pageSettlePause(after: 4) == .milliseconds(1_000))
+        #expect(ReaderFocus.pageSettlePause(after: 12) == .milliseconds(1_000))
+        #expect(ReaderFocus.trailSnapshotInterval >= .seconds(8))
+    }
+
     @Test func defaultZoneSitsBetweenTopAndMiddle() {
         #expect(ReaderFocus.defaultZoneY == 0.37)
         #expect(ReaderFocus.clampZone(0) == ReaderFocus.minimumZoneY)
@@ -94,6 +145,179 @@ struct ReaderFocusTests {
         #expect(html.contains("#onefeed-marker"))
         #expect(!html.contains("alert(1)"))
         #expect(!html.contains("javascript:alert(2)"))
+    }
+
+    @Test @MainActor func lateDurationLeavesTheReaderPageInPlace() {
+        let article = Article(
+            guid: "yt",
+            title: "Caches",
+            contentKind: "youtube",
+            contentHTML: "<p>Body</p>",
+            durationSeconds: 0
+        )
+        let model = ReaderViewModel(article: article)
+        let first = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        article.durationSeconds = 600
+        let second = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(first == second)
+        #expect(model.readerMetaLine.contains("10 min"))
+        let resized = model.documentHTML(fontChoice: .serif, textSize: .large)
+        #expect(resized != first)
+        #expect(resized.contains("10 min"))
+        let bold = model.documentHTML(fontChoice: .serif, textSize: .standard, boldText: true)
+        #expect(bold != first)
+        #expect(bold.contains("font-weight: 650"))
+        #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == model.readerLoadID(fontChoice: .serif, textSize: .standard))
+    }
+
+    @Test @MainActor func readerDocumentBuiltOffTheMainThreadMatchesTheCachedPage() async {
+        let article = Article(
+            guid: "off-main",
+            title: "Essay",
+            contentHTML: #"<p>Hello reader</p><script>alert(1)</script>"#
+        )
+        let model = ReaderViewModel(article: article)
+        let built = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        let cached = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(built == cached)
+        #expect(built.contains("Hello reader"))
+        #expect(!built.contains("alert(1)"))
+        let loadID = model.readerLoadID(fontChoice: .serif, textSize: .standard)
+        article.durationSeconds = 600
+        #expect(model.readerLoadID(fontChoice: .serif, textSize: .standard) == loadID)
+    }
+
+    @Test @MainActor func savedReaderPageDoesNotCopyTheBodyOnTheMainThread() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "saved-page", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Saved page"))
+        #expect(model.memoryBodyCopies == 0)
+    }
+
+    @Test @MainActor func aSavedPDFDoesNotCopyItsTextOnTheOpenArticle() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-pdf",
+            title: "Paper",
+            contentHTML: "<p>Saved page</p>",
+            contentKind: "pdf"
+        )
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        await model.enrichReadableHTML()
+        #expect(model.memoryDocumentChecks == 0)
+        #expect(article.contentHTML == "<p>Saved page</p>")
+    }
+
+    @Test @MainActor func unsavedReaderPageUsesTheBodyAlreadyInMemory() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "draft-page", title: "Essay", contentHTML: "<p>Edited before save</p>")
+        context.insert(article)
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Edited before save"))
+        #expect(!html.contains("only provided metadata"))
+        #expect(model.memoryBodyCopies == 1)
+    }
+
+    @Test @MainActor func anotherUnsavedObjectLeavesTheSavedArticleOnDisk() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "saved-beside-draft", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        context.insert(Article(guid: "unrelated-draft", title: "Draft"))
+        #expect(context.hasChanges)
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Saved page"))
+        #expect(model.memoryBodyCopies == 0)
+    }
+
+    @Test @MainActor func anUnsavedEditToThisArticleUsesTheBodyInMemory() async throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(guid: "edited-page", title: "Essay", contentHTML: "<p>Saved page</p>")
+        context.insert(article)
+        try context.save()
+        article.contentHTML = "<p>Edited after save</p>"
+        let model = ReaderViewModel(article: article)
+        let html = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("Edited after save"))
+        #expect(model.memoryBodyCopies == 1)
+    }
+
+    @Test @MainActor func openingASavedArticleChoosesTheReaderWithoutReadingTheBodyOnScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-open",
+            title: "Essay",
+            url: URL(string: "https://source.test/essay"),
+            contentHTML: "<p>Saved page</p>"
+        )
+        context.insert(article)
+        try context.save()
+        ReaderView.liveModeBodyReads = 0
+
+        #expect(ReaderView.initialMode(for: article) == .reader)
+        #expect(ReaderView.liveModeBodyReads == 0)
+    }
+
+    @Test @MainActor func aSavedBlankPageStillOpensTheWebsite() throws {
+        let context = try InMemoryStore.makeContext()
+        let article = Article(
+            guid: "saved-blank",
+            title: "Essay",
+            url: URL(string: "https://source.test/blank"),
+            summary: "A summary that must not replace blank HTML.",
+            contentHTML: "   \n"
+        )
+        context.insert(article)
+        try context.save()
+        ReaderView.liveModeBodyReads = 0
+
+        #expect(ReaderView.initialMode(for: article) == .website)
+        #expect(ReaderView.liveModeBodyReads == 0)
+    }
+
+    @Test @MainActor func whitespaceOnlyBodyUsesTheMetadataFallback() async {
+        let article = Article(guid: "blank", title: "Empty", contentHTML: "   \n")
+        let model = ReaderViewModel(article: article)
+        let html = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        let built = await model.loadDocumentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(html.contains("only provided metadata"))
+        #expect(built == html)
+    }
+
+    @Test @MainActor func youtubeWithVisibleSummaryOpensInTheReader() {
+        #expect(ReaderView.youtubeOpensInReader(summary: "  A real summary") == true)
+        #expect(ReaderView.youtubeOpensInReader(summary: " \n\t") == false)
+        #expect(ReaderView.youtubeOpensInReader(summary: nil) == false)
+        let article = Article(guid: "yt-blank", title: "Talk", contentKind: "youtube", aiSummary: " \n")
+        let model = ReaderViewModel(article: article)
+        #expect(model.hasAISummary == false)
+        article.aiSummary = "A point worth keeping"
+        #expect(model.hasAISummary == true)
+    }
+
+    @Test @MainActor func replacingTheArticleBodyRebuildsThePage() {
+        let article = Article(
+            guid: "essay",
+            title: "Caches",
+            contentHTML: "<p>The first page.</p>"
+        )
+        let model = ReaderViewModel(article: article)
+        let first = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        let second = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(first == second)
+        article.contentHTML = "<p>The revised page.</p>"
+        let revised = model.documentHTML(fontChoice: .serif, textSize: .standard)
+        #expect(revised != first)
+        #expect(revised.contains("The revised page."))
+        #expect(!revised.contains("The first page."))
     }
 
     @Test func sanitizerStripsJavascriptURLs() {

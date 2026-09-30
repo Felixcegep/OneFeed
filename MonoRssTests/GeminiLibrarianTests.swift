@@ -307,6 +307,73 @@ struct GeminiLibrarianTests {
             return false
         })
     }
+
+    @Test @MainActor func librarianPromptMatchesABackgroundReadOfTheSameLibrary() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(
+            title: "Aeon",
+            feedURL: URL(string: "https://aeon.co/feed.rss")!,
+            folderName: "Philosophy"
+        )
+        context.insert(feed)
+        let article = Article(guid: "aeon-1", title: "A long essay", feed: feed)
+        context.insert(article)
+        try NotInterestedLog.record(article, in: context)
+        defer { FolderStore.remove("Philosophy") }
+
+        let librarian = GeminiLibrarian()
+        let onMain = librarian.systemInstruction(in: context)
+        let offMain = await librarian.systemInstruction(from: container)
+        #expect(offMain == onMain)
+        #expect(offMain.contains("Aeon"))
+        #expect(offMain.contains("A long essay"))
+    }
+
+    @Test @MainActor func librarianPromptIncludesAnUnsavedSource() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(
+            title: "Unsaved Quarterly",
+            feedURL: URL(string: "https://example.com/uq.xml")!
+        )
+        context.insert(feed)
+
+        let gemini = ScriptedGemini(results: [.textReply("Here.")])
+        let viewModel = ExperimentalLibrarianViewModel(
+            gemini: gemini,
+            librarian: GeminiLibrarian(),
+            requireAPIKey: false
+        )
+        viewModel.configure(with: context)
+        viewModel.draft = "What is in the library?"
+        await viewModel.send()
+
+        let instruction = try #require(gemini.instructions.first)
+        #expect(instruction.contains("Unsaved Quarterly"))
+        #expect(context.hasChanges == false)
+    }
+
+    @Test @MainActor func librarianPromptSeesAFolderCreatedOnThePreviousTurn() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        defer { FolderStore.remove("Newsletters") }
+        let gemini = ScriptedGemini(results: [
+            .toolCalls([GeminiFunctionCall(name: "create_folder", arguments: ["name": "Newsletters"])]),
+            .textReply("Created.")
+        ])
+        let viewModel = ExperimentalLibrarianViewModel(
+            gemini: gemini,
+            librarian: GeminiLibrarian(),
+            requireAPIKey: false
+        )
+        viewModel.configure(with: context)
+        viewModel.draft = "Make a folder called Newsletters"
+        await viewModel.send()
+
+        #expect(gemini.instructions.count == 2)
+        #expect(gemini.instructions[1].contains("Newsletters"))
+    }
 }
 
 @MainActor
@@ -354,12 +421,14 @@ private final class LocalFreshRSSService: FreshRSSSyncing {
 
 private final class ScriptedGemini: GeminiConversing, @unchecked Sendable {
     private var results: [GeminiGenerateResult]
+    private(set) var instructions: [String] = []
 
     init(results: [GeminiGenerateResult]) {
         self.results = results
     }
 
     func generateLibrarian(contentsJSON: Data, systemInstruction: String) async throws -> GeminiGenerateResult {
+        instructions.append(systemInstruction)
         guard !results.isEmpty else { throw GeminiClientError.emptyReply }
         return results.removeFirst()
     }

@@ -14,7 +14,14 @@ final class ReaderViewModel {
     private(set) var isAskingVideo = false
     var summaryError: String?
     var askError: String?
+    var bodyError: String?
     private let gemini: GeminiClient
+    private var videoAsk: Task<Void, Never>?
+    private var summaryTask: Task<Void, Never>?
+    private var didResolveFile = false
+    private var resolvedFile: URL?
+    /// Disk lookups for an imported file. A redraw does not increment this.
+    private(set) var fileResolves = 0
 
     init(article: Article, gemini: GeminiClient = GeminiClient()) {
         self.article = article
@@ -22,8 +29,7 @@ final class ReaderViewModel {
     }
 
     var hasAISummary: Bool {
-        guard let aiSummary = article.aiSummary else { return false }
-        return !aiSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ContentClassifier.hasVisibleText(article.aiSummary)
     }
 
     var shouldOfferYouTubeSummary: Bool {
@@ -35,6 +41,15 @@ final class ReaderViewModel {
 
     var youtubeURL: URL? {
         article.videoID.flatMap { YouTubeProcessor.watchURL(for: $0) } ?? article.url
+    }
+
+    /// The imported file, looked up once. Later redraws reuse it.
+    var importedFileURL: URL? {
+        if didResolveFile { return resolvedFile }
+        didResolveFile = true
+        fileResolves += 1
+        resolvedFile = ImportedDocumentStore.shared.resolvedFileURL(for: article)
+        return resolvedFile
     }
 
     var videoChatMessages: [VideoChatMessage] {
@@ -51,31 +66,59 @@ final class ReaderViewModel {
             return
         }
         guard article.contentKind == "article" else { return }
-        let existing = article.contentHTML ?? article.summary
-        guard ArticleExtractionPolicy().shouldFetchPage(rssHTML: existing, kind: article.contentKind) else { return }
+        let articleID = article.id
+        let shouldFetch: Bool
+        if let container = article.modelContext?.container {
+            shouldFetch = await Task.detached(priority: .utility) {
+                ArticleExtractionService.shouldFetchStoredArticle(id: articleID, in: container)
+            }.value
+        } else {
+            shouldFetch = ArticleExtractionPolicy().shouldFetchPage(
+                rssHTML: article.contentHTML ?? article.summary,
+                kind: article.contentKind
+            )
+        }
+        guard !Task.isCancelled, shouldFetch else { return }
         isExtracting = true
         defer { isExtracting = false }
-        guard let html = await ArticleExtractionService().extractedHTML(for: article) else { return }
+        guard let html = await ArticleExtractionService().extractedHTML(for: article, alreadyEligible: true) else { return }
+        let minutes = await Task.detached(priority: .utility) {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+        }.value
         do {
             try Task.checkCancellation()
         } catch {
             return
         }
-        if html != article.contentHTML {
-            article.contentHTML = html
+        article.contentHTML = html
+        noteDocumentChanged()
+        article.raiseReadingEstimate(minutes)
+        if let failure = saveArticleChanges() {
+            bodyError = failure
         }
-        article.refreshEstimatedReadingMinutes()
-        try? article.modelContext?.save()
     }
 
     func declineYouTubeSummary() {
         article.declinedVideoSummary = true
-        try? article.modelContext?.save()
+        if let failure = saveArticleChanges() {
+            article.declinedVideoSummary = false
+            bodyError = failure
+        }
+    }
+
+    func beginSummary() {
+        summaryTask?.cancel()
+        summaryTask = Task { await self.summarizeYouTube() }
+    }
+
+    func cancelSummary() {
+        summaryTask?.cancel()
+        summaryTask = nil
     }
 
     func summarizeYouTube() async {
         guard let url = youtubeURL else {
-            summaryError = GeminiClientError.missingVideo.localizedDescription
+            summaryError = ReaderFailure.message(for: GeminiClientError.missingVideo)
             return
         }
         isSummarizing = true
@@ -84,7 +127,11 @@ final class ReaderViewModel {
         do {
             let reply = try await gemini.summarizeYouTube(url: url)
             try Task.checkCancellation()
+            let previousSummary = article.aiSummary
             article.aiSummary = reply.text
+            if previousSummary != reply.text {
+                noteDocumentChanged()
+            }
             article.videoGeminiInteractionID = reply.id
             var messages = VideoChatLog.decode(article.videoChatJSON)
             if messages.isEmpty {
@@ -97,19 +144,31 @@ final class ReaderViewModel {
                     )
                 )
             }
-            persistVideoChat(messages)
+            if let failure = persistVideoChat(messages) {
+                summaryError = failure
+            }
         } catch is CancellationError {
             return
         } catch {
-            summaryError = error.localizedDescription
+            summaryError = ReaderFailure.message(for: error)
         }
+    }
+
+    func beginVideoQuestion(_ question: String) {
+        videoAsk?.cancel()
+        videoAsk = Task { await self.askAboutVideo(question) }
+    }
+
+    func cancelVideoWork() {
+        videoAsk?.cancel()
+        videoAsk = nil
     }
 
     func askAboutVideo(_ question: String) async {
         let question = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
         guard let url = youtubeURL else {
-            askError = GeminiClientError.missingVideo.localizedDescription
+            askError = ReaderFailure.message(for: GeminiClientError.missingVideo)
             return
         }
 
@@ -123,7 +182,9 @@ final class ReaderViewModel {
                 createdAt: Date()
             )
         )
-        persistVideoChat(messages)
+        if let failure = persistVideoChat(messages) {
+            askError = failure
+        }
 
         isAskingVideo = true
         askError = nil
@@ -147,20 +208,79 @@ final class ReaderViewModel {
                     createdAt: Date()
                 )
             )
-            persistVideoChat(updated)
+            if let failure = persistVideoChat(updated) {
+                askError = failure
+            }
         } catch is CancellationError {
             return
         } catch {
-            askError = error.localizedDescription
+            askError = ReaderFailure.message(for: error)
         }
     }
 
-    private func persistVideoChat(_ messages: [VideoChatMessage]) {
+    /// Stores the transcript. Returns a sentence when the save does not land. The messages stay on screen either way.
+    private func persistVideoChat(_ messages: [VideoChatMessage]) -> String? {
         article.videoChatJSON = VideoChatLog.encode(VideoChatLog.trimmed(messages))
-        try? article.modelContext?.save()
+        guard let context = article.modelContext else {
+            return "Couldn’t save that conversation."
+        }
+        LibraryChange.note(article)
+        do {
+            try context.save()
+            return nil
+        } catch {
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t save that conversation.")
+        }
     }
 
+    /// Bumps when the stored article body changes, so the page reloads without reading that body in the view.
+    private(set) var bodyRevision = 0
+    /// Times the page copied the stored body on the main thread. A saved article does not.
+    private(set) var memoryBodyCopies = 0
+    /// Times a PDF or book checked its stored text on the open article. A saved file does not.
+    private(set) var memoryDocumentChecks = 0
+
+    /// A saved file is checked on a separate store context. An unsaved extract is already in memory.
+    private func storedDocumentAlreadyHasText() async -> Bool {
+        let articleID = article.id
+        if articleBodyIsUnsaved {
+            memoryDocumentChecks += 1
+            return Self.hasVisibleText(article.contentHTML)
+        }
+        guard let container = article.modelContext?.container else {
+            memoryDocumentChecks += 1
+            return Self.hasVisibleText(article.contentHTML)
+        }
+        return await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            let matchID = articleID
+            var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+            descriptor.fetchLimit = 1
+            guard let stored = try? context.fetch(descriptor).first else { return false }
+            return Self.hasVisibleText(stored.contentHTML)
+        }.value
+    }
+
+    /// True when this article’s body may differ from the last save. Another dirty object in the store does not count.
+    private var articleBodyIsUnsaved: Bool {
+        guard let context = article.modelContext else { return true }
+        let articleID = article.persistentModelID
+        if context.insertedModelsArray.contains(where: { $0.persistentModelID == articleID }) { return true }
+        return context.changedModelsArray.contains { $0.persistentModelID == articleID }
+    }
     private var cachedDocument: (key: String, html: String)?
+    private var cachedBodyHash: (text: String, hash: Int)?
+    private var cachedSummaryHash: (text: String, hash: Int)?
+
+    /// Date and length under the title. Kept off the document cache key so a late duration does not reload the page.
+    var readerMetaLine: String {
+        [
+            OneFeedDateLabel.longDate(article.publishedAt),
+            article.durationPhrase,
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    }
 
     var documentBaseURL: URL {
         if article.contentKind == "epub",
@@ -171,34 +291,114 @@ final class ReaderViewModel {
         return ReaderWebWarmup.blankURL
     }
 
-    func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize) -> String {
-        let fallback = switch article.contentKind {
-        case "epub":
-            "<p>This book couldn’t be opened. Import the EPUB again.</p>"
-        case "pdf":
-            "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
-        case "youtube":
-            "<p>Summarize this video to read it here. The video stays available from the switcher above.</p>"
-        default:
-            "<p>This source only provided metadata. Open the original article to continue reading.</p>"
-        }
-        let summary = article.aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let rawBody: String
-        if article.contentKind == "youtube", !summary.isEmpty {
-            rawBody = ReaderHTML.videoSummaryBody(from: summary)
-        } else {
-            rawBody = article.readableHTML ?? fallback
-        }
-        #if canImport(UIKit)
-        let typeSize = UIApplication.shared.preferredContentSizeCategory.rawValue
-        #else
-        let typeSize = "standard"
-        #endif
-        let key = "\(article.id.uuidString)|\(rawBody.hashValue)|\(summary.hashValue)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(typeSize)|\(article.title)|\(article.feed?.title ?? "")|\(article.durationPhrase)|\(article.publishedAt.timeIntervalSinceReferenceDate)|focus\(ReaderFocus.engineVersion)"
+    /// Changes when the page should load again. A duration update stays off this id.
+    func readerLoadID(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) -> String {
+        "\(article.id.uuidString)|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(bodyRevision)|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+    }
+
+    /// Sanitizes and assembles the page away from the main thread. A cached page returns immediately.
+    /// A saved article is read on a separate store context. An unsaved edit to this article is copied from memory.
+    func loadDocumentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) async -> String {
+        let key = readerLoadID(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
         if let cachedDocument, cachedDocument.key == key {
             return cachedDocument.html
         }
-        let body = ReaderHTML.sanitizedBody(rawBody)
+        let articleID = article.id
+        let kind = article.contentKind
+        let container = article.modelContext?.container
+        let memory: ReaderBodySnapshot?
+        if container == nil || articleBodyIsUnsaved {
+            memoryBodyCopies += 1
+            memory = ReaderBodySnapshot(
+                contentKind: kind,
+                contentHTML: article.contentHTML,
+                summary: article.summary,
+                aiSummary: article.aiSummary
+            )
+        } else {
+            memory = nil
+        }
+        let memoryKind = memory?.contentKind
+        let memoryHTML = memory?.contentHTML
+        let memorySummary = memory?.summary
+        let memoryAI = memory?.aiSummary
+        let shell = presentationDraft(
+            rawBody: "",
+            cacheKey: key,
+            fontChoice: fontChoice,
+            textSize: textSize,
+            boldText: boldText
+        )
+        let html = await Task.detached(priority: .userInitiated) {
+            var draft = shell
+            let fields: (kind: String, contentHTML: String?, summary: String?, aiSummary: String?)
+            if let memoryKind {
+                fields = (memoryKind, memoryHTML, memorySummary, memoryAI)
+            } else {
+                fields = Self.storedBody(id: articleID, kind: kind, in: container)
+            }
+            draft.rawBody = Self.resolvedBody(
+                kind: fields.kind,
+                contentHTML: fields.contentHTML,
+                summary: fields.summary,
+                aiSummary: fields.aiSummary
+            )
+            return Self.render(draft)
+        }.value
+        guard !Task.isCancelled else { return html }
+        if cachedDocument?.key == key || cachedDocument == nil {
+            cachedDocument = (key, html)
+        }
+        return html
+    }
+
+    func documentHTML(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool = false) -> String {
+        let draft = makeDraft(fontChoice: fontChoice, textSize: textSize, boldText: boldText)
+        if let cachedDocument, cachedDocument.key == draft.cacheKey {
+            return cachedDocument.html
+        }
+        let html = Self.render(draft)
+        cachedDocument = (draft.cacheKey, html)
+        return html
+    }
+
+    private func noteDocumentChanged() {
+        bodyRevision += 1
+        cachedDocument = nil
+    }
+
+    private func makeDraft(fontChoice: ReaderFontChoice, textSize: ReaderTextSize, boldText: Bool) -> ReaderDocumentDraft {
+        let snapshot = ReaderBodySnapshot(
+            contentKind: article.contentKind,
+            contentHTML: article.contentHTML,
+            summary: article.summary,
+            aiSummary: article.aiSummary
+        )
+        let rawBody = Self.resolvedBody(
+            kind: snapshot.contentKind,
+            contentHTML: snapshot.contentHTML,
+            summary: snapshot.summary,
+            aiSummary: snapshot.aiSummary
+        )
+        // Length and date stay out of this key. A late duration must not rebuild the page.
+        // The body hash is remembered, so a redraw does not walk the article again.
+        let key = "\(article.id.uuidString)|\(fingerprint(rawBody, cache: &cachedBodyHash))|\(fingerprint(snapshot.trimmedSummary, cache: &cachedSummaryHash))|\(fontChoice.rawValue)|\(textSize.rawValue)|\(Self.typeSizeToken)|\(boldText ? "bold" : "regular")|\(article.title)|\(article.feed?.title ?? "")|focus\(ReaderFocus.engineVersion)"
+        return presentationDraft(
+            rawBody: rawBody,
+            cacheKey: key,
+            fontChoice: fontChoice,
+            textSize: textSize,
+            boldText: boldText
+        )
+    }
+
+    private func presentationDraft(
+        rawBody: String,
+        cacheKey: String,
+        fontChoice: ReaderFontChoice,
+        textSize: ReaderTextSize,
+        boldText: Bool
+    ) -> ReaderDocumentDraft {
         let family: String = switch fontChoice {
         case .sans: "-apple-system, BlinkMacSystemFont, sans-serif"
         case .serif: "ui-serif, 'New York', Charter, Georgia, serif"
@@ -218,26 +418,100 @@ final class ReaderViewModel {
         let sourceSize: CGFloat = 11
         let horizontalPad = 48
         #endif
-        let metaBits = [
-            article.publishedAt.formatted(date: .long, time: .omitted),
-            article.durationPhrase,
-        ].filter { !$0.isEmpty }
+        return ReaderDocumentDraft(
+            cacheKey: cacheKey,
+            rawBody: rawBody,
+            metaLine: readerMetaLine,
+            title: article.title,
+            sourceName: ArticlePresentation.sourceName(for: article),
+            family: family,
+            bodySize: bodySize,
+            headingSize: headingSize,
+            sectionSize: sectionSize,
+            titleSize: titleSize,
+            metaSize: metaSize,
+            sourceSize: sourceSize,
+            horizontalPad: horizontalPad,
+            bodyWeight: boldText ? 650 : 400,
+            headingWeight: boldText ? 700 : 500,
+            metaWeight: boldText ? 600 : 400,
+            rootCSS: OneFeedPalette.readerRootCSS,
+            contrastCSS: OneFeedPalette.readerContrastCSS,
+            focusCSS: ReaderFocus.pageCSS,
+            focusScript: ReaderFocus.pageScriptTag
+        )
+    }
+
+    nonisolated private static func hasVisibleText(_ value: String?) -> Bool {
+        guard let value else { return false }
+        return value.contains { !$0.isWhitespace }
+    }
+
+    /// The saved body, read on the caller’s context. A missing row falls through to the metadata page.
+    nonisolated private static func storedBody(
+        id articleID: UUID,
+        kind: String,
+        in container: ModelContainer?
+    ) -> (kind: String, contentHTML: String?, summary: String?, aiSummary: String?) {
+        guard let container else {
+            return (kind, nil, nil, nil)
+        }
+        let context = ModelContext(container)
+        let matchID = articleID
+        var descriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })
+        descriptor.fetchLimit = 1
+        guard let stored = try? context.fetch(descriptor).first else {
+            return (kind, nil, nil, nil)
+        }
+        return (stored.contentKind, stored.contentHTML, stored.summary, stored.aiSummary)
+    }
+
+    /// Picks the page body without touching the view. Whitespace-only HTML still falls through to the fallback.
+    nonisolated private static func resolvedBody(
+        kind: String,
+        contentHTML: String?,
+        summary: String?,
+        aiSummary: String?
+    ) -> String {
+        let fallback = switch kind {
+        case "epub":
+            "<p>This book couldn’t be opened. Import the EPUB again.</p>"
+        case "pdf":
+            "<p>This PDF doesn’t have selectable text. Open the PDF view to read the pages.</p>"
+        case "youtube":
+            "<p>Summarize this video to read it here. The video stays available from the switcher above.</p>"
+        default:
+            "<p>This source only provided metadata. Open the original article to continue reading.</p>"
+        }
+        let trimmedSummary = aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if kind == "youtube", !trimmedSummary.isEmpty {
+            return ReaderHTML.videoSummaryBody(from: trimmedSummary)
+        }
+        if let value = contentHTML ?? summary, hasVisibleText(value) {
+            return value
+        }
+        return fallback
+    }
+
+    nonisolated private static func render(_ draft: ReaderDocumentDraft) -> String {
+        let body = ReaderHTML.sanitizedBody(draft.rawBody)
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
         :root {
           color-scheme: light dark;
-        \(OneFeedPalette.readerRootCSS)
+        \(draft.rootCSS)
         }
+        \(draft.contrastCSS)
         html { overflow-x: hidden; }
         body {
-          font-family: \(family);
-          font-size: \(bodySize)px;
+          font-family: \(draft.family);
+          font-size: \(draft.bodySize)px;
           font-optical-sizing: auto;
-          font-weight: 400;
+          font-weight: \(draft.bodyWeight);
           line-height: 1.55;
           margin: 0 auto;
-          padding: 36px \(horizontalPad)px 48px;
+          padding: 36px \(draft.horizontalPad)px 48px;
           max-width: 36em;
           color: var(--ink);
           background: var(--paper);
@@ -248,37 +522,37 @@ final class ReaderViewModel {
           -webkit-hyphens: auto;
         }
         .source {
-          font: 700 \(sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: 700 \(draft.sourceSize)px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
           letter-spacing: 0.04em;
           text-transform: uppercase;
           color: var(--meta);
         }
         h1 {
-          font-family: \(family);
-          font-size: \(titleSize)px;
-          font-weight: 500;
+          font-family: \(draft.family);
+          font-size: \(draft.titleSize)px;
+          font-weight: \(draft.headingWeight);
           line-height: 1.22;
           letter-spacing: -0.012em;
           color: var(--title);
           margin: 14px 0 10px;
         }
         .meta {
-          font: 400 \(metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(draft.metaWeight) \(draft.metaSize)px/1.45 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           margin: 0 0 32px;
           padding-bottom: 20px;
           border-bottom: 1px solid var(--rule);
         }
         h2, h3 {
-          font-family: \(family);
-          font-weight: 500;
+          font-family: \(draft.family);
+          font-weight: \(draft.headingWeight);
           line-height: 1.3;
           letter-spacing: -0.01em;
           color: var(--title);
           margin: 1.6em 0 0.45em;
         }
-        h2 { font-size: \(headingSize)px; }
-        h3 { font-size: \(sectionSize)px; }
+        h2 { font-size: \(draft.headingSize)px; }
+        h3 { font-size: \(draft.sectionSize)px; }
         p { margin: 0 0 1.05em; }
         img, video, iframe, figure {
           max-width: 100%;
@@ -288,7 +562,7 @@ final class ReaderViewModel {
           border-radius: 10px;
         }
         figcaption, cite {
-          font: 400 \(metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          font: \(draft.metaWeight) \(draft.metaSize)px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
           color: var(--meta);
           display: block;
           margin-top: 8px;
@@ -309,18 +583,65 @@ final class ReaderViewModel {
         }
         table { display: block; max-width: 100%; overflow-x: auto; }
         hr { border: 0; border-top: 1px solid var(--rule); margin: 2.2em 0; }
-        \(ReaderFocus.pageCSS)
-        </style></head><body><div class="source">\(escape(ArticlePresentation.sourceName(for: article)))</div><h1>\(escape(article.title))</h1><div class="meta">\(metaBits.joined(separator: " · "))</div><div id="onefeed-article">\(body)</div>\(ReaderFocus.pageScriptTag)</body></html>
+        \(draft.focusCSS)
+        </style></head><body><div class="source">\(escape(draft.sourceName))</div><h1>\(escape(draft.title))</h1><div class="meta">\(escape(draft.metaLine))</div><div id="onefeed-article">\(body)</div>\(draft.focusScript)</body></html>
         """
-        cachedDocument = (key, html)
         return html
     }
 
-    private func loadPDFTextIfNeeded() async {
-        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return
+    private static var typeSizeToken: String {
+        #if canImport(UIKit)
+        UIApplication.shared.preferredContentSizeCategory.rawValue
+        #else
+        "standard"
+        #endif
+    }
+
+    private struct ReaderBodySnapshot: Sendable {
+        var contentKind: String
+        var contentHTML: String?
+        var summary: String?
+        var aiSummary: String?
+
+        var trimmedSummary: String {
+            aiSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         }
-        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article) else { return }
+    }
+
+    private struct ReaderDocumentDraft: Sendable {
+        var cacheKey: String
+        var rawBody: String
+        var metaLine: String
+        var title: String
+        var sourceName: String
+        var family: String
+        var bodySize: CGFloat
+        var headingSize: CGFloat
+        var sectionSize: CGFloat
+        var titleSize: CGFloat
+        var metaSize: CGFloat
+        var sourceSize: CGFloat
+        var horizontalPad: Int
+        var bodyWeight: Int
+        var headingWeight: Int
+        var metaWeight: Int
+        var rootCSS: String
+        var contrastCSS: String
+        var focusCSS: String
+        var focusScript: String
+    }
+
+    /// Reuses the hash when the text is the same buffer. A redraw should not walk the article.
+    private func fingerprint(_ text: String, cache: inout (text: String, hash: Int)?) -> Int {
+        if let cache, cache.text == text { return cache.hash }
+        let hash = text.hashValue
+        cache = (text, hash)
+        return hash
+    }
+
+    private func loadPDFTextIfNeeded() async {
+        if await storedDocumentAlreadyHasText() { return }
+        guard let file = importedFileURL else { return }
         isExtracting = true
         defer { isExtracting = false }
         let html = await Task.detached {
@@ -329,18 +650,21 @@ final class ReaderViewModel {
         let persisted = ImportedDocumentService.persistedHTML(html)
         guard let persisted else { return }
         article.contentHTML = persisted
-        let minutes = ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
+        noteDocumentChanged()
+        let minutes = await Task.detached(priority: .utility) {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: persisted))
+        }.value
         if minutes > article.estimatedReadingMinutes {
             article.estimatedReadingMinutes = minutes
         }
-        try? article.modelContext?.save()
+        if let failure = saveArticleChanges() {
+            bodyError = failure
+        }
     }
 
     private func loadEPUBIfNeeded() async {
-        if let html = article.contentHTML, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return
-        }
-        guard let file = ImportedDocumentStore.shared.resolvedFileURL(for: article),
+        if await storedDocumentAlreadyHasText() { return }
+        guard let file = importedFileURL,
               let hash = ImportedDocumentStore.hash(fromGuid: article.guid) else { return }
         isExtracting = true
         defer { isExtracting = false }
@@ -350,13 +674,30 @@ final class ReaderViewModel {
                 try EPUBReader.html(fromEPUB: file, extractedTo: extracted)
             }.value
             article.contentHTML = html
-            try? article.modelContext?.save()
+            noteDocumentChanged()
+            if let failure = saveArticleChanges() {
+                bodyError = failure
+            }
         } catch {
             return
         }
     }
 
-    private func escape(_ text: String) -> String {
+    /// Keeps the article the reader is showing. Returns a sentence when that write does not land.
+    private func saveArticleChanges() -> String? {
+        guard let context = article.modelContext else {
+            return "Couldn’t keep this article."
+        }
+        LibraryChange.note(article)
+        do {
+            try context.save()
+            return nil
+        } catch {
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t keep this article.")
+        }
+    }
+
+    nonisolated private static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")

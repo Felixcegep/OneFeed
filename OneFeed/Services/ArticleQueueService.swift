@@ -8,6 +8,8 @@ struct ArticleQueueService {
         let currentValue = ArticleState.current.rawValue
         var currentDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.stateRawValue == currentValue })
         currentDescriptor.sortBy = [SortDescriptor(\.firstDisplayedAt, order: .forward)]
+        currentDescriptor.propertiesToFetch = Self.selectionFields
+        currentDescriptor.relationshipKeyPathsForPrefetching = [\.feed]
         let currents = try context.fetch(currentDescriptor)
         if let current = currents.first {
             for duplicate in currents.dropFirst() {
@@ -21,12 +23,28 @@ struct ArticleQueueService {
         }
 
         let queuedValue = ArticleState.queued.rawValue
-        var descriptor = FetchDescriptor<Article>(predicate: #Predicate {
-            $0.stateRawValue == queuedValue && ($0.feed?.isEnabled ?? false)
+        var fallback = FetchDescriptor<Article>(predicate: #Predicate { article in
+            article.stateRawValue == queuedValue && (article.feed?.isEnabled ?? false)
         })
-        descriptor.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
-        let candidates = try context.fetch(descriptor)
-        let selected = candidates.first(where: { $0.feed?.id != lastDisplayedFeedID }) ?? candidates.first
+        fallback.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
+        fallback.fetchLimit = 1
+        fallback.propertiesToFetch = Self.selectionFields
+        fallback.relationshipKeyPathsForPrefetching = [\.feed]
+        let selected: Article?
+        if let avoidFeed = lastDisplayedFeedID {
+            var preferred = FetchDescriptor<Article>(predicate: #Predicate { article in
+                article.stateRawValue == queuedValue
+                    && (article.feed?.isEnabled ?? false)
+                    && article.feed?.id != avoidFeed
+            })
+            preferred.sortBy = [SortDescriptor(\.publishedAt, order: .forward)]
+            preferred.fetchLimit = 1
+            preferred.propertiesToFetch = Self.selectionFields
+            preferred.relationshipKeyPathsForPrefetching = [\.feed]
+            selected = try context.fetch(preferred).first ?? context.fetch(fallback).first
+        } else {
+            selected = try context.fetch(fallback).first
+        }
         selected?.state = .current
         selected?.firstDisplayedAt = .now
         if let selected {
@@ -36,6 +54,9 @@ struct ArticleQueueService {
         WidgetSnapshotStore.write(article: selected)
         return selected
     }
+
+    /// The columns a row reads. A narrower fetch registers the next story on the open screen, and the card then faults its page.
+    private static let selectionFields = ArticleListFetch.rowColumns
 
     @discardableResult
     func transition(
@@ -78,14 +99,22 @@ struct ArticleQueueService {
 
     /// Moves a finished article into Queue (`.saved`). Rating and the reading takeaway stay.
     func moveToQueue(_ article: Article, in context: ModelContext) throws {
+        let clearedNotInterested = article.notInterested
+        if clearedNotInterested {
+            article.notInterested = false
+            try deleteNotInterestedEntries(matching: article, in: context)
+        }
+        guard article.state != .saved else {
+            if clearedNotInterested {
+                LibraryChange.note(article)
+                try context.save()
+            }
+            return
+        }
         article.state = .saved
         article.isRemoteStarred = true
         if article.completedAt == nil {
             article.completedAt = .now
-        }
-        if article.notInterested {
-            article.notInterested = false
-            try deleteNotInterestedEntries(matching: article, in: context)
         }
         try parkOnTodayDeck(article, in: context)
         LibraryChange.note(article)
@@ -102,7 +131,7 @@ struct ArticleQueueService {
     /// Saved deck items leave Today. A current item promotes the next queued item, the same way `DailyDeckService.advance` does.
     private func parkOnTodayDeck(_ article: Article, in context: ModelContext) throws {
         guard let deck = try DailyDeckService().todayDeck(in: context) else { return }
-        let matches = deck.items.filter { $0.article?.id == article.id }
+        let matches = deck.items.filter { $0.resolvedArticleID() == article.id }
         guard !matches.isEmpty else { return }
 
         let wasCurrent = matches.contains { $0.status == .current }
@@ -112,17 +141,21 @@ struct ArticleQueueService {
         guard wasCurrent else { return }
 
         let nextItem = deck.items
-            .filter { $0.status == .queued && $0.article?.id != article.id }
+            .filter { $0.status == .queued && $0.resolvedArticleID() != article.id }
             .sorted { $0.position < $1.position }
             .first
+        var promoted: Article?
         if let nextItem {
             nextItem.status = .current
-            if let promoted = nextItem.article {
-                promoted.state = .current
-                promoted.firstDisplayedAt = .now
-                LibraryChange.note(promoted)
+            if let id = nextItem.resolvedArticleID() {
+                promoted = DailyDeckService.lightweightArticle(id: id, in: context)
+                if let promoted {
+                    promoted.state = .current
+                    promoted.firstDisplayedAt = .now
+                    LibraryChange.note(promoted)
+                }
             }
         }
-        WidgetSnapshotStore.write(article: nextItem?.article)
+        WidgetSnapshotStore.write(article: promoted)
     }
 }

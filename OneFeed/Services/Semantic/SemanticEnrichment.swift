@@ -2,10 +2,9 @@ import Foundation
 import SwiftData
 
 /// Opt-in Gemini pass that replaces a video's preliminary embedding with a short structured summary.
-/// It never writes `Article.aiSummary`.
-@MainActor
-enum SemanticEnrichment {
-    static func enrichUpcoming(in context: ModelContext) async {
+/// It never writes `Article.aiSummary`. The pass runs on the ingest actor, so the vectors stay off the main thread.
+nonisolated enum SemanticEnrichment {
+    fileprivate static func enrichUpcoming(in context: ModelContext) async {
         guard UserDefaults.standard.bool(forKey: AppPreferenceKey.semanticVideoEnrichment) else { return }
         guard GeminiAPIKeyStore.load() != nil else { return }
 
@@ -13,7 +12,12 @@ enum SemanticEnrichment {
         let articles: [Article]
         let memories: [ContentMemory]
         do {
-            articles = try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.contentKind == youtube }))
+            var articlesDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.contentKind == youtube })
+            articlesDescriptor.propertiesToFetch = [
+                \.id, \.guid, \.url, \.publishedAt, \.videoID, \.declinedVideoSummary, \.contentKind,
+            ]
+            articlesDescriptor.relationshipKeyPathsForPrefetching = [\.feed]
+            articles = try context.fetch(articlesDescriptor)
             memories = try context.fetch(FetchDescriptor<ContentMemory>())
         } catch {
             return
@@ -75,23 +79,28 @@ enum SemanticEnrichment {
                 )
             }
 
-            try? context.save()
+            do {
+                try context.save()
+                NotificationCenter.default.post(name: OneFeedNotify.storyIndexDidChange, object: nil)
+            } catch {
+                continue
+            }
         }
     }
 
-    private static func needsEnrichment(_ memory: ContentMemory) -> Bool {
+    fileprivate static func needsEnrichment(_ memory: ContentMemory) -> Bool {
         if memory.stateRaw == SemanticState.preliminary.rawValue { return true }
         let summary = memory.semanticSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         return summary.isEmpty && memory.stateRaw != SemanticState.final.rawValue
     }
 
-    private static func hasVideoLocator(_ article: Article) -> Bool {
+    fileprivate static func hasVideoLocator(_ article: Article) -> Bool {
         let videoID = article.videoID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !videoID.isEmpty { return true }
         return article.url != nil
     }
 
-    private static func watchURL(for article: Article) -> URL? {
+    fileprivate static func watchURL(for article: Article) -> URL? {
         if let videoID = article.videoID?.trimmingCharacters(in: .whitespacesAndNewlines),
            let watch = YouTubeProcessor.watchURL(for: videoID) {
             return watch
@@ -99,7 +108,7 @@ enum SemanticEnrichment {
         return article.url
     }
 
-    private static func index(_ memories: [ContentMemory]) -> [String: ContentMemory] {
+    fileprivate static func index(_ memories: [ContentMemory]) -> [String: ContentMemory] {
         var map: [String: ContentMemory] = [:]
         map.reserveCapacity(memories.count * 2)
         for memory in memories {
@@ -115,7 +124,7 @@ enum SemanticEnrichment {
         return map
     }
 
-    private static func memory(for article: Article, in index: [String: ContentMemory]) -> ContentMemory? {
+    fileprivate static func memory(for article: Article, in index: [String: ContentMemory]) -> ContentMemory? {
         let videoKey = ContentMemory.makeIdentityKey(
             externalID: article.videoID,
             canonicalURL: article.url?.absoluteString
@@ -124,7 +133,7 @@ enum SemanticEnrichment {
         return index[ArticleIdentity.identityKey(for: article)]
     }
 
-    private static func articlesByMemoryKey(_ articles: [Article]) -> [String: Article] {
+    fileprivate static func articlesByMemoryKey(_ articles: [Article]) -> [String: Article] {
         var map: [String: Article] = [:]
         for article in articles {
             let videoKey = ContentMemory.makeIdentityKey(
@@ -138,7 +147,7 @@ enum SemanticEnrichment {
     }
 
     /// `SemanticMemoryPass` has no shared classify helper, so this mirrors its cluster update.
-    private static func applyClassification(
+    fileprivate static func applyClassification(
         of memory: ContentMemory,
         article: Article,
         vectors: EmbeddingService.EmbeddedVectors,
@@ -188,7 +197,7 @@ enum SemanticEnrichment {
         }
     }
 
-    private static func semanticItem(
+    fileprivate static func semanticItem(
         from memory: ContentMemory,
         sourceTitle: String,
         titleVector: [Double]?,
@@ -212,5 +221,12 @@ enum SemanticEnrichment {
             consumedAt: memory.consumedAt,
             storyClusterID: memory.storyClusterID
         )
+    }
+}
+
+extension LibraryIngestActor {
+    /// Opt-in video summaries. The vectors stay on this actor, so a refresh does not unpack them on the main thread.
+    func enrichSemanticVideos() async {
+        await SemanticEnrichment.enrichUpcoming(in: modelContext)
     }
 }

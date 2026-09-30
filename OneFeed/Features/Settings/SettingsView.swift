@@ -11,9 +11,13 @@ struct SettingsView: View {
     @AppStorage(AppPreferenceKey.semanticVideoEnrichment) private var semanticVideoEnrichment = false
     @State private var viewModel = SettingsViewModel()
     @State private var geminiKey = ""
+    /// Key already stored. An empty field while editing must not delete this.
+    @State private var committedGeminiKey = ""
+    @State private var geminiKeySave: Task<Void, Never>?
     @State private var library = LibrarySyncService.shared
     @State private var isPickingLibraryFolder = false
     @State private var isPickingLibraryFile = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Form {
@@ -21,20 +25,20 @@ struct SettingsView: View {
                 settingsLink("Reading", summary: "\(ReaderFontChoice(rawValue: readerFont)?.label ?? "Serif") · \(ReaderTextSize(rawValue: readerTextSize)?.label ?? "Default") · \(ReaderFocusMode(rawValue: readerFocusMode)?.label ?? "Smart")") {
                     readingSection
                 }
-                settingsLink("Accounts & Sync", summary: "FreshRSS, iCloud or Google Drive") {
+                settingsLink("Accounts & Sync", summary: "FreshRSS, iCloud or Google Drive", reloadsOnAppear: true) {
                     freshRSSSection
                     cloudSection
                 }
                 settingsLink("Storage", summary: "Keep articles · \(ArticleRetentionChoice(rawValue: retentionDays)?.label ?? "\(retentionDays) days")") {
                     storageSection
                 }
-                settingsLink("Video & AI", summary: geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Summaries off" : "Summaries available") {
+                settingsLink("Video & AI", summary: geminiKeyStatus, flushGeminiKey: true) {
                     videoSection
                 }
             }
             .listRowBackground(OneFeedTheme.paper)
             Section {
-                settingsLink("Import & Export", summary: "Move subscriptions with OPML") {
+                settingsLink("Import & Export", summary: "Move subscriptions with OPML", reloadsOnAppear: true) {
                     dataTransferSection
                 }
                 settingsLink("About", summary: "OneFeed · 1.0") {
@@ -49,14 +53,26 @@ struct SettingsView: View {
         .oneFeedInlineTitle()
         .oneFeedSettingsCanvas()
         .tint(OneFeedTheme.ink)
-        .refreshProgressBanner(viewModel.progress)
+        .modifier(SettingsRefreshChrome(viewModel: viewModel))
         .task {
             viewModel.configure(with: modelContext)
             library.configure(with: modelContext)
-            geminiKey = GeminiAPIKeyStore.load() ?? ""
+            let stored = await Task.detached(priority: .utility) {
+                GeminiAPIKeyStore.load() ?? ""
+            }.value
+            guard geminiKey.isEmpty else {
+                if committedGeminiKey.isEmpty { committedGeminiKey = stored }
+                return
+            }
+            committedGeminiKey = stored
+            geminiKey = stored
         }
-        .sheet(isPresented: $viewModel.isConnectingFreshRSS, onDismiss: viewModel.reload) {
-            FreshRSSConnectView(existingAccount: viewModel.freshRSS)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            commitGeminiKeyOnLeave()
+        }
+        .sheet(isPresented: $viewModel.isConnectingFreshRSS) {
+            FreshRSSConnectView(existingAccount: viewModel.freshRSS, onConnected: { viewModel.reloadAccounts() })
         }
         .confirmationDialog("Disconnect FreshRSS? Your locally stored articles will remain available.", isPresented: $viewModel.isConfirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { Task { await viewModel.disconnect() } }
@@ -64,13 +80,13 @@ struct SettingsView: View {
         .fileImporter(isPresented: $isPickingLibraryFolder, allowedContentTypes: LibraryDocumentPicker.folderTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
+                catch { viewModel.presentStatus("Couldn’t open library", message: UserFacingFailure.message(for: error, fallback: "Try another file.")) }
             }
         }
         .fileImporter(isPresented: $isPickingLibraryFile, allowedContentTypes: LibraryDocumentPicker.fileTypes) { result in
             Task {
                 do { await library.attach(url: try result.get()) }
-                catch { viewModel.presentStatus("Couldn’t open library", message: error.localizedDescription) }
+                catch { viewModel.presentStatus("Couldn’t open library", message: UserFacingFailure.message(for: error, fallback: "Try another file.")) }
             }
         }
         .fileImporter(isPresented: $viewModel.isImportingOPML, allowedContentTypes: [.xml, UTType(filenameExtension: "opml") ?? .xml]) { result in
@@ -78,7 +94,7 @@ struct SettingsView: View {
             case .success(let url):
                 viewModel.stageOPMLImport(from: url)
             case .failure(let error):
-                viewModel.presentStatus("Couldn’t import", message: error.localizedDescription)
+                viewModel.presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
             }
         }
         .confirmationDialog(
@@ -93,7 +109,7 @@ struct SettingsView: View {
         }
         .fileExporter(isPresented: $viewModel.isExportingOPML, document: viewModel.exportDocument, contentType: .xml, defaultFilename: "OneFeed Sources.opml") { result in
             if case .failure(let error) = result {
-                viewModel.presentStatus("Couldn’t export", message: error.localizedDescription)
+                viewModel.presentStatus("Couldn’t export", message: UserFacingFailure.message(for: error, fallback: "That file could not be exported."))
             }
         }
         .alert(
@@ -171,12 +187,11 @@ struct SettingsView: View {
                 .oneFeedAutocapitalizationNever()
                 .autocorrectionDisabled()
                 .onChange(of: geminiKey) { _, newValue in
-                    GeminiAPIKeyStore.save(newValue)
+                    scheduleGeminiKeySave(newValue)
                 }
-            if !geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if showsRemoveGeminiKey {
                 Button("Remove key", role: .destructive) {
-                    geminiKey = ""
-                    GeminiAPIKeyStore.delete()
+                    removeGeminiKey()
                 }
             }
             Toggle("Tell similar videos apart", isOn: $semanticVideoEnrichment)
@@ -190,6 +205,59 @@ struct SettingsView: View {
                 .foregroundStyle(OneFeedTheme.graphite)
         }
         .listRowBackground(OneFeedTheme.paper)
+    }
+
+    private var geminiKeyStatus: String {
+        let draft = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.isEmpty && committedGeminiKey.isEmpty { return "Summaries off" }
+        return "Summaries available"
+    }
+
+    private var showsRemoveGeminiKey: Bool {
+        !geminiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !committedGeminiKey.isEmpty
+    }
+
+    /// Writes a finished key after a short pause. Clearing the field does not delete the stored key.
+    private func scheduleGeminiKeySave(_ value: String) {
+        geminiKeySave?.cancel()
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != committedGeminiKey else { return }
+        geminiKeySave = Task {
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await persistGeminiKey(trimmed)
+        }
+    }
+
+    private func commitGeminiKeyOnLeave() {
+        geminiKeySave?.cancel()
+        geminiKeySave = nil
+        let trimmed = geminiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            if geminiKey != committedGeminiKey {
+                geminiKey = committedGeminiKey
+            }
+            return
+        }
+        guard trimmed != committedGeminiKey else { return }
+        Task { await persistGeminiKey(trimmed) }
+    }
+
+    private func persistGeminiKey(_ trimmed: String) async {
+        await Task.detached(priority: .utility) {
+            GeminiAPIKeyStore.save(trimmed)
+        }.value
+        committedGeminiKey = trimmed
+    }
+
+    private func removeGeminiKey() {
+        geminiKeySave?.cancel()
+        geminiKeySave = nil
+        geminiKey = ""
+        committedGeminiKey = ""
+        Task.detached(priority: .utility) {
+            GeminiAPIKeyStore.delete()
+        }
     }
 
     private var freshRSSSection: some View {
@@ -252,6 +320,8 @@ struct SettingsView: View {
     private func settingsLink<Content: View>(
         _ title: String,
         summary: String,
+        reloadsOnAppear: Bool = false,
+        flushGeminiKey: Bool = false,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         NavigationLink {
@@ -262,8 +332,12 @@ struct SettingsView: View {
             .oneFeedInlineTitle()
             .oneFeedSettingsCanvas()
             .tint(OneFeedTheme.ink)
-            .refreshProgressBanner(viewModel.progress)
-            .onAppear { viewModel.reload() }
+            .onAppear {
+                if reloadsOnAppear { viewModel.reload() }
+            }
+            .onDisappear {
+                if flushGeminiKey { commitGeminiKeyOnLeave() }
+            }
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -318,9 +392,12 @@ private struct FreshRSSConnectView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel: FreshRSSConnectViewModel
+    @State private var stillPresented = true
+    var onConnected: () -> Void = {}
 
-    init(existingAccount: SyncAccount?) {
+    init(existingAccount: SyncAccount?, onConnected: @escaping () -> Void = {}) {
         _viewModel = State(initialValue: FreshRSSConnectViewModel(existingAccount: existingAccount))
+        self.onConnected = onConnected
     }
 
     var body: some View {
@@ -361,12 +438,19 @@ private struct FreshRSSConnectView: View {
                         OneFeedMarkPulse(isActive: true, size: 18)
                     } else {
                         Button("Connect") {
-                            Task { if await viewModel.connect(in: modelContext) { dismiss() } }
+                            Task {
+                                if await viewModel.connect(in: modelContext) {
+                                    onConnected()
+                                    guard stillPresented else { return }
+                                    dismiss()
+                                }
+                            }
                         }.disabled(viewModel.server.isEmpty || viewModel.username.isEmpty || viewModel.apiPassword.isEmpty)
                     }
                 }
             }
         }
+        .onDisappear { stillPresented = false }
         .oneFeedMacFormSheet()
     }
 }
@@ -428,5 +512,14 @@ struct GeminiAPIKeyForm: View {
             if focused { sheetDetent = .large }
         }
         #endif
+    }
+}
+
+/// Progress ticks stay on this chrome. The settings form does not read the progress line.
+private struct SettingsRefreshChrome: ViewModifier {
+    var viewModel: SettingsViewModel
+
+    func body(content: Content) -> some View {
+        content.refreshProgressBanner(viewModel.progress)
     }
 }

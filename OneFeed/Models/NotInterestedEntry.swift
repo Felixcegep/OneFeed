@@ -36,7 +36,7 @@ final class NotInterestedEntry {
     }
 }
 
-struct NotInterestedSourceGroup: Identifiable {
+nonisolated struct NotInterestedSourceGroup: Identifiable {
     var id: String { sourceFeedURL }
     let sourceTitle: String
     let sourceFeedURL: String

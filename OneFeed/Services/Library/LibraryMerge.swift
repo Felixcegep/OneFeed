@@ -4,7 +4,7 @@ import SwiftData
 nonisolated enum LibraryMerge {
     static func snapshot(from context: ModelContext, now: Date = .now, extraTombstones: [LibraryTombstone] = []) throws -> LibraryDocument {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let articles = try context.fetch(ArticleListFetch.library())
         let feedRecords = feeds.map(record(from:))
         var articleRecords: [LibraryArticle] = []
         articleRecords.reserveCapacity(articles.count)
@@ -129,7 +129,7 @@ nonisolated enum LibraryMerge {
 
         FolderStore.remember(document.folderNames)
 
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let articles = try context.fetch(ArticleListFetch.rows())
         var index = ArticleIdentityIndex(articles: articles)
         for record in document.articles {
             guard options.shouldApply(state: record.state) else { continue }
@@ -155,7 +155,7 @@ nonisolated enum LibraryMerge {
 
     static func applyCurrent(_ document: LibraryDocument, to context: ModelContext) throws {
         guard let key = document.currentArticleKey else { return }
-        let articles = try context.fetch(FetchDescriptor<Article>())
+        let articles = try context.fetch(ArticleListFetch.rows())
         guard let incoming = articles.first(where: { recordKey(for: $0) == key }) else { return }
         incoming.state = .current
         incoming.firstDisplayedAt = incoming.firstDisplayedAt ?? .now
@@ -166,8 +166,9 @@ nonisolated enum LibraryMerge {
         }
         if let deck = try DailyDeckService.todayDeck(in: context) {
             var sawCurrent = false
+            let articlesByID = Dictionary(uniqueKeysWithValues: articles.map { ($0.id, $0) })
             for item in deck.items.sorted(by: { $0.position < $1.position }) {
-                guard let article = item.article, article.isStored else { continue }
+                guard let id = item.resolvedArticleID(), let article = articlesByID[id] else { continue }
                 if article.id == incoming.id {
                     item.status = .current
                     sawCurrent = true

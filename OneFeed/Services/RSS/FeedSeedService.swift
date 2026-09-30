@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+/// The catalog is applied after the first screen can appear. A later launch only drops retired sources.
+enum LaunchSeed {
+    static func needsApply(seededVersion: Int, legacySeeded: Bool, catalogVersion: Int = FeedSeedCatalog.version) -> Bool {
+        seededVersion < catalogVersion || !legacySeeded
+    }
+}
+
 struct FeedSeedResult: Equatable {
     var inserted = 0
     var updated = 0

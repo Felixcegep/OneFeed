@@ -173,6 +173,6 @@ struct CloudLibrarySettingsSection: View {
         guard let date = library.linkedRecord?.lastSyncedAt ?? library.lastSyncAt else {
             return "Linked"
         }
-        return date.formatted(.relative(presentation: .named))
+        return OneFeedDateLabel.syncStamp(date)
     }
 }

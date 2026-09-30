@@ -97,13 +97,13 @@ nonisolated enum YouTubeProcessor: Sendable {
         guard !shouldKeep(durationSeconds: duration, minVideoSeconds: minSeconds) else { return false }
         if article.state == .saved || article.state == .current { return false }
         let isOnScreen = deckItems.contains { item in
-            item.status == .current && item.article?.id == article.id
+            item.status == .current && item.resolvedArticleID() == article.id
         }
         guard !isOnScreen else { return false }
         article.state = .skipped
         article.completedAt = article.completedAt ?? .now
         LibraryChange.note(article)
-        for item in deckItems where item.article?.id == article.id && item.status == .queued {
+        for item in deckItems where item.resolvedArticleID() == article.id && item.status == .queued {
             item.status = .skipped
         }
         return true

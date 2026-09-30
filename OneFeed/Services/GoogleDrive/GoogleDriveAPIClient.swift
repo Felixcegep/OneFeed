@@ -14,8 +14,8 @@ nonisolated enum GoogleDriveAPIError: Error, Equatable, LocalizedError, Sendable
         switch self {
         case .unauthorized:
             String(localized: "Link Google Drive again to continue.")
-        case .httpFailure(_, let message):
-            String(localized: "Google Drive could not complete the request. \(message)")
+        case .httpFailure:
+            String(localized: "Google Drive could not complete the request.")
         }
     }
 }

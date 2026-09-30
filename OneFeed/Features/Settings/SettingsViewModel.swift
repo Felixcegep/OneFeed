@@ -11,10 +11,12 @@ final class SettingsViewModel {
     private(set) var accounts: [SyncAccount] = []
     private(set) var feeds: [Feed] = []
     private(set) var isSyncing = false
+    private var isDisconnecting = false
     let progress = RefreshProgress()
     var isConnectingFreshRSS = false
     var isConfirmingDisconnect = false
     var isImportingOPML = false
+    private var isStagingOPML = false
     var isExportingOPML = false
     var isConfirmingOPMLImport = false
     var statusTitle: String?
@@ -46,17 +48,23 @@ final class SettingsViewModel {
         statusMessage = ""
     }
 
+    /// Keeps the context for later edits. Accounts and feeds load when those screens appear.
     func configure(with context: ModelContext) {
-        let shouldReload = self.context == nil
         self.context = context
-        if shouldReload { reload() }
     }
     func reload() {
+        reloadAccounts()
         guard let context else { return }
-        accounts = (try? context.fetch(FetchDescriptor<SyncAccount>())) ?? []
         feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
     }
+
+    /// Accounts only. A sync or a connect does not need the export list.
+    func reloadAccounts() {
+        guard let context else { return }
+        accounts = (try? context.fetch(FetchDescriptor<SyncAccount>())) ?? []
+    }
     func sync() async {
+        guard !isSyncing, !isDisconnecting else { return }
         guard let context, let account = freshRSS else { return }
         isSyncing = true
         defer {
@@ -66,19 +74,23 @@ final class SettingsViewModel {
         do {
             try await freshRSSService.sync(account: account, in: context, progress: progress)
             presentStatus("FreshRSS is up to date")
-            reload()
+            reloadAccounts()
         } catch {
-            presentStatus("Couldn’t refresh", message: RefreshFailure.message(for: error) ?? error.localizedDescription)
+            guard UserFacingFailure.shouldSurface(error) else { return }
+            presentStatus("Couldn’t refresh", message: UserFacingFailure.message(for: error, fallback: "Try again in a moment."))
         }
     }
     func disconnect() async {
+        guard !isDisconnecting else { return }
         guard let context, let account = freshRSS else { return }
+        isDisconnecting = true
+        defer { isDisconnecting = false }
         do {
             try await freshRSSService.disconnect(account: account, in: context)
             presentStatus("FreshRSS disconnected")
-            reload()
+            reloadAccounts()
         } catch {
-            presentStatus("Couldn’t disconnect", message: error.localizedDescription)
+            presentStatus("Couldn’t disconnect", message: UserFacingFailure.message(for: error, fallback: "FreshRSS is still connected."))
         }
     }
     func seedAllCatalogSources() {
@@ -89,7 +101,6 @@ final class SettingsViewModel {
             UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
             if result.inserted == 0 && result.updated == 0 && result.removed == 0 {
                 presentStatus("Sources already loaded", message: "All seeded sources are already loaded.")
-                reload()
                 return
             }
             LibraryChange.noteStructureChanged()
@@ -106,7 +117,7 @@ final class SettingsViewModel {
                 await refreshImportedSources(importedCount: result.inserted)
             }
         } catch {
-            presentStatus("Couldn’t restore sources", message: error.localizedDescription)
+            presentStatus("Couldn’t restore sources", message: UserFacingFailure.message(for: error, fallback: "The reading pack could not be restored."))
         }
     }
 
@@ -120,7 +131,6 @@ final class SettingsViewModel {
             let result = try FeedSeedService().applyCuratedReadingPack(in: context)
             if result.inserted == 0 && result.updated == 0 {
                 presentStatus("Reading pack already loaded", message: "AI reading pack already loaded.")
-                reload()
                 return
             }
             let loaded = result.inserted
@@ -136,7 +146,7 @@ final class SettingsViewModel {
                 await refreshImportedSources(importedCount: result.inserted)
             }
         } catch {
-            presentStatus("Couldn’t load reading pack", message: error.localizedDescription)
+            presentStatus("Couldn’t load reading pack", message: UserFacingFailure.message(for: error, fallback: "The reading pack could not be loaded."))
         }
     }
 
@@ -158,11 +168,13 @@ final class SettingsViewModel {
                         guard let context = self?.context else {
                             throw GoogleDriveLinkError.libraryUnavailable
                         }
-                        return try LibrarySyncService.encodedLibraryFile(from: context)
+                        return try await SwiftDataIngest.actor(from: context).encodedLibraryFile(
+                            extraTombstones: LibraryFolderStore.loadTombstones()
+                        )
                     }
                 )
             } catch {
-                presentStatus("Couldn’t link Google Drive", message: error.localizedDescription)
+                presentStatus("Couldn’t link Google Drive", message: UserFacingFailure.message(for: error, fallback: "Google Drive could not be linked."))
             }
         }
     }
@@ -173,7 +185,7 @@ final class SettingsViewModel {
         signIn: () async throws -> GoogleDriveCredentials = {
             try await GoogleDriveOAuthClient.shared.signIn(from: nil)
         },
-        snapshot: () throws -> Data,
+        snapshot: () async throws -> Data,
         library: any GoogleDriveLibraryLinking = LibrarySyncService.shared
     ) async throws {
         let credentials = try await signIn()
@@ -195,7 +207,7 @@ final class SettingsViewModel {
             )
             _ = await library.sync(request: .manual)
         } else {
-            let data = try snapshot()
+            let data = try await snapshot()
             let created = try await drive.createBackupFile(
                 data: data,
                 name: GoogleDriveOAuthConfig.backupFileName
@@ -214,19 +226,30 @@ final class SettingsViewModel {
 
     /// Parses the picked file once and keeps the preview until Import or Cancel.
     func stageOPMLImport(from url: URL) {
-        guard let context else { return }
+        guard let context, !isStagingOPML else { return }
+        isStagingOPML = true
         do {
             guard url.startAccessingSecurityScopedResource() else { throw OPMLServiceError.invalidDocument }
             defer { url.stopAccessingSecurityScopedResource() }
             let data = try Data(contentsOf: url)
-            let preview = try OPMLService().previewDocument(data, in: context)
-            pendingOPMLPreview = preview
-            opmlImportConfirmation = preview.confirmationMessage
-            Task { @MainActor in
-                isConfirmingOPMLImport = true
+            Task {
+                defer { isStagingOPML = false }
+                do {
+                    let container = context.container
+                    let preview = try await Task.detached {
+                        let outlines = try OPMLService.parse(data)
+                        return try OPMLService.preview(outlines, in: container)
+                    }.value
+                    pendingOPMLPreview = preview
+                    opmlImportConfirmation = preview.confirmationMessage
+                    isConfirmingOPMLImport = true
+                } catch {
+                    presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
+                }
             }
         } catch {
-            presentStatus("Couldn’t import", message: error.localizedDescription)
+            isStagingOPML = false
+            presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
         }
     }
 
@@ -242,22 +265,21 @@ final class SettingsViewModel {
 
     private func commitOPMLImport(_ preview: OPMLImportPreview) {
         guard let context else { return }
-        do {
-            let applied = try OPMLService().importOutlines(preview.outlines, in: context)
-            if applied.newSources > 0 || applied.folderMembershipsAdded > 0 {
-                LibraryChange.noteStructureChanged()
-            }
-            reload()
-            let newSources = applied.newSources
-            let folderMembershipsAdded = applied.folderMembershipsAdded
-            Task {
+        let outlines = preview.outlines
+        Task {
+            do {
+                let applied = try await SwiftDataIngest.actor(from: context).importOPML(outlines)
+                if applied.newSources > 0 || applied.folderMembershipsAdded > 0 {
+                    LibraryChange.noteStructureChanged()
+                }
+                reload()
                 if freshRSS != nil {
                     try? await freshRSSService.subscribeLocalFeeds(in: context)
                 }
-                await finishOPMLImport(newSourceCount: newSources, folderMembershipsAdded: folderMembershipsAdded)
+                await finishOPMLImport(newSourceCount: applied.newSources, folderMembershipsAdded: applied.folderMembershipsAdded)
+            } catch {
+                presentStatus("Couldn’t import", message: UserFacingFailure.message(for: error, fallback: "That file could not be imported."))
             }
-        } catch {
-            presentStatus("Couldn’t import", message: error.localizedDescription)
         }
     }
 
@@ -273,10 +295,11 @@ final class SettingsViewModel {
         do {
             try await feedService.refreshAll(in: context, progress: progress)
             progress.finish()
-            reload()
         } catch {
             progress.finish()
-            refreshError = RefreshFailure.message(for: error) ?? error.localizedDescription
+            if UserFacingFailure.shouldSurface(error) {
+                refreshError = UserFacingFailure.message(for: error, fallback: "Try again in a moment.")
+            }
         }
         presentStatus(
             OPMLImportPreview.resultTitle(newSourceCount: newSourceCount),
@@ -290,10 +313,10 @@ final class SettingsViewModel {
             try await feedService.refreshAll(in: context, progress: progress)
             progress.finish()
             presentStatus("Imported \(importedCount) source\(importedCount == 1 ? "" : "s")")
-            reload()
         } catch {
             progress.finish()
-            presentStatus("Couldn’t refresh", message: RefreshFailure.message(for: error) ?? error.localizedDescription)
+            guard UserFacingFailure.shouldSurface(error) else { return }
+            presentStatus("Couldn’t refresh", message: UserFacingFailure.message(for: error, fallback: "Try again in a moment."))
         }
     }
 }
@@ -315,13 +338,20 @@ final class FreshRSSConnectViewModel {
     }
 
     func connect(in context: ModelContext) async -> Bool {
+        guard !isConnecting else { return false }
         guard let url = FreshRSSConfiguration.normalizedServerURL(from: server) else {
             presentedError = "Enter a valid server address."
             return false
         }
         isConnecting = true
-        do { _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context); return true }
-        catch { presentedError = error.localizedDescription; isConnecting = false; return false }
+        defer { isConnecting = false }
+        do {
+            _ = try await freshRSSService.connect(serverURL: url, username: username, password: apiPassword, in: context)
+            return true
+        } catch {
+            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t connect to FreshRSS.")
+            return false
+        }
     }
 }
 

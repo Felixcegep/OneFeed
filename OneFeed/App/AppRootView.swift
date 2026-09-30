@@ -10,12 +10,15 @@ struct AppRootView: View {
     @State private var isPresentingSubscribe = false
     @State private var importError: String?
     @State private var isPickingDocument = false
+    @State private var isImportingDocuments = false
+    @State private var pendingImportURLs: [URL] = []
     @State private var warmReaderWeb = false
     @State private var isLaunching = !ReaderWebWarmup.skipsOpeningCover
+    @State private var allowLaunchCover = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var showsLaunchCover: Bool {
-        isLaunching && !ReaderWebWarmup.skipsOpeningCover
+        isLaunching && allowLaunchCover && !ReaderWebWarmup.skipsOpeningCover
     }
 
     var body: some View {
@@ -23,7 +26,9 @@ struct AppRootView: View {
             .tint(OneFeedTheme.ink)
             .onOpenURL(perform: handleIncomingURL)
             .sheet(isPresented: $isPresentingSubscribe, onDismiss: { subscribeAddress = nil }) {
-                AddSourceView(initialAddress: subscribeAddress)
+                AddSourceView(initialAddress: subscribeAddress, onAdded: {
+                    Task { await BackgroundRefreshCoordinator.refresh(in: modelContext) }
+                })
             }
             .oneFeedOnboardingCover(isPresented: Binding(get: { !completedOnboarding }, set: { if !$0 { completedOnboarding = true } })) {
                 OnboardingView { completedOnboarding = true }
@@ -36,23 +41,28 @@ struct AppRootView: View {
                 }
             }
             .overlay {
-                if showsLaunchCover {
-                    OneFeedLoadingCover(
-                        title: "OneFeed",
-                        status: "Hanging the room…",
-                        canvas: OneFeedTheme.plaster
-                    )
-                    .ignoresSafeArea()
+                ZStack {
+                    if showsLaunchCover {
+                        OneFeedLoadingCover(
+                            title: "OneFeed",
+                            status: "Hanging the room…",
+                            canvas: OneFeedTheme.plaster
+                        )
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                    }
                 }
+                .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsLaunchCover)
             }
-            .animation(reduceMotion ? nil : OneFeedMotion.overlay, value: showsLaunchCover)
             .task {
                 LibrarySyncService.shared.configure(with: modelContext)
                 guard ReaderWebWarmup.isEnabled else {
                     isLaunching = false
                     return
                 }
+                async let cover: Void = revealLaunchCoverIfStillWaiting()
                 warmReaderWeb = true
+                _ = await cover
             }
             .onReceive(NotificationCenter.default.publisher(for: OneFeedNotify.subscribe)) { _ in
                 isPresentingSubscribe = true
@@ -82,7 +92,7 @@ struct AppRootView: View {
                 case .success(let urls):
                     Task { await importIncomingDocuments(urls) }
                 case .failure(let error):
-                    importError = error.localizedDescription
+                    importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
                 }
             }
             .alert("Couldn’t import", isPresented: Binding(
@@ -98,6 +108,12 @@ struct AppRootView: View {
     @ViewBuilder
     private var root: some View {
         AppShell(selectedTab: $selectedTab)
+    }
+
+    private func revealLaunchCoverIfStillWaiting() async {
+        try? await Task.sleep(for: .milliseconds(160))
+        guard !Task.isCancelled, isLaunching else { return }
+        allowLaunchCover = true
     }
 
     private func handleIncomingURL(_ url: URL) {
@@ -128,23 +144,42 @@ struct AppRootView: View {
             QueueHandoff.pendingArticleID = article.id
             NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: article.id)
         } catch {
-            importError = error.localizedDescription
+            importError = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
         }
     }
 
     private func importIncomingDocuments(_ urls: [URL]) async {
-        do {
+        pendingImportURLs.append(contentsOf: urls)
+        guard !isImportingDocuments else { return }
+        isImportingDocuments = true
+        defer { isImportingDocuments = false }
+        let service = ImportedDocumentService()
+        while !pendingImportURLs.isEmpty {
+            let batch = pendingImportURLs
+            pendingImportURLs.removeAll()
             var last: Article?
-            let service = ImportedDocumentService()
-            for url in urls {
-                last = try await service.importFile(at: url, in: modelContext)
+            var failed = 0
+            var firstFailure: String?
+            for url in batch {
+                do {
+                    last = try await service.importFile(at: url, in: modelContext)
+                } catch {
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t import that file.")
+                    }
+                }
             }
             if let last {
                 QueueHandoff.pendingArticleID = last.id
                 NotificationCenter.default.post(name: OneFeedNotify.openQueueArticle, object: last.id)
             }
-        } catch {
-            importError = error.localizedDescription
+            importError = ImportBatchResult.message(
+                succeeded: batch.count - failed,
+                failed: failed,
+                firstFailure: firstFailure,
+                emptyFallback: "Couldn’t import that file."
+            )
         }
     }
 }

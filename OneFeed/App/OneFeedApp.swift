@@ -32,13 +32,14 @@ struct OneFeedApp: App {
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
-                let context = ModelContext(container)
                 let seededVersion = UserDefaults.standard.integer(forKey: AppPreferenceKey.seedCatalogVersion)
                 let legacySeeded = UserDefaults.standard.bool(forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
-                if seededVersion < FeedSeedCatalog.version || !legacySeeded {
-                    _ = try? FeedSeedService().apply(in: context)
-                    UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
-                    UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
+                if LaunchSeed.needsApply(seededVersion: seededVersion, legacySeeded: legacySeeded) {
+                    Task { @MainActor in
+                        _ = try? FeedSeedService().apply(in: ModelContext(container))
+                        UserDefaults.standard.set(true, forKey: AppPreferenceKey.didSeedTinyRSSCatalog)
+                        UserDefaults.standard.set(FeedSeedCatalog.version, forKey: AppPreferenceKey.seedCatalogVersion)
+                    }
                 } else {
                     Task { @MainActor in
                         _ = try? FeedSeedService().removeRetired(in: ModelContext(container))

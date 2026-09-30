@@ -55,6 +55,45 @@ struct RetentionAndExtractionTests {
         #expect(remaining.first { $0.guid == "saved" }?.state == .saved)
     }
 
+    @Test func purgeKeepsAStoredNoteWithoutReadingTheBody() throws {
+        let container = try InMemoryStore.makeContainer()
+        let setup = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        setup.insert(feed)
+        let html = "<p>" + String(repeating: "word ", count: 400) + "</p>"
+        let noted = Article(
+            guid: "noted",
+            title: "Noted",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: html,
+            state: .read,
+            readingNote: "Keep this sentence.",
+            feed: feed
+        )
+        let old = Article(
+            guid: "old",
+            title: "Old",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: html,
+            state: .queued,
+            feed: feed
+        )
+        setup.insert(noted)
+        setup.insert(old)
+        try setup.save()
+
+        let context = ModelContext(container)
+        let removed = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
+        #expect(removed == 1)
+        let matchID = noted.id
+        let stored = try #require(
+            try context.fetch(FetchDescriptor<Article>(predicate: #Predicate { $0.id == matchID })).first
+        )
+        #expect(stored.readingNote == "Keep this sentence.")
+        #expect(stored.contentHTML == html)
+        #expect(stored.isStored)
+    }
+
     @Test func purgeKeepsTodayDeckItemsAndHonorsForever() throws {
         let context = try context()
         let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
@@ -75,10 +114,173 @@ struct RetentionAndExtractionTests {
         #expect(remaining.map(\.guid) == ["deck"])
     }
 
+    @Test func purgeKeepsADeckStoryByTheStoredArticleID() throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let deckArticle = Article(
+            guid: "deck",
+            title: "Deck",
+            publishedAt: .now.addingTimeInterval(-10 * 86_400),
+            contentHTML: "<p>\(String(repeating: "word ", count: 80))</p>",
+            state: .current,
+            feed: feed
+        )
+        context.insert(deckArticle)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: deckArticle, deck: deck)
+        context.insert(item)
+        try context.save()
+        #expect(item.linkedArticleID == deckArticle.id)
+        item.article = nil
+        try context.save()
+
+        let removed = try ArticleRetentionService().purge(in: context, olderThanDays: 7)
+        #expect(removed == 0)
+        let remaining = try context.fetch(FetchDescriptor<Article>())
+        #expect(remaining.map(\.guid) == ["deck"])
+        #expect(remaining.first?.contentHTML?.contains("word") == true)
+    }
+
     @Test func firstImportCutoffIsSevenDaysThenFollowsRetention() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let first = ArticleRetentionService.ingestCutoff(isFirstPopulate: true, now: now)
         #expect(first == now.addingTimeInterval(-7 * 86_400))
+    }
+
+    @Test func queuePlanKeepsTheSavedStoryAndSplitsTheVideo() {
+        let saved = Article(guid: "saved", title: "Essay", url: URL(string: "https://example.com/essay"), state: .saved, contentKind: "article")
+        let copy = Article(guid: "copy", title: "Essay copy", url: URL(string: "https://example.com/essay"), state: .queued, contentKind: "article")
+        let video = Article(guid: "video", title: "Talk", url: URL(string: "https://example.com/talk"), state: .saved, contentKind: "youtube")
+        let collapsed = ArticleIdentity.collapsingDuplicates([video, saved, copy])
+        let plan = QueueListPlan.make(from: [video, saved, copy].map(queueSnap), query: "")
+        #expect(plan.collapsedIDs == collapsed.map(\.id))
+        #expect(plan.upNext == video.id)
+        #expect(plan.videos.isEmpty)
+        #expect(plan.articles == [saved.id])
+        #expect(plan.subtitle == "2 in queue · 1 video")
+        #expect(QueueNavigationSubtitle.text(planned: "", storedCount: 3) == "3 in queue")
+        var counted = false
+        #expect(QueueNavigationSubtitle.text(planned: plan.subtitle, storedCount: {
+            counted = true
+            return 3
+        }()) == plan.subtitle)
+        #expect(counted == false)
+        #expect(QueueNavigationSubtitle.text(planned: "", storedCount: 0) == "")
+        let datesOnly = [video, saved, copy].map { article in
+            var snap = queueSnap(article)
+            snap.title = ""
+            snap.readingNote = ""
+            snap.reactionRaw = ""
+            snap.feedTitle = nil
+            snap.author = nil
+            return snap
+        }
+        let quiet = QueueListPlan.make(from: datesOnly, query: "")
+        #expect(quiet.upNext == plan.upNext)
+        #expect(quiet.articles == plan.articles)
+        #expect(QueueListPlan.make(from: [video, saved, copy].map(queueSnap), query: "Essay").articles == [saved.id])
+        #expect(QueueListPlan.sectionsOnTheOpenScreen(storyCount: 3, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 0, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 201, isSearching: false))
+        #expect(!QueueListPlan.sectionsOnTheOpenScreen(storyCount: 3, isSearching: true))
+        #expect(QueueListPlan.openScreenExcerpt(aiSummary: "<p>Ready</p>", summary: nil) == "Ready")
+    }
+
+    private func queueSnap(_ article: Article) -> QueueStorySnap {
+        QueueStorySnap(
+            id: article.id,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            readingNote: article.readingNote,
+            reactionRaw: article.readingReactionRawValue,
+            feedTitle: article.feed?.title,
+            hasFeed: article.feed != nil,
+            url: article.url,
+            author: article.author,
+            contentKind: article.contentKind,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
+    }
+
+    @Test func historyDayKeepsNewestFirst() throws {
+        let context = try InMemoryStore.makeContext()
+        let day = Date(timeIntervalSince1970: 1_700_000_000)
+        let older = Article(guid: "older", title: "Older", publishedAt: day, state: .read)
+        older.completedAt = day
+        let newer = Article(guid: "newer", title: "Newer", publishedAt: day, state: .read)
+        newer.completedAt = day.addingTimeInterval(3_600)
+        context.insert(older)
+        context.insert(newer)
+
+        let days = HistoryViewModel.days(from: [older, newer])
+        #expect(days.count == 1)
+        #expect(days[0].articles.map(\.title) == ["Newer", "Older"])
+        let plans = HistoryViewModel.dayPlans(from: [older, newer].map(historySnap), query: "")
+        #expect(plans.count == 1)
+        #expect(plans[0].articleIDs == [newer.id, older.id])
+        #expect(plans[0].day == days[0].day)
+        let datesOnly = [older, newer].map { article in
+            HistoryStorySnap(
+                id: article.id,
+                completedAt: article.completedAt,
+                publishedAt: article.publishedAt,
+                title: "",
+                readingNote: "",
+                reactionRaw: "",
+                feedTitle: nil,
+                url: nil,
+                author: nil,
+                contentKind: ""
+            )
+        }
+        #expect(HistoryViewModel.dayPlans(from: datesOnly, query: "").map(\.articleIDs) == [newer.id, older.id])
+        #expect(HistoryViewModel.dayPlans(from: [older, newer].map(historySnap), query: "Newer").flatMap(\.articleIDs) == [newer.id])
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 2, isSearching: false))
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 2, isSearching: true) == false)
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: 0, isSearching: false) == false)
+        #expect(HistoryViewModel.groupsOnTheOpenScreen(storyCount: HistoryViewModel.synchronousGroupingLimit + 1, isSearching: false) == false)
+        try context.save()
+        let copied = HistoryViewModel.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id).contains(newer.id))
+        #expect(copied.first { $0.id == newer.id }?.title == "")
+        let found = HistoryViewModel.snaps(searching: true, in: context.container)
+        #expect(found.first { $0.id == newer.id }?.title == "Newer")
+    }
+
+    @Test func aLongQueueCopiesStoriesAwayFromTheOpenScreen() throws {
+        let context = try InMemoryStore.makeContext()
+        let saved = Article(guid: "saved", title: "Essay", url: URL(string: "https://example.com/essay"), state: .saved, contentKind: "article")
+        let queued = Article(guid: "open", title: "Later", url: URL(string: "https://example.com/later"), state: .queued, contentKind: "article")
+        context.insert(saved)
+        context.insert(queued)
+        try context.save()
+        let copied = QueueListPlan.snaps(searching: false, in: context.container)
+        #expect(copied.map(\.id) == [saved.id])
+        #expect(copied.first?.title == "")
+        #expect(copied.first?.contentKind == "article")
+        let found = QueueListPlan.snaps(searching: true, in: context.container)
+        #expect(found.first?.title == "Essay")
+    }
+
+    private func historySnap(_ article: Article) -> HistoryStorySnap {
+        HistoryStorySnap(
+            id: article.id,
+            completedAt: article.completedAt,
+            publishedAt: article.publishedAt,
+            title: article.title,
+            readingNote: article.readingNote,
+            reactionRaw: article.readingReactionRawValue,
+            feedTitle: article.feed?.title,
+            url: article.url,
+            author: article.author,
+            contentKind: article.contentKind
+        )
     }
 
     @Test func cancelledRefreshIsNotShownToTheUser() {
@@ -86,7 +288,23 @@ struct RetentionAndExtractionTests {
         #expect(RefreshFailure.message(for: URLError(.cancelled)) == nil)
         #expect(RefreshFailure.message(for: URLError(.timedOut)) == nil)
         #expect(RefreshFailure.message(for: URLError(.cannotConnectToHost)) == nil)
-        #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == FeedServiceError.http(500).localizedDescription)
+        #expect(RefreshFailure.message(for: URLError(.notConnectedToInternet)) == nil)
+        #expect(RefreshFailure.message(for: FeedServiceError.http(500)) == "The source could not be loaded (HTTP 500).")
+        #expect(RefreshFailure.message(for: NSError(domain: "SwiftData", code: 1)) == "Couldn’t refresh.")
+    }
+
+    @Test func readerFailuresStayInPlainLanguage() {
+        #expect(ReaderFailure.message(for: GeminiClientError.missingAPIKey) == "Add a Google AI Studio API key in Settings.")
+        #expect(ReaderFailure.message(for: URLError(.timedOut)) == "The connection dropped. Try again.")
+        #expect(ReaderFailure.message(for: FeedServiceError.http(500)) == "That did not finish. Try again.")
+    }
+
+    @Test func queueErrorsUseAppSentences() {
+        #expect(UserFacingFailure.message(for: QueueLinkError.invalidAddress, fallback: "Couldn’t add that link.") == "That doesn’t look like a link.")
+        let system = NSError(domain: "SwiftData", code: 1)
+        #expect(UserFacingFailure.message(for: system, fallback: "Couldn’t update Queue.") == "Couldn’t update Queue.")
+        #expect(UserFacingFailure.message(for: URLError(.notConnectedToInternet), fallback: "Couldn’t sync the library.") == "Couldn’t sync the library.")
+        #expect(GoogleDriveOAuthError.tokenExchangeFailed("invalid_grant").errorDescription == "Google Drive sign-in failed. Try again.")
     }
 
     @Test func automaticExtractSkipsSubstantialRSS() {
@@ -100,6 +318,35 @@ struct RetentionAndExtractionTests {
         var off = ArticleExtractionPolicy()
         off.mode = .off
         #expect(off.shouldFetchPage(rssHTML: "<p>Short</p>", kind: "article") == false)
+    }
+
+    @Test @MainActor func aFullArticleDoesNotStartAPageFetch() async throws {
+        let context = try InMemoryStore.makeContext()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let long = Array(repeating: "word", count: 420).joined(separator: " ")
+        let article = Article(
+            guid: "full",
+            title: "Full",
+            url: URL(string: "https://source.test/story")!,
+            contentHTML: "<p>\(long)</p>",
+            feed: feed
+        )
+        context.insert(article)
+        try context.save()
+        let model = ReaderViewModel(article: article)
+        await model.enrichReadableHTML()
+        #expect(model.isExtracting == false)
+        #expect(article.contentHTML == "<p>\(long)</p>")
+    }
+
+    @Test @MainActor func readerRedrawDoesNotLookUpTheImportedFileAgain() {
+        let article = Article(guid: "story", title: "Story", url: URL(string: "https://source.test/story")!)
+        let model = ReaderViewModel(article: article)
+        #expect(model.importedFileURL == nil)
+        let resolves = model.fileResolves
+        #expect(model.importedFileURL == nil)
+        #expect(model.fileResolves == resolves)
     }
 
     @Test func swiftReadabilityExtractsArticleAndAbsoluteURLs() throws {
@@ -176,6 +423,199 @@ struct RetentionAndExtractionTests {
         #expect(articles[3].contentHTML == "<p>Short</p>")
         #expect(articles[3].timedDurationPhrase == nil)
     }
+
+    @Test func aFullTodayStoryIsNotFetchedAgain() async throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let long = Array(repeating: "word", count: 420).joined(separator: " ")
+        let article = Article(
+            guid: "full",
+            title: "Full",
+            url: URL(string: "https://source.test/full")!,
+            summary: "Short",
+            contentHTML: "<p>\(long)</p>",
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        context.insert(DailyDeckItem(position: 1, status: .current, article: article, deck: deck))
+        try context.save()
+
+        let extractor = RecordingExtractor()
+        let service = ArticleExtractionService(session: .shared, extractor: extractor)
+        await service.enrichUpcoming(in: context, from: deck.items.first, extraQueued: 2)
+
+        #expect(extractor.urls.isEmpty)
+        #expect(article.contentHTML == "<p>\(long)</p>")
+    }
+
+    @Test func refreshExtractionUsesTheStoredDeckID() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "refresh-1",
+            title: "Story",
+            url: URL(string: "https://source.test/1")!,
+            summary: "Short",
+            contentHTML: "<p>Short</p>",
+            feed: feed
+        )
+        context.insert(article)
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        let item = DailyDeckItem(position: 1, status: .current, article: article, deck: deck)
+        context.insert(item)
+        try context.save()
+        item.article = nil
+        try context.save()
+
+        let extractor = RecordingExtractor()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubExtractURLProtocol.self]
+        StubExtractURLProtocol.body = "<html><body><p>Downloaded page with enough words to keep.</p></body></html>"
+        let session = URLSession(configuration: config)
+        await LibraryIngestActor(modelContainer: container).enrichUpcomingArticles(
+            currentItemID: item.id,
+            extraQueued: 0,
+            session: session,
+            extractor: extractor
+        )
+
+        #expect(extractor.urls == [URL(string: "https://source.test/1")!])
+        #expect(article.contentHTML == "<p>Short</p>")
+    }
+
+    @Test func refreshExtractionStoresThePageWithoutAssigningItOnTheCaller() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        var articles: [Article] = []
+        for index in 1...4 {
+            let article = Article(
+                guid: "refresh-\(index)",
+                title: "Story \(index)",
+                url: URL(string: "https://source.test/\(index)")!,
+                publishedAt: .now.addingTimeInterval(Double(-index * 60)),
+                summary: "Short",
+                contentHTML: "<p>Short</p>",
+                feed: feed
+            )
+            context.insert(article)
+            articles.append(article)
+        }
+        let deck = DailyDeck(dayStart: Calendar.current.startOfDay(for: .now))
+        context.insert(deck)
+        for (index, article) in articles.enumerated() {
+            context.insert(DailyDeckItem(
+                position: index + 1,
+                status: index == 0 ? .current : .queued,
+                article: article,
+                deck: deck
+            ))
+        }
+        try context.save()
+        let currentID = deck.items.first { $0.position == 1 }?.id
+
+        let extractor = RecordingExtractor()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StubExtractURLProtocol.self]
+        StubExtractURLProtocol.body = "<html><body><p>Downloaded page with enough words to keep.</p></body></html>"
+        let session = URLSession(configuration: config)
+        let actor = LibraryIngestActor(modelContainer: container)
+        await actor.enrichUpcomingArticles(currentItemID: currentID, extraQueued: 2, session: session, extractor: extractor)
+
+        #expect(extractor.urls == [
+            URL(string: "https://source.test/1")!,
+            URL(string: "https://source.test/2")!,
+            URL(string: "https://source.test/3")!,
+        ])
+        let stored = ModelContext(container)
+        let firstGUID = "refresh-1"
+        let lastGUID = "refresh-4"
+        var firstDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == firstGUID })
+        firstDescriptor.fetchLimit = 1
+        var lastDescriptor = FetchDescriptor<Article>(predicate: #Predicate { $0.guid == lastGUID })
+        lastDescriptor.fetchLimit = 1
+        let first = try #require(try stored.fetch(firstDescriptor).first)
+        let last = try #require(try stored.fetch(lastDescriptor).first)
+        #expect(first.contentHTML?.contains("Extracted https://source.test/1") == true)
+        #expect(first.estimatedReadingMinutes == 3)
+        #expect(last.contentHTML == "<p>Short</p>")
+        #expect(articles[0].contentHTML == "<p>Short</p>")
+    }
+
+    @Test func aFailedPageFetchLeavesTheStoredTeaser() async throws {
+        let context = try context()
+        let feed = Feed(title: "Source", feedURL: URL(string: "https://source.test/rss")!)
+        context.insert(feed)
+        let article = Article(
+            guid: "short-fetch",
+            title: "Short",
+            url: URL(string: "https://source.test/missing")!,
+            summary: "Short",
+            contentHTML: "<p>Short</p>",
+            feed: feed
+        )
+        context.insert(article)
+        try context.save()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FailingExtractURLProtocol.self]
+        let service = ArticleExtractionService(session: URLSession(configuration: config), extractor: RecordingExtractor())
+        let html = await service.extractedHTML(for: article, alreadyEligible: true)
+        #expect(html == nil)
+        #expect(article.contentHTML == "<p>Short</p>")
+    }
+
+    @Test func readingMinutesForAFetchedBodyAreCountedOffTheMainActor() async {
+        let html = "<p>" + String(repeating: "word ", count: 440) + "</p>"
+        let minutes = await Task.detached {
+            ContentClassifier.readingMinutes(words: ContentClassifier.wordCount(in: html))
+        }.value
+        #expect(minutes == 2)
+    }
+
+    @Test func videoEnrichmentLeavesAPreliminaryMemoryWhenTheSettingIsOff() async throws {
+        let container = try InMemoryStore.makeContainer()
+        let context = ModelContext(container)
+        let article = Article(
+            guid: "yt-enrich",
+            title: "Talk",
+            url: URL(string: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
+            contentHTML: "<p>" + String(repeating: "word ", count: 800) + "</p>",
+            contentKind: "youtube",
+            videoID: "dQw4w9WgXcQ"
+        )
+        context.insert(article)
+        let memory = ContentMemory(
+            identityKey: "video:dQw4w9WgXcQ",
+            externalID: "dQw4w9WgXcQ",
+            title: "Talk",
+            stateRaw: SemanticState.preliminary.rawValue
+        )
+        context.insert(memory)
+        try context.save()
+        let defaults = UserDefaults.standard
+        let key = AppPreferenceKey.semanticVideoEnrichment
+        let previous = defaults.object(forKey: key)
+        defaults.set(false, forKey: key)
+        defer {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        let actor = LibraryIngestActor(modelContainer: container)
+        await actor.enrichSemanticVideos()
+        #expect(memory.stateRaw == SemanticState.preliminary.rawValue)
+        #expect(memory.semanticSummary.isEmpty)
+        #expect(article.contentHTML?.contains("word") == true)
+    }
 }
 
 private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {
@@ -186,6 +626,20 @@ private final class RecordingExtractor: ArticleExtracting, @unchecked Sendable {
         let body = Array(repeating: "word", count: 500).joined(separator: " ")
         return "<p>Extracted \(pageURL.absoluteString) \(body)</p>"
     }
+}
+
+private final class FailingExtractURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let url = request.url ?? URL(string: "https://source.test/")!
+        let response = HTTPURLResponse(url: url, statusCode: 500, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
 
 private final class StubExtractURLProtocol: URLProtocol, @unchecked Sendable {

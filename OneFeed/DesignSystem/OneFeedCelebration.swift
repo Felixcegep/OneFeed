@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Tiny terracotta burst for Save only. 400–700ms, then gone. Never on Skip or inbox-zero.
+/// Tiny terracotta burst for Save only. One shot, then gone. Never on Skip or inbox-zero.
 struct OneFeedParticleBurst: View {
     enum Intensity {
         case small, medium, large
@@ -18,79 +18,80 @@ struct OneFeedParticleBurst: View {
     var isActive: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chips: [Chip] = []
+    @State private var flown = false
+    @State private var flight: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion || chips.isEmpty)) { timeline in
-                Canvas { context, size in
-                    let now = timeline.date.timeIntervalSinceReferenceDate
-                    for chip in chips {
-                        let age = now - chip.birth
-                        guard age >= 0, age < chip.life else { continue }
-                        let progress = age / chip.life
-                        let x = chip.x + chip.vx * age
-                        let y = chip.y + chip.vy * age + 160 * age * age
-                        let angle = Angle.degrees(chip.rotation + chip.spin * age)
-                        context.drawLayer { layer in
-                            layer.opacity = Double(1 - progress)
-                            layer.translateBy(x: x, y: y)
-                            layer.rotate(by: angle)
-                            let rect = CGRect(x: -chip.width / 2, y: -chip.height / 2, width: chip.width, height: chip.height)
-                            layer.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(chip.color))
-                        }
-                    }
+            ZStack {
+                ForEach(chips) { chip in
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(chip.color)
+                        .frame(width: chip.width, height: chip.height)
+                        .rotationEffect(.degrees(flown ? chip.endRotation : chip.rotation))
+                        .offset(x: flown ? chip.dx : 0, y: flown ? chip.dy : 0)
+                        .opacity(flown ? 0 : 1)
                 }
             }
-            .onAppear { if isActive { spawn(in: geo.size) } }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear { spawn(in: geo.size) }
             .onChange(of: isActive) { _, active in
-                if active { spawn(in: geo.size) }
+                if active { spawn(in: geo.size) } else { clear() }
             }
+            .onDisappear { clear() }
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
     private func spawn(in size: CGSize) {
+        flight?.cancel()
         guard !reduceMotion, isActive, size.width > 1 else {
-            chips = []
+            clear()
             return
         }
-        let now = Date.timeIntervalSinceReferenceDate
-        let origin = CGPoint(x: size.width / 2, y: size.height / 2)
         let palette: [Color] = [
             OneFeedTheme.accent,
             OneFeedTheme.accentSoft,
             OneFeedTheme.ink.opacity(0.35),
             OneFeedTheme.sand
         ]
+        flown = false
         chips = (0..<intensity.count).map { index in
             let angle = Double.random(in: 0..<(2 * .pi))
-            let speed = Double.random(in: 60...140)
+            let distance = CGFloat.random(in: 36...88)
             return Chip(
-                x: origin.x,
-                y: origin.y,
-                vx: CGFloat(cos(angle) * speed),
-                vy: CGFloat(sin(angle) * speed - 40),
-                birth: now + Double(index) * 0.008,
-                life: Double.random(in: 0.4...0.7),
+                dx: CGFloat(cos(angle)) * distance,
+                dy: CGFloat(sin(angle)) * distance - 28,
                 width: CGFloat.random(in: 3...6),
                 height: CGFloat.random(in: 3...8),
                 rotation: Double.random(in: 0...360),
-                spin: Double.random(in: -120...120),
+                endRotation: Double.random(in: -40...40),
                 color: palette[index % palette.count]
             )
         }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(700))
-            chips = []
+        flight = Task { @MainActor in
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.55)) {
+                flown = true
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            clear()
         }
     }
 
-    private struct Chip {
-        var x, y, vx, vy: CGFloat
-        var birth, life: TimeInterval
+    private func clear() {
+        flight?.cancel()
+        flight = nil
+        chips = []
+        flown = false
+    }
+
+    private struct Chip: Identifiable {
+        let id = UUID()
+        var dx, dy: CGFloat
         var width, height: CGFloat
-        var rotation, spin: Double
+        var rotation, endRotation: Double
         var color: Color
     }
 }

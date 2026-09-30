@@ -1,6 +1,6 @@
 import Foundation
 
-enum ReaderHTML {
+nonisolated enum ReaderHTML {
     private static let dangerousBlock = try! NSRegularExpression(
         pattern: "<(script|style|iframe|object|embed|form|link|meta)(\\s[^>]*)?>[\\s\\S]*?</\\1\\s*>",
         options: [.caseInsensitive]

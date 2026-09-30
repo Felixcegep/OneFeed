@@ -29,6 +29,12 @@ struct ImportedDocumentService {
 
     @discardableResult
     func importFile(at url: URL, in context: ModelContext) async throws -> Article {
+        try await DocumentImportLane.run {
+            try await self.importFileNow(at: url, in: context)
+        }
+    }
+
+    private func importFileNow(at url: URL, in context: ModelContext) async throws -> Article {
         let store = self.store
         let prepared = try await Task.detached {
             try Self.prepare(from: url, store: store, sourceURL: url.isFileURL ? nil : url)
@@ -39,6 +45,20 @@ struct ImportedDocumentService {
     /// Imports bytes already downloaded by the source adder. Queue imports leave `feed` nil and park the article.
     @discardableResult
     func importData(
+        _ data: Data,
+        kind: ImportedDocumentKind,
+        sourceURL: URL,
+        in context: ModelContext,
+        feed: Feed? = nil,
+        state: ArticleState = .saved,
+        parkExisting: Bool = true
+    ) async throws -> Article {
+        try await DocumentImportLane.run {
+            try await self.importDataNow(data, kind: kind, sourceURL: sourceURL, in: context, feed: feed, state: state, parkExisting: parkExisting)
+        }
+    }
+
+    private func importDataNow(
         _ data: Data,
         kind: ImportedDocumentKind,
         sourceURL: URL,
@@ -61,6 +81,12 @@ struct ImportedDocumentService {
 
     @discardableResult
     func importRemote(url: URL, in context: ModelContext) async throws -> Article {
+        try await DocumentImportLane.run {
+            try await self.importRemoteNow(url: url, in: context)
+        }
+    }
+
+    private func importRemoteNow(url: URL, in context: ModelContext) async throws -> Article {
         var request = URLRequest(url: url)
         request.setValue("OneFeed/1.0", forHTTPHeaderField: "User-Agent")
         let (temp, response) = try await session.download(for: request)
@@ -212,9 +238,7 @@ struct ImportedDocumentService {
     }
 
     private func existing(url: URL, in context: ModelContext) -> Article? {
-        let key = ArticleIdentity.normalizedURLString(url)
-        let articles = (try? context.fetch(FetchDescriptor<Article>())) ?? []
-        return articles.first { ArticleIdentity.normalizedURLString($0.url) == key }
+        ArticleIdentity.storedArticle(matching: url, in: context)
     }
 
     private nonisolated static func httpURL(_ url: URL?) -> URL? {
@@ -368,4 +392,29 @@ struct ImportedDocumentService {
         let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? nil : text
     }
+}
+
+/// One file import at a time. A drop, a share, and Add to Queue can all ask at once; each file still writes after the one already running.
+@MainActor
+enum DocumentImportLane {
+    private static var chain: Task<Void, Never>?
+
+    static func run<T>(_ body: @escaping @MainActor () async throws -> T) async throws -> T {
+        let previous = chain
+        let task = Task { @MainActor () throws -> T in
+            await previous?.value
+            return try await body()
+        }
+        chain = Task { @MainActor in
+            _ = try? await task.value
+        }
+        return try await task.value
+    }
+
+    #if DEBUG
+    static func resetForTests() {
+        chain?.cancel()
+        chain = nil
+    }
+    #endif
 }

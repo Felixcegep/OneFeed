@@ -25,7 +25,7 @@ struct GeminiPendingRemoval: Equatable, Sendable, Identifiable {
     var call: GeminiFunctionCall
 }
 
-enum GeminiLibraryTools {
+nonisolated enum GeminiLibraryTools {
     static let names = [
         "list_library",
         "list_not_interested",
@@ -338,43 +338,42 @@ final class GeminiLibrarian {
     }
 
     func systemInstruction(in context: ModelContext) -> String {
-        """
-        You are a librarian inside OneFeed, an RSS reader. Change subscriptions and folders only through the provided tools.
+        Self.builtInstruction(
+            library: snapshot(in: context),
+            notes: NotInterestedLog.snapshot(in: context)
+        )
+    }
 
-        Current library:
-        \(snapshot(in: context))
-
-        \(NotInterestedLog.snapshot(in: context))
-
-        Rules:
-        - Prefer existing folder names. Create a folder only when asked or when a new group is clearly needed.
-        - The same title in two folders is one source.
-        - add_source accepts a website or RSS URL. Use the site’s homepage if the reader names a publication. If that URL is already subscribed, add the folder and do not create a second source.
-        - Identify sources by their exact title or URL from the library. If several match, ask.
-        - search_sources before guessing when the library list is long.
-        - add_to_folder keeps other folders. move_source means this folder only.
-        - remove_from_folder drops one label. remove_source deletes the subscription and its locally stored articles. Only do that when the reader is explicit.
-        - archive_source moves a source to Archive and sets include_in_today=false. The subscription stays.
-        - Use the not-interested log to notice noisy sources. Suggest Archive, blocked words, or removal. Only remove when the reader is explicit.
-        - include_in_today controls whether a source enters Today. Pausing a source uses enabled=false.
-        - After you change something, say what changed in one or two short sentences. Do not mention tools or being an AI.
-        - You cannot change reading fonts, FreshRSS, iCloud, Google Drive, or the API key.
-        """
+    /// Reads the library and the not-interested log away from the main actor.
+    /// Each model turn calls this again so a tool change is included in the next prompt.
+    func systemInstruction(from container: ModelContainer) async -> String {
+        await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
+            return Self.builtInstruction(
+                library: Self.librarySnapshot(in: context),
+                notes: NotInterestedLog.snapshot(in: context)
+            )
+        }.value
     }
 
     func snapshot(in context: ModelContext) -> String {
-        let feeds = fetchFeeds(in: context)
-        return GeminiLibraryTools.snapshot(feeds: feeds, folderNames: FolderStore.allNames(from: feeds))
+        Self.librarySnapshot(in: context)
     }
 
     func perform(_ call: GeminiFunctionCall, in context: ModelContext, allowRemoval: Bool) async -> GeminiToolResult {
         switch call.name {
         case "list_library":
-            return .init(ok: true, message: snapshot(in: context))
+            persistPendingEdits(in: context)
+            return .init(ok: true, message: await Self.libraryListing(from: context.container))
         case "list_not_interested":
-            return .init(ok: true, message: NotInterestedLog.snapshot(in: context, sources: 20, articlesPerSource: 6))
+            persistPendingEdits(in: context)
+            return .init(ok: true, message: await Self.notInterestedListing(from: context.container, sources: 20, articlesPerSource: 6))
         case "search_sources":
-            return searchSources(call, in: context)
+            persistPendingEdits(in: context)
+            guard let query = call.string("query") else {
+                return .init(ok: false, message: "A search query is required.")
+            }
+            return .init(ok: true, message: await Self.searchListing(query, from: context.container))
         case "add_source":
             return await addSource(call, in: context)
         case "remove_source":
@@ -418,7 +417,7 @@ final class GeminiLibrarian {
             }
             return .init(ok: true, message: "Added \(feed.title).")
         } catch {
-            return .init(ok: false, message: error.localizedDescription)
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t add that source."))
         }
     }
 
@@ -440,10 +439,15 @@ final class GeminiLibrarian {
             try await freshRSSService.removeSubscription(feed, in: context)
             return .init(ok: true, message: "Removed \(title).")
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
             context.delete(feed)
-            try? context.save()
-            return .init(ok: true, message: "Removed \(title).")
+            do {
+                try context.save()
+                LibraryChange.noteRemovedFeed(feed)
+                return .init(ok: true, message: "Removed \(title).")
+            } catch {
+                context.rollback()
+                return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t remove that source."))
+            }
         }
     }
 
@@ -459,7 +463,11 @@ final class GeminiLibrarian {
         if alreadyArchived {
             return .init(ok: true, message: "\(feed.title) is already in Archive and out of Today.")
         }
-        NotInterestedLog.archive(feed, in: context)
+        do {
+            try NotInterestedLog.archive(feed, in: context)
+        } catch {
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t update that source."))
+        }
         return .init(ok: true, message: "Moved \(feed.title) to Archive and took it out of Today.")
     }
 
@@ -471,7 +479,9 @@ final class GeminiLibrarian {
         let folder = call.string("folder").map { canonicalFolder($0, on: feed, in: context) }
         feed.replaceFolders(with: folder)
         LibraryChange.note(feed)
-        try? context.save()
+        if let failure = commit(context) {
+            return .init(ok: false, message: failure)
+        }
         if let folder {
             return .init(ok: true, message: "Moved \(feed.title) to \(folder).")
         }
@@ -489,7 +499,9 @@ final class GeminiLibrarian {
         let folder = canonicalFolder(requested, on: feed, in: context)
         if feed.addFolder(folder) {
             LibraryChange.note(feed)
-            try? context.save()
+            if let failure = commit(context) {
+                return .init(ok: false, message: failure)
+            }
             return .init(ok: true, message: "Added \(feed.title) to \(folder).")
         }
         if feed.containsFolder(folder) {
@@ -511,24 +523,67 @@ final class GeminiLibrarian {
             return .init(ok: true, message: "\(feed.title) is not in \(folder).")
         }
         LibraryChange.note(feed)
-        try? context.save()
+        if let failure = commit(context) {
+            return .init(ok: false, message: failure)
+        }
         if feed.memberships.isEmpty {
             return .init(ok: true, message: "Removed \(feed.title) from \(folder). It is now Unfiled.")
         }
         return .init(ok: true, message: "Removed \(feed.title) from \(folder).")
     }
 
-    private func searchSources(_ call: GeminiFunctionCall, in context: ModelContext) -> GeminiToolResult {
-        guard let query = call.string("query") else {
-            return .init(ok: false, message: "A search query is required.")
-        }
-        let feeds = fetchFeeds(in: context)
-        let message = GeminiLibraryTools.search(
-            query: query,
-            feeds: feeds,
-            folderNames: FolderStore.allNames(from: feeds)
-        )
-        return .init(ok: true, message: message)
+    private func persistPendingEdits(in context: ModelContext) {
+        guard context.hasChanges else { return }
+        try? context.save()
+    }
+
+    nonisolated private static func builtInstruction(library: String, notes: String) -> String {
+        """
+        You are a librarian inside OneFeed, an RSS reader. Change subscriptions and folders only through the provided tools.
+
+        Current library:
+        \(library)
+
+        \(notes)
+
+        Rules:
+        - Prefer existing folder names. Create a folder only when asked or when a new group is clearly needed.
+        - The same title in two folders is one source.
+        - add_source accepts a website or RSS URL. Use the site’s homepage if the reader names a publication. If that URL is already subscribed, add the folder and do not create a second source.
+        - Identify sources by their exact title or URL from the library. If several match, ask.
+        - search_sources before guessing when the library list is long.
+        - add_to_folder keeps other folders. move_source means this folder only.
+        - remove_from_folder drops one label. remove_source deletes the subscription and its locally stored articles. Only do that when the reader is explicit.
+        - archive_source moves a source to Archive and sets include_in_today=false. The subscription stays.
+        - Use the not-interested log to notice noisy sources. Suggest Archive, blocked words, or removal. Only remove when the reader is explicit.
+        - include_in_today controls whether a source enters Today. Pausing a source uses enabled=false.
+        - After you change something, say what changed in one or two short sentences. Do not mention tools or being an AI.
+        - You cannot change reading fonts, FreshRSS, iCloud, Google Drive, or the API key.
+        """
+    }
+
+    nonisolated private static func librarySnapshot(in context: ModelContext) -> String {
+        let feeds = (try? context.fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+        return GeminiLibraryTools.snapshot(feeds: feeds, folderNames: FolderStore.allNames(from: feeds))
+    }
+
+    private static func libraryListing(from container: ModelContainer) async -> String {
+        await Task.detached(priority: .utility) {
+            librarySnapshot(in: ModelContext(container))
+        }.value
+    }
+
+    private static func notInterestedListing(from container: ModelContainer, sources: Int, articlesPerSource: Int) async -> String {
+        await Task.detached(priority: .utility) {
+            NotInterestedLog.snapshot(in: ModelContext(container), sources: sources, articlesPerSource: articlesPerSource)
+        }.value
+    }
+
+    private static func searchListing(_ query: String, from container: ModelContainer) async -> String {
+        await Task.detached(priority: .utility) {
+            let feeds = (try? ModelContext(container).fetch(FetchDescriptor<Feed>(sortBy: [SortDescriptor(\.title)]))) ?? []
+            return GeminiLibraryTools.search(query: query, feeds: feeds, folderNames: FolderStore.allNames(from: feeds))
+        }.value
     }
 
     private func createFolder(_ call: GeminiFunctionCall) -> GeminiToolResult {
@@ -563,7 +618,12 @@ final class GeminiLibrarian {
         FolderStore.remove(from)
         FolderEmoji.set(emoji, for: to)
         LibraryChange.noteStructureChanged()
-        try? context.save()
+        if let failure = commit(context) {
+            FolderStore.remember(from)
+            FolderStore.remove(to)
+            FolderEmoji.set(emoji, for: from)
+            return .init(ok: false, message: failure)
+        }
         return .init(ok: true, message: "Renamed \(from) to \(to).")
     }
 
@@ -610,12 +670,27 @@ final class GeminiLibrarian {
             return .init(ok: false, message: "No source settings to change.")
         }
         LibraryChange.note(feed)
-        if call.bool("enabled") != nil || call.bool("include_in_today") != nil {
-            try? DailyDeckService.reconcileMembership(in: context)
-        } else {
-            try? context.save()
+        do {
+            if call.bool("enabled") != nil || call.bool("include_in_today") != nil {
+                try DailyDeckService.reconcileMembership(in: context)
+            } else {
+                try context.save()
+            }
+        } catch {
+            context.rollback()
+            return .init(ok: false, message: UserFacingFailure.message(for: error, fallback: "Couldn’t update that source."))
         }
         return .init(ok: true, message: "Updated \(feed.title): \(changes.joined(separator: ", ")).")
+    }
+
+    private func commit(_ context: ModelContext) -> String? {
+        do {
+            try context.save()
+            return nil
+        } catch {
+            context.rollback()
+            return UserFacingFailure.message(for: error, fallback: "Couldn’t update that source.")
+        }
     }
 
     private func canonicalFolder(_ requested: String, on feed: Feed, in context: ModelContext) -> String {

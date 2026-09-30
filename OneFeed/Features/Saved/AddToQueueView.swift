@@ -5,14 +5,15 @@ import UniformTypeIdentifiers
 struct AddToQueueView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(
-        filter: #Predicate<Article> { $0.stateRawValue == "queued" || $0.stateRawValue == "current" },
-        sort: \Article.publishedAt,
-        order: .reverse
-    ) private var unread: [Article]
+    /// Eight Feed stories. Loaded without article bodies so opening the sheet does not read the library.
+    @State private var suggestions: [Article] = []
     @State private var address = ""
     @State private var isAdding = false
+    @State private var pendingFileURLs: [URL] = []
+    @State private var pendingDropProviders: [NSItemProvider] = []
     @State private var presentedError: String?
+    /// False once the sheet is gone, so a finished import does not dismiss the next screen.
+    @State private var stillPresented = true
     @State private var isPickingFile = false
     #if os(iOS)
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -20,10 +21,6 @@ struct AddToQueueView: View {
     #endif
     var startWithFilePicker = false
     var onAdded: () -> Void
-
-    private var suggestions: [Article] {
-        Array(unread.filter(\.isStored).prefix(8))
-    }
 
     var body: some View {
         NavigationStack {
@@ -117,17 +114,26 @@ struct AddToQueueView: View {
                 case .success(let urls):
                     importFiles(urls)
                 case .failure(let error):
-                    presentedError = error.localizedDescription
+                    presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
                 }
             }
             .onDrop(of: [.pdf, .epub], isTargeted: nil) { providers in
                 importDropped(providers)
+            }
+            .task {
+                let container = modelContext.container
+                let ids = await Task.detached(priority: .userInitiated) {
+                    QueueFeedSuggestions.ids(in: container)
+                }.value
+                guard !Task.isCancelled else { return }
+                suggestions = QueueFeedSuggestions.stories(for: ids, in: modelContext)
             }
             .onAppear {
                 if startWithFilePicker {
                     isPickingFile = true
                 }
             }
+            .onDisappear { stillPresented = false }
         }
         .oneFeedMacFormSheet()
         #if os(iOS)
@@ -155,32 +161,17 @@ struct AddToQueueView: View {
         Task {
             do {
                 _ = try await QueueLinkService().add(urlString: value, in: modelContext)
-                onAdded()
-                dismiss()
             } catch {
-                presentedError = error.localizedDescription
-                isAdding = false
+                presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
             }
+            await completeAdd()
         }
     }
 
     private func importFiles(_ urls: [URL]) {
-        guard !urls.isEmpty, !isAdding else { return }
-        isAdding = true
-        presentedError = nil
-        Task {
-            do {
-                let service = ImportedDocumentService()
-                for url in urls {
-                    _ = try await service.importFile(at: url, in: modelContext)
-                }
-                onAdded()
-                dismiss()
-            } catch {
-                presentedError = error.localizedDescription
-                isAdding = false
-            }
-        }
+        guard !urls.isEmpty else { return }
+        pendingFileURLs.append(contentsOf: urls)
+        beginAdd()
     }
 
     private func importDropped(_ providers: [NSItemProvider]) -> Bool {
@@ -188,25 +179,71 @@ struct AddToQueueView: View {
             provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || provider.hasItemConformingToTypeIdentifier(UTType.epub.identifier)
         }
-        guard !matching.isEmpty, !isAdding else { return false }
+        guard !matching.isEmpty else { return false }
+        pendingDropProviders.append(contentsOf: matching)
+        beginAdd()
+        return true
+    }
+
+    private func beginAdd() {
+        guard !isAdding else { return }
         isAdding = true
         presentedError = nil
-        Task {
-            do {
-                let service = ImportedDocumentService()
-                for provider in matching {
+        Task { await completeAdd() }
+    }
+
+    private func completeAdd() async {
+        let service = ImportedDocumentService()
+        var succeeded = 0
+        var failed = 0
+        var firstFailure: String?
+        while !pendingFileURLs.isEmpty || !pendingDropProviders.isEmpty {
+            let urls = pendingFileURLs
+            pendingFileURLs.removeAll()
+            let drops = pendingDropProviders
+            pendingDropProviders.removeAll()
+            for url in urls {
+                do {
+                    _ = try await service.importFile(at: url, in: modelContext)
+                    succeeded += 1
+                } catch {
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    }
+                }
+            }
+            for provider in drops {
+                do {
                     let url = try await Self.fileURLForDrop(from: provider)
                     _ = try await service.importFile(at: url, in: modelContext)
                     try? FileManager.default.removeItem(at: url)
+                    succeeded += 1
+                } catch {
+                    failed += 1
+                    if firstFailure == nil {
+                        firstFailure = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
+                    }
                 }
-                onAdded()
-                dismiss()
-            } catch {
-                presentedError = error.localizedDescription
-                isAdding = false
             }
         }
-        return true
+        if let batchError = ImportBatchResult.message(
+            succeeded: succeeded,
+            failed: failed,
+            firstFailure: firstFailure,
+            emptyFallback: "Couldn’t add that to Queue."
+        ) {
+            presentedError = batchError
+        }
+        if presentedError == nil || succeeded > 0 {
+            onAdded()
+        }
+        if presentedError == nil {
+            guard stillPresented else { return }
+            dismiss()
+        } else {
+            isAdding = false
+        }
     }
 
     private func addExisting(_ article: Article) {
@@ -217,7 +254,7 @@ struct AddToQueueView: View {
             onAdded()
             dismiss()
         } catch {
-            presentedError = error.localizedDescription
+            presentedError = UserFacingFailure.message(for: error, fallback: "Couldn’t add that to Queue.")
             isAdding = false
         }
     }
@@ -245,5 +282,121 @@ struct AddToQueueView: View {
                 }
             }
         }
+    }
+}
+
+/// The eight newest open stories for Add to Queue. The fetch stops early and leaves article bodies on disk.
+enum QueueFeedSuggestions {
+    static let shown = 8
+    static let fetchCap = 24
+
+    /// Chooses suggestion ids away from the open sheet. The sheet then fetches only those rows.
+    static func ids(in container: ModelContainer) -> [UUID] {
+        let lookup = ModelContext(container)
+        lookup.autosaveEnabled = false
+        let queued = ArticleState.queued.rawValue
+        let current = ArticleState.current.rawValue
+        var descriptor = FetchDescriptor<Article>(
+            predicate: #Predicate { article in
+                article.stateRawValue == queued || article.stateRawValue == current
+            },
+            sortBy: [SortDescriptor(\.publishedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = fetchCap
+        descriptor.propertiesToFetch = [\.id, \.url, \.videoID, \.guid, \.remoteID, \.stateRawValue, \.isRemoteStarred]
+        descriptor.relationshipKeyPathsForPrefetching = [\.feed]
+        let fetched = (try? lookup.fetch(descriptor)) ?? []
+        let snaps = fetched.filter(\.isStored).map {
+            QueueSuggestionSnap(
+                id: $0.id,
+                url: $0.url,
+                videoID: $0.videoID,
+                guid: $0.guid,
+                hasFeed: $0.feed != nil,
+                hasRemoteID: $0.remoteID != nil,
+                stateRaw: $0.stateRawValue,
+                isRemoteStarred: $0.isRemoteStarred
+            )
+        }
+        return chosenIDs(from: snaps)
+    }
+
+    static func stories(for ids: [UUID], in context: ModelContext) -> [Article] {
+        guard !ids.isEmpty else { return [] }
+        let needed = ids
+        let fetched = (try? context.fetch(ArticleListFetch.rows(
+            predicate: #Predicate { needed.contains($0.id) }
+        ))) ?? []
+        let byID = Dictionary(fetched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
+
+    static func chosenIDs(from snaps: [QueueSuggestionSnap]) -> [UUID] {
+        var order: [String] = []
+        var groups: [String: [QueueSuggestionSnap]] = [:]
+        for snap in snaps {
+            let key = identityKey(snap)
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(snap)
+        }
+        return order.prefix(shown).map { key in
+            let items = groups[key] ?? []
+            return items.max(by: { score($0) < score($1) })?.id ?? items[0].id
+        }
+    }
+
+    static func capped(_ articles: [Article]) -> [Article] {
+        let ids = chosenIDs(from: articles.map(QueueSuggestionSnap.init))
+        let byID = Dictionary(articles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byID[$0] }
+    }
+
+    private static func identityKey(_ snap: QueueSuggestionSnap) -> String {
+        if let videoID = snap.videoID, !videoID.isEmpty { return "video:\(videoID)" }
+        return ArticleIdentity.libraryKey(url: snap.url, guid: snap.guid, id: snap.id)
+    }
+
+    private static func score(_ snap: QueueSuggestionSnap) -> Int {
+        var value = 0
+        if snap.hasFeed { value += 8 }
+        if snap.hasRemoteID { value += 4 }
+        if snap.stateRaw == ArticleState.saved.rawValue || snap.isRemoteStarred { value += 3 }
+        if snap.stateRaw == ArticleState.current.rawValue { value += 2 }
+        return value
+    }
+}
+
+struct QueueSuggestionSnap: Sendable {
+    var id: UUID
+    var url: URL?
+    var videoID: String?
+    var guid: String
+    var hasFeed: Bool
+    var hasRemoteID: Bool
+    var stateRaw: String
+    var isRemoteStarred: Bool
+
+    init(id: UUID, url: URL?, videoID: String?, guid: String, hasFeed: Bool, hasRemoteID: Bool, stateRaw: String, isRemoteStarred: Bool) {
+        self.id = id
+        self.url = url
+        self.videoID = videoID
+        self.guid = guid
+        self.hasFeed = hasFeed
+        self.hasRemoteID = hasRemoteID
+        self.stateRaw = stateRaw
+        self.isRemoteStarred = isRemoteStarred
+    }
+
+    init(_ article: Article) {
+        self.init(
+            id: article.id,
+            url: article.url,
+            videoID: article.videoID,
+            guid: article.guid,
+            hasFeed: article.feed != nil,
+            hasRemoteID: article.remoteID != nil,
+            stateRaw: article.stateRawValue,
+            isRemoteStarred: article.isRemoteStarred
+        )
     }
 }
