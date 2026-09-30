@@ -67,6 +67,7 @@ enum AppPreferenceKey {
     static let didSeedTinyRSSCatalog = "didSeedTinyRSSCatalog"
     static let didSeeTakeawayHint = "didSeeTakeawayHint"
     static let seedCatalogVersion = "seedCatalogVersion"
+    static let didRepairLegacyFeedDeletionDeckLinks = "didRepairLegacyFeedDeletionDeckLinks"
     static let articleRetentionDays = "articleRetentionDays"
     static let lastSuccessfulRefresh = "lastSuccessfulRefresh"
     static let knownFolderNames = "knownFolderNames"

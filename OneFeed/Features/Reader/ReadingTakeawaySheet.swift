@@ -2,8 +2,28 @@ import SwiftData
 import SwiftUI
 
 struct ReadingTakeawaySheet: View {
+    #if os(iOS)
+    private enum TakeawaySavePurpose {
+        case save
+        case captureDraft
+    }
+
+    private struct DraftRefinement: Identifiable {
+        let id: UUID
+        let note: KnowledgeNote
+
+        init(note: KnowledgeNote) {
+            id = note.id
+            self.note = note
+        }
+    }
+    #endif
+
     let article: Article
     @Environment(\.dismiss) private var dismiss
+    #if os(iOS)
+    @Environment(\.modelContext) private var modelContext
+    #endif
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var reaction: ArticleReadingReaction?
@@ -13,6 +33,15 @@ struct ReadingTakeawaySheet: View {
     @State private var explicitDismiss = false
     @State private var didWrite = false
     @State private var showsFirstVisitHint = false
+    #if os(iOS)
+    @State private var draftSaveError: String?
+    @State private var failedSavePurpose: TakeawaySavePurpose?
+    @State private var isCreatingDraft = false
+    @State private var lastCapturedDraftText: String?
+    @State private var draftAwaitingConfirmation: KnowledgeNote?
+    @State private var showingDraftSavedConfirmation = false
+    @State private var draftToRefine: DraftRefinement?
+    #endif
     @AppStorage(AppPreferenceKey.didSeeTakeawayHint) private var didSeeTakeawayHint = false
     @FocusState private var noteFocused: Bool
 
@@ -55,6 +84,20 @@ struct ReadingTakeawaySheet: View {
                                 .strokeBorder(OneFeedTheme.sand, lineWidth: 1)
                         }
                         .accessibilityLabel(promptCopy)
+                    #if os(iOS)
+                    if !trimmedNote.isEmpty {
+                        let alreadyCaptured = lastCapturedDraftText == trimmedNote
+                        Button(
+                            alreadyCaptured ? "Draft saved" : "Save as draft",
+                            systemImage: alreadyCaptured ? "checkmark" : "square.and.pencil",
+                            action: captureDraft
+                        )
+                            .buttonStyle(.bordered)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .disabled(isCreatingDraft || alreadyCaptured)
+                            .accessibilityHint("Saves this takeaway and keeps a rough draft with its source")
+                    }
+                    #endif
                 }
                 .padding(OneFeedTheme.pagePadding)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -81,9 +124,40 @@ struct ReadingTakeawaySheet: View {
                     .accessibilityHint("Marks this article read without a note")
                 }
                 ToolbarItem(placement: .confirmationAction) {
+                    #if os(iOS)
+                    Button("Save takeaway") { save() }
+                    #else
                     Button("Save") { save() }
+                    #endif
                 }
             }
+            #if os(iOS)
+            .sheet(item: $draftToRefine) { draft in
+                IdeaEditorSheet(note: draft.note)
+            }
+            .confirmationDialog("Draft saved", isPresented: $showingDraftSavedConfirmation, titleVisibility: .visible) {
+                Button("Refine draft") {
+                    if let draftAwaitingConfirmation {
+                        draftToRefine = DraftRefinement(note: draftAwaitingConfirmation)
+                    }
+                    draftAwaitingConfirmation = nil
+                }
+                Button("Done", role: .cancel) {
+                    draftAwaitingConfirmation = nil
+                }
+            } message: {
+                Text("Your rough draft is saved with this source.")
+            }
+            .alert("Couldn’t save", isPresented: Binding(
+                get: { draftSaveError != nil },
+                set: { if !$0 { draftSaveError = nil } }
+            )) {
+                Button("Try again") { retryDraftAction() }
+                Button("OK", role: .cancel) { draftSaveError = nil }
+            } message: {
+                Text(draftSaveError ?? "Your takeaway is still here. Try saving again.")
+            }
+            #endif
             .sensoryFeedback(.selection, trigger: selectionPulse)
             .onAppear {
                 guard !didSeeTakeawayHint else { return }
@@ -192,14 +266,88 @@ struct ReadingTakeawaySheet: View {
             dismiss()
             return
         }
+        #if os(iOS)
+        guard persistTakeaway(for: .save) else { return }
+        #else
         article.setReadingTakeaway(reaction: reaction, note: trimmedNote)
         if article.isStored {
             LibraryChange.note(article)
             try? article.modelContext?.save()
         }
+        #endif
         didWrite = true
         dismiss()
     }
+
+    #if os(iOS)
+    private func captureDraft() {
+        guard !trimmedNote.isEmpty, !isCreatingDraft else { return }
+        isCreatingDraft = true
+        guard persistTakeaway(for: .captureDraft) else {
+            isCreatingDraft = false
+            return
+        }
+
+        do {
+            let draft = try KnowledgeNoteStore.create(
+                title: "",
+                explanation: "",
+                article: article,
+                isDraft: true,
+                draftText: note,
+                in: modelContext
+            )
+            lastCapturedDraftText = trimmedNote
+            draftAwaitingConfirmation = draft
+            showingDraftSavedConfirmation = true
+        } catch {
+            failedSavePurpose = .captureDraft
+            draftSaveError = "Your takeaway is saved, but the draft could not be saved. Your text is still here. Try again."
+        }
+        isCreatingDraft = false
+    }
+
+    private func persistTakeaway(for purpose: TakeawaySavePurpose) -> Bool {
+        guard article.isStored else {
+            failedSavePurpose = purpose
+            draftSaveError = "This source is no longer available to save. Your takeaway is still here."
+            return false
+        }
+
+        let previousReaction = article.readingReactionRawValue
+        let previousNote = article.readingNote
+        let previousLibraryUpdatedAt = article.libraryUpdatedAt
+        article.setReadingTakeaway(reaction: reaction, note: trimmedNote)
+        article.touchLibrary()
+
+        do {
+            try modelContext.save()
+        } catch {
+            article.readingReactionRawValue = previousReaction
+            article.readingNote = previousNote
+            article.libraryUpdatedAt = previousLibraryUpdatedAt
+            failedSavePurpose = purpose
+            draftSaveError = "Your takeaway could not be saved. Your text is still here. Try again."
+            return false
+        }
+
+        failedSavePurpose = nil
+        draftSaveError = nil
+        LibrarySyncService.shared.schedulePush()
+        return true
+    }
+
+    private func retryDraftAction() {
+        switch failedSavePurpose {
+        case .some(.save):
+            save()
+        case .some(.captureDraft):
+            captureDraft()
+        case .none:
+            draftSaveError = nil
+        }
+    }
+    #endif
 }
 
 /// Plain chip with the same 0.97 press scale as `InkCapsuleStyle`.

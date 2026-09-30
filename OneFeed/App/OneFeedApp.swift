@@ -21,6 +21,7 @@ struct OneFeedApp: App {
             DailyDeckItem.self,
             NotInterestedEntry.self,
             ContentMemory.self,
+            KnowledgeNote.self,
         ])
         URLCache.shared = URLCache(
             memoryCapacity: 32 * 1024 * 1024,
@@ -31,6 +32,16 @@ struct OneFeedApp: App {
 
         do {
             let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            if !ProcessInfo.processInfo.arguments.contains("-uiTesting"),
+               !UserDefaults.standard.bool(forKey: AppPreferenceKey.didRepairLegacyFeedDeletionDeckLinks) {
+                let repairContext = ModelContext(container)
+                do {
+                    try FeedRemovalService.repairLegacyDeckLinks(in: repairContext)
+                    UserDefaults.standard.set(true, forKey: AppPreferenceKey.didRepairLegacyFeedDeletionDeckLinks)
+                } catch {
+                    NSLog("Could not repair daily deck after source removal: %@", error.localizedDescription)
+                }
+            }
             if !ProcessInfo.processInfo.arguments.contains("-uiTesting") {
                 let context = ModelContext(container)
                 let seededVersion = UserDefaults.standard.integer(forKey: AppPreferenceKey.seedCatalogVersion)

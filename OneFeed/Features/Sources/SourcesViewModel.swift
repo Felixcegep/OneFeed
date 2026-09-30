@@ -175,10 +175,11 @@ final class AddSourceViewModel {
         for (index, input) in inputs.enumerated() {
             progressLabel = inputs.count == 1 ? "Adding…" : "Adding \(index + 1) of \(inputs.count)…"
             do {
-                if useFreshRSS, !FeedService.importsWithoutRSS(input) {
-                    _ = try await freshRSSService.addSubscription(from: input, folderName: folder, in: context)
+                let resolvedInput = try await YouTubeChannelResolver.resolve(input)
+                if useFreshRSS, !FeedService.importsWithoutRSS(resolvedInput) {
+                    _ = try await freshRSSService.addSubscription(from: resolvedInput, folderName: folder, in: context)
                 } else {
-                    _ = try await feedService.addSource(from: input, folderName: folder, in: context)
+                    _ = try await feedService.addSource(from: resolvedInput, folderName: folder, in: context)
                 }
                 addedCount += 1
             } catch {
@@ -277,9 +278,7 @@ final class SourceDetailViewModel {
             try await freshRSSService.removeSubscription(feed, in: context)
         } catch {
             presentedError = error.localizedDescription
-            LibraryChange.noteRemovedFeed(feed)
-            context.delete(feed)
-            try? context.save()
+            try? FeedRemovalService.remove(feed, in: context)
         }
     }
 

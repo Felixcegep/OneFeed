@@ -522,7 +522,7 @@ struct AddSourceView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("example.com/feed\nexample.com/paper.pdf", text: $viewModel.addressList, axis: .vertical)
+                    TextField("YouTube channel, example.com/feed\nexample.com/paper.pdf", text: $viewModel.addressList, axis: .vertical)
                         .textContentType(.URL)
                         .oneFeedURLKeyboard()
                         .oneFeedAutocapitalizationNever()
@@ -533,7 +533,7 @@ struct AddSourceView: View {
                 } header: {
                     Text("Websites, articles, or files")
                 } footer: {
-                    Text("One per line. Feeds, articles, PDFs, and EPUBs can share a folder.")
+                    Text("Paste a YouTube channel or feed URL. Articles, PDFs, and EPUBs work too; add one per line.")
                 }
                 .listRowBackground(OneFeedTheme.paper)
 

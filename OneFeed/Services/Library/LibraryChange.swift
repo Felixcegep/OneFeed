@@ -2,6 +2,10 @@ import Foundation
 import SwiftData
 
 enum LibraryChange {
+    static func note(_ note: KnowledgeNote) {
+        LibrarySyncService.shared.schedulePush()
+    }
+
     static func note(_ article: Article) {
         article.touchLibrary()
         LibrarySyncService.shared.schedulePush()

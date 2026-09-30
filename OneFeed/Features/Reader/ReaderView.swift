@@ -41,12 +41,14 @@ struct ReaderView: View {
     @State private var isPresentingBrowser = false
     @State private var showingFocusSheet = false
     @State private var showingTakeaway = false
+    #if os(iOS)
+    @State private var showingDraftEditor = false
+    #endif
     @State private var pendingReadFinish = false
     @State private var savePulse = 0
     @State private var donePulse = 0
     @State private var skipPulse = 0
     @State private var decision: ArticleState?
-    @State private var showingSummaryPrompt = false
     @State private var showingAPIKeySheet = false
     @State private var showingVideoChat = false
     @State private var geminiKey = ""
@@ -114,9 +116,6 @@ struct ReaderView: View {
             #endif
             .task {
                 await viewModel.enrichReadableHTML()
-                if viewModel.shouldOfferYouTubeSummary {
-                    showingSummaryPrompt = true
-                }
             }
             #if os(iOS)
             .toolbar {
@@ -152,16 +151,6 @@ struct ReaderView: View {
                         .oneFeedMacSheetCanvas()
                 }
             }
-            .confirmationDialog("Summarize this video?", isPresented: $showingSummaryPrompt, titleVisibility: .visible) {
-                Button("Summarize") {
-                    summarizeVideoIfReady()
-                }
-                Button("Not now", role: .cancel) {
-                    viewModel.declineYouTubeSummary()
-                }
-            } message: {
-                Text("Gemini writes a short article from the video, in this same reader. This uses your Google AI Studio key.")
-            }
             .alert("Couldn’t summarize", isPresented: Binding(
                 get: { viewModel.summaryError != nil && !viewModel.isSummarizing },
                 set: { if !$0 { viewModel.summaryError = nil } }
@@ -182,6 +171,15 @@ struct ReaderView: View {
             }) {
                 ReadingTakeawaySheet(article: article)
             }
+            #if os(iOS)
+            .sheet(isPresented: $showingDraftEditor) {
+                IdeaEditorSheet(
+                    note: nil,
+                    sourceArticle: article,
+                    initialExplanation: article.readingNoteText
+                )
+            }
+            #endif
             .sheet(isPresented: $showingAPIKeySheet, onDismiss: {
                 guard openVideoChatAfterKey else { return }
                 openVideoChatAfterKey = false
@@ -422,6 +420,11 @@ struct ReaderView: View {
                     onPutInQueue?()
                 }
             }
+            #if os(iOS)
+            Button("Capture a draft", systemImage: "square.and.pencil") {
+                showingDraftEditor = true
+            }
+            #endif
             Button("Not interested", systemImage: "hand.thumbsdown") {
                 finishNotInterested()
             }

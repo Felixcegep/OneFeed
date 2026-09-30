@@ -24,7 +24,7 @@ struct FeedSeedService {
         var existing = Dictionary(
             uniqueKeysWithValues: (try context.fetch(FetchDescriptor<Feed>())).map { ($0.feedURL.absoluteString, $0) }
         )
-        let removed = removeRetiredFeeds(from: &existing, in: context)
+        let removed = try removeRetiredFeeds(from: &existing, in: context)
         if removed > 0 { try context.save() }
         return removed
     }
@@ -35,7 +35,7 @@ struct FeedSeedService {
         var byURL = Dictionary(uniqueKeysWithValues: existing.map { ($0.feedURL.absoluteString, $0) })
 
         if removeRetired {
-            result.removed = removeRetiredFeeds(from: &byURL, in: context)
+            result.removed = try removeRetiredFeeds(from: &byURL, in: context)
         }
 
         for entry in entries {
@@ -76,12 +76,11 @@ struct FeedSeedService {
         return result
     }
 
-    private func removeRetiredFeeds(from byURL: inout [String: Feed], in context: ModelContext) -> Int {
+    private func removeRetiredFeeds(from byURL: inout [String: Feed], in context: ModelContext) throws -> Int {
         var removed = 0
         for (url, feed) in byURL {
             guard FeedSeedCatalog.isRetired(title: feed.title, url: feed.feedURL) else { continue }
-            LibraryChange.noteRemovedFeed(feed)
-            context.delete(feed)
+            try FeedRemovalService.remove(feed, in: context, save: false)
             byURL[url] = nil
             removed += 1
         }

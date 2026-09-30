@@ -186,9 +186,7 @@ struct NotInterestedView: View {
         do {
             try await FreshRSSSyncService().removeSubscription(feed, in: modelContext)
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
-            modelContext.delete(feed)
-            try? modelContext.save()
+            try? FeedRemovalService.remove(feed, in: modelContext)
         }
     }
 }

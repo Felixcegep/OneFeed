@@ -5,8 +5,12 @@ struct RefreshProgressBanner: View {
     var progress: RefreshProgress
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var displayedFraction: Double {
+        min(progress.isActive ? progress.fraction : 0, 0.7)
+    }
+
     var body: some View {
-        ProgressView(value: progress.isActive ? progress.fraction : 0)
+        ProgressView(value: displayedFraction)
             .progressViewStyle(.linear)
             .tint(OneFeedTheme.accent)
             .transaction { $0.animation = nil }

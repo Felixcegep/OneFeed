@@ -1,7 +1,7 @@
 import Foundation
 
 nonisolated enum LibraryDocumentFormat {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     static let fileName = "OneFeed.library.json"
 
     static func encoder() -> JSONEncoder {
@@ -57,8 +57,62 @@ nonisolated struct LibraryDocument: Codable, Equatable, Sendable {
     var feeds: [LibraryFeed]
     var articles: [LibraryArticle]
     var tombstones: [LibraryTombstone]
+    var knowledgeNotes: [LibraryKnowledgeNote]
     var currentArticleKey: String?
     var currentUpdatedAt: Date?
+
+    init(
+        schemaVersion: Int,
+        updatedAt: Date,
+        folderNames: [String],
+        feeds: [LibraryFeed],
+        articles: [LibraryArticle],
+        tombstones: [LibraryTombstone],
+        knowledgeNotes: [LibraryKnowledgeNote] = [],
+        currentArticleKey: String?,
+        currentUpdatedAt: Date?
+    ) {
+        self.schemaVersion = schemaVersion
+        self.updatedAt = updatedAt
+        self.folderNames = folderNames
+        self.feeds = feeds
+        self.articles = articles
+        self.tombstones = tombstones
+        self.knowledgeNotes = knowledgeNotes
+        self.currentArticleKey = currentArticleKey
+        self.currentUpdatedAt = currentUpdatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, updatedAt, folderNames, feeds, articles, tombstones
+        case knowledgeNotes, currentArticleKey, currentUpdatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        folderNames = try container.decode([String].self, forKey: .folderNames)
+        feeds = try container.decode([LibraryFeed].self, forKey: .feeds)
+        articles = try container.decode([LibraryArticle].self, forKey: .articles)
+        tombstones = try container.decode([LibraryTombstone].self, forKey: .tombstones)
+        knowledgeNotes = try container.decodeIfPresent([LibraryKnowledgeNote].self, forKey: .knowledgeNotes) ?? []
+        currentArticleKey = try container.decodeIfPresent(String.self, forKey: .currentArticleKey)
+        currentUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .currentUpdatedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(folderNames, forKey: .folderNames)
+        try container.encode(feeds, forKey: .feeds)
+        try container.encode(articles, forKey: .articles)
+        try container.encode(tombstones, forKey: .tombstones)
+        try container.encode(knowledgeNotes, forKey: .knowledgeNotes)
+        try container.encodeIfPresent(currentArticleKey, forKey: .currentArticleKey)
+        try container.encodeIfPresent(currentUpdatedAt, forKey: .currentUpdatedAt)
+    }
 
     static func empty(now: Date = .now) -> LibraryDocument {
         LibraryDocument(
@@ -79,6 +133,112 @@ nonisolated struct LibraryDocument: Codable, Equatable, Sendable {
 
     static func decode(_ data: Data) throws -> LibraryDocument {
         try LibraryDocumentFormat.decoder().decode(LibraryDocument.self, from: data)
+    }
+}
+
+nonisolated struct LibraryKnowledgeNote: Codable, Equatable, Sendable {
+    var id: UUID
+    var title: String
+    var explanation: String
+    var formattedExplanation: Data?
+    var createdAt: Date
+    var updatedAt: Date
+    var deletedAt: Date?
+    var isDraft: Bool
+    var draftText: String
+    var sourceArticleID: UUID?
+    var sourceTitle: String
+    var sourceURL: String?
+    var sourceAuthor: String?
+    var sourcePublishedAt: Date?
+    var sourceKind: String?
+    var sourceReferences: [String]
+    var revisionHistory: Data?
+
+    init(
+        id: UUID,
+        title: String,
+        explanation: String,
+        formattedExplanation: Data? = nil,
+        createdAt: Date,
+        updatedAt: Date,
+        deletedAt: Date? = nil,
+        isDraft: Bool = false,
+        draftText: String = "",
+        sourceArticleID: UUID? = nil,
+        sourceTitle: String = "",
+        sourceURL: String? = nil,
+        sourceAuthor: String? = nil,
+        sourcePublishedAt: Date? = nil,
+        sourceKind: String? = nil,
+        sourceReferences: [String] = [],
+        revisionHistory: Data? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.explanation = explanation
+        self.formattedExplanation = formattedExplanation
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.deletedAt = deletedAt
+        self.isDraft = isDraft
+        self.draftText = draftText
+        self.sourceArticleID = sourceArticleID
+        self.sourceTitle = sourceTitle
+        self.sourceURL = sourceURL
+        self.sourceAuthor = sourceAuthor
+        self.sourcePublishedAt = sourcePublishedAt
+        self.sourceKind = sourceKind
+        self.sourceReferences = sourceReferences
+        self.revisionHistory = revisionHistory
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, explanation, formattedExplanation, createdAt, updatedAt, deletedAt
+        case isDraft, draftText, sourceArticleID, sourceTitle, sourceURL, sourceAuthor
+        case sourcePublishedAt, sourceKind, sourceReferences, revisionHistory
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        explanation = try container.decode(String.self, forKey: .explanation)
+        formattedExplanation = try container.decodeIfPresent(Data.self, forKey: .formattedExplanation)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        isDraft = try container.decodeIfPresent(Bool.self, forKey: .isDraft) ?? false
+        draftText = try container.decodeIfPresent(String.self, forKey: .draftText) ?? ""
+        sourceArticleID = try container.decodeIfPresent(UUID.self, forKey: .sourceArticleID)
+        sourceTitle = try container.decodeIfPresent(String.self, forKey: .sourceTitle) ?? ""
+        sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
+        sourceAuthor = try container.decodeIfPresent(String.self, forKey: .sourceAuthor)
+        sourcePublishedAt = try container.decodeIfPresent(Date.self, forKey: .sourcePublishedAt)
+        sourceKind = try container.decodeIfPresent(String.self, forKey: .sourceKind)
+        sourceReferences = try container.decodeIfPresent([String].self, forKey: .sourceReferences) ?? []
+        revisionHistory = try container.decodeIfPresent(Data.self, forKey: .revisionHistory)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(explanation, forKey: .explanation)
+        try container.encodeIfPresent(formattedExplanation, forKey: .formattedExplanation)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(deletedAt, forKey: .deletedAt)
+        try container.encode(isDraft, forKey: .isDraft)
+        try container.encode(draftText, forKey: .draftText)
+        try container.encodeIfPresent(sourceArticleID, forKey: .sourceArticleID)
+        try container.encode(sourceTitle, forKey: .sourceTitle)
+        try container.encodeIfPresent(sourceURL, forKey: .sourceURL)
+        try container.encodeIfPresent(sourceAuthor, forKey: .sourceAuthor)
+        try container.encodeIfPresent(sourcePublishedAt, forKey: .sourcePublishedAt)
+        try container.encodeIfPresent(sourceKind, forKey: .sourceKind)
+        try container.encode(sourceReferences, forKey: .sourceReferences)
+        try container.encodeIfPresent(revisionHistory, forKey: .revisionHistory)
     }
 }
 

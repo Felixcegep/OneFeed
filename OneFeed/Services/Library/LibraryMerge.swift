@@ -5,6 +5,7 @@ nonisolated enum LibraryMerge {
     static func snapshot(from context: ModelContext, now: Date = .now, extraTombstones: [LibraryTombstone] = []) throws -> LibraryDocument {
         let feeds = try context.fetch(FetchDescriptor<Feed>())
         let articles = try context.fetch(FetchDescriptor<Article>())
+        let knowledgeNotes = try context.fetch(FetchDescriptor<KnowledgeNote>())
         let feedRecords = feeds.map(record(from:))
         var articleRecords: [LibraryArticle] = []
         articleRecords.reserveCapacity(articles.count)
@@ -38,6 +39,7 @@ nonisolated enum LibraryMerge {
             feeds: feedRecords.sorted { $0.feedURL < $1.feedURL },
             articles: articleRecords.sorted { $0.key < $1.key },
             tombstones: tombstones,
+            knowledgeNotes: knowledgeNotes.map(record(from:)).sorted { $0.id.uuidString < $1.id.uuidString },
             currentArticleKey: currentKey,
             currentUpdatedAt: currentUpdatedAt
         )
@@ -67,6 +69,7 @@ nonisolated enum LibraryMerge {
             remote: remote.articles,
             liveFeedKeys: liveFeedKeys
         )
+        let knowledgeNotes = mergedKnowledgeNotes(local: local.knowledgeNotes, remote: remote.knowledgeNotes)
 
         let current: (key: String?, updatedAt: Date?)
         if (local.currentUpdatedAt ?? .distantPast) >= (remote.currentUpdatedAt ?? .distantPast) {
@@ -84,6 +87,7 @@ nonisolated enum LibraryMerge {
             feeds: feeds.sorted { $0.feedURL < $1.feedURL },
             articles: articles.sorted { $0.key < $1.key },
             tombstones: survivingTombstones.filter { !liveFeedKeys.contains($0.feedURL) }.sorted { $0.feedURL < $1.feedURL },
+            knowledgeNotes: knowledgeNotes,
             currentArticleKey: current.key,
             currentUpdatedAt: current.updatedAt
         )
@@ -106,7 +110,7 @@ nonisolated enum LibraryMerge {
             for tombstone in document.tombstones {
                 guard let feed = feedsByKey[tombstone.feedURL] else { continue }
                 if feed.libraryUpdatedAt <= tombstone.deletedAt {
-                    context.delete(feed)
+                    try FeedRemovalService.remove(feed, in: context, save: false)
                     feedsByKey[tombstone.feedURL] = nil
                     changed += 1
                 }
@@ -144,6 +148,31 @@ nonisolated enum LibraryMerge {
                 let article = makeArticle(from: record, feed: feed)
                 context.insert(article)
                 index.register(article)
+                changed += 1
+            }
+        }
+
+        // Notes are user-owned and sync independently from subscriptions and
+        // reading-state preferences. Their copied provenance survives Article removal.
+        let storedNotes = try context.fetch(FetchDescriptor<KnowledgeNote>())
+        var notesByID = Dictionary(uniqueKeysWithValues: storedNotes.map { ($0.id, $0) })
+        for record in document.knowledgeNotes {
+            if let existing = notesByID[record.id] {
+                let localRecord = Self.record(from: existing)
+                let combinedHistory = mergedRevisionHistory(localRecord.revisionHistory, record.revisionHistory)
+                if shouldPrefer(record, over: localRecord) {
+                    var preferred = record
+                    preferred.revisionHistory = combinedHistory
+                    apply(preferred, to: existing)
+                    changed += 1
+                } else if combinedHistory != localRecord.revisionHistory {
+                    existing.revisionHistory = combinedHistory
+                    changed += 1
+                }
+            } else {
+                let note = makeKnowledgeNote(from: record)
+                context.insert(note)
+                notesByID[note.id] = note
                 changed += 1
             }
         }
@@ -219,6 +248,100 @@ nonisolated enum LibraryMerge {
             readingReactionRawValue: article.readingReactionRawValue,
             readingNote: article.readingNote
         )
+    }
+
+    private static func record(from note: KnowledgeNote) -> LibraryKnowledgeNote {
+        LibraryKnowledgeNote(
+            id: note.id,
+            title: note.title,
+            explanation: note.explanation,
+            formattedExplanation: note.formattedExplanation,
+            createdAt: note.createdAt,
+            updatedAt: note.updatedAt,
+            deletedAt: note.deletedAt,
+            isDraft: note.isDraft,
+            draftText: note.draftText,
+            sourceArticleID: note.sourceArticleID,
+            sourceTitle: note.sourceTitle,
+            sourceURL: note.sourceURL?.absoluteString,
+            sourceAuthor: note.sourceAuthor,
+            sourcePublishedAt: note.sourcePublishedAt,
+            sourceKind: note.sourceKind,
+            sourceReferences: note.sourceReferences,
+            revisionHistory: note.revisionHistory
+        )
+    }
+
+    private static func mergedKnowledgeNotes(
+        local: [LibraryKnowledgeNote],
+        remote: [LibraryKnowledgeNote]
+    ) -> [LibraryKnowledgeNote] {
+        var byID: [UUID: LibraryKnowledgeNote] = [:]
+        for note in local + remote {
+            if let existing = byID[note.id] {
+                var preferred = shouldPrefer(note, over: existing) ? note : existing
+                preferred.revisionHistory = mergedRevisionHistory(existing.revisionHistory, note.revisionHistory)
+                byID[note.id] = preferred
+            } else {
+                byID[note.id] = note
+            }
+        }
+        return byID.values.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    /// Deletion is sticky because this release has no undelete operation. For
+    /// live edits use updatedAt; ties use the canonical JSON representation so
+    /// merging the same two snapshots in either order always picks the same row.
+    private static func shouldPrefer(_ candidate: LibraryKnowledgeNote, over existing: LibraryKnowledgeNote) -> Bool {
+        switch (candidate.deletedAt, existing.deletedAt) {
+        case (.some, .none): return true
+        case (.none, .some): return false
+        case let (.some(candidateDeletion), .some(existingDeletion)):
+            if candidateDeletion != existingDeletion { return candidateDeletion > existingDeletion }
+        case (.none, .none):
+            if candidate.updatedAt != existing.updatedAt { return candidate.updatedAt > existing.updatedAt }
+        }
+        return stableTieBreak(candidate) > stableTieBreak(existing)
+    }
+
+    private static func stableTieBreak(_ note: LibraryKnowledgeNote) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var payload = note
+        payload.revisionHistory = nil
+        guard let data = try? encoder.encode(payload) else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func mergedRevisionHistory(_ local: Data?, _ remote: Data?) -> Data? {
+        let decoder = JSONDecoder()
+        let localRevisions = local.flatMap { try? decoder.decode([KnowledgeNoteRevision].self, from: $0) } ?? []
+        let remoteRevisions = remote.flatMap { try? decoder.decode([KnowledgeNoteRevision].self, from: $0) } ?? []
+        var byID: [UUID: KnowledgeNoteRevision] = [:]
+        for revision in localRevisions + remoteRevisions {
+            if let existing = byID[revision.id] {
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.sortedKeys]
+                let candidateData = try? encoder.encode(revision)
+                let existingData = try? encoder.encode(existing)
+                let candidateKey = candidateData.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                let existingKey = existingData.map { String(decoding: $0, as: UTF8.self) } ?? ""
+                if candidateKey > existingKey { byID[revision.id] = revision }
+            } else {
+                byID[revision.id] = revision
+            }
+        }
+        guard !byID.isEmpty else {
+            if let local, let remote { return local.lexicographicallyPrecedes(remote) ? remote : local }
+            return local ?? remote
+        }
+        let ordered = byID.values.sorted {
+            if $0.savedAt != $1.savedAt { return $0.savedAt < $1.savedAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(ordered)
     }
 
     private static func recordKey(for article: Article) -> String? {
@@ -302,6 +425,47 @@ nonisolated enum LibraryMerge {
         }
         article.readingReactionRawValue = ArticleReadingReaction.clampedRawValue(record.readingReactionRawValue)
         article.readingNote = record.readingNote
+    }
+
+    private static func apply(_ record: LibraryKnowledgeNote, to note: KnowledgeNote) {
+        note.title = record.title
+        note.explanation = record.explanation
+        note.formattedExplanation = record.formattedExplanation
+        note.createdAt = record.createdAt
+        note.updatedAt = record.updatedAt
+        note.deletedAt = record.deletedAt
+        note.isDraft = record.isDraft
+        note.draftText = record.draftText
+        note.sourceArticleID = record.sourceArticleID
+        note.sourceTitle = record.sourceTitle
+        note.sourceURL = record.sourceURL.flatMap(URL.init(string:))
+        note.sourceAuthor = record.sourceAuthor
+        note.sourcePublishedAt = record.sourcePublishedAt
+        note.sourceKind = record.sourceKind
+        note.sourceReferences = record.sourceReferences
+        note.revisionHistory = record.revisionHistory
+    }
+
+    private static func makeKnowledgeNote(from record: LibraryKnowledgeNote) -> KnowledgeNote {
+        KnowledgeNote(
+            id: record.id,
+            title: record.title,
+            explanation: record.explanation,
+            formattedExplanation: record.formattedExplanation,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            deletedAt: record.deletedAt,
+            isDraft: record.isDraft,
+            draftText: record.draftText,
+            revisionHistory: record.revisionHistory,
+            sourceArticleID: record.sourceArticleID,
+            sourceTitle: record.sourceTitle,
+            sourceURL: record.sourceURL.flatMap(URL.init(string:)),
+            sourceAuthor: record.sourceAuthor,
+            sourcePublishedAt: record.sourcePublishedAt,
+            sourceKind: record.sourceKind,
+            sourceReferences: record.sourceReferences
+        )
     }
 
     private static func makeFeed(from record: LibraryFeed) -> Feed {

@@ -109,6 +109,17 @@ struct CurrentView: View {
         .navigationSubtitle(subtitle)
         .refreshProgressBanner(viewModel.progress)
         .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .oneFeedTrailing) {
+                NavigationLink {
+                    IdeasView()
+                } label: {
+                    Label("Ideas", systemImage: "lightbulb")
+                }
+                .frame(minHeight: 44)
+                .accessibilityHint("Opens your saved ideas")
+            }
+            #endif
             if !feeds.isEmpty {
                 ToolbarItem(placement: .oneFeedTrailing) {
                     Button {

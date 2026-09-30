@@ -440,9 +440,7 @@ final class GeminiLibrarian {
             try await freshRSSService.removeSubscription(feed, in: context)
             return .init(ok: true, message: "Removed \(title).")
         } catch {
-            LibraryChange.noteRemovedFeed(feed)
-            context.delete(feed)
-            try? context.save()
+            try? FeedRemovalService.remove(feed, in: context)
             return .init(ok: true, message: "Removed \(title).")
         }
     }
